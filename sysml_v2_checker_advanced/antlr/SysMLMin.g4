@@ -797,10 +797,17 @@ itemUsage
 // itemUsageと同型の設計を使う。`concern`キーワード（`concern def
 // ConcernCheck { ref concern :>> self: ConcernCheck; }`、Requirements.sysml
 // のみ・2件）も構造が完全に同一。
+// `requirement <C1> rangeRequirementSmall :> smallEVRequirement : RangeRequirement
+// { ... }`（EVSample.sysml）のように、ShortName注釈（山括弧の短縮名）を
+// 持つことがある（2026-08-28、参照実装比較レポートP1-1で発見。公式コーパス
+// で87件）。
 requirementUsage
-    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'requirement' simpleName?
+    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'requirement' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
-      (':' ID)?
+      // `typeRef`という専用ラベルを使う（無ラベルの`ID`のままだと、上のshortName
+      // （ID|QUOTED_NAMEの代替）と合わせて`ctx.ID()`が2件のリストを返すように
+      // なり、`_usage_keyword_node`側の単純な`ctx.ID()`呼び出しと衝突するため）。
+      (':' typeRef=ID)?
       multiplicitySpec?
       // `ref requirement requirementVerifications : RequirementCheck[0..*]
       // = obj.requirementVerifications { ... }`（VerificationCases.sysml）
@@ -1059,9 +1066,11 @@ featureUsage
 // `individual part p : IP1;`/`individual part :>> p : IP2;`
 // （IndividualTest.sysml）のように、`individual`はusage側にも付く
 // プレフィックス修飾子（2026-08-28、参照実装比較レポートP0-3で発見）。
+// `part <'1'> b: B;`（PartTest.sysml）のように、ShortName注釈（山括弧の
+// 短縮名）を持つことがある（2026-08-28、参照実装比較レポートP1-1で発見）。
 partUsage
     : visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
-      'part' simpleName?
+      'part' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       (':' typeRef=namespacePath)?
       multiplicitySpec?

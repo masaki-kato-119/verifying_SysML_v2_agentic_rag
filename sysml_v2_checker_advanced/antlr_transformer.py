@@ -410,6 +410,9 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return {
             "type": "part_instance",
             "name": _optional_simple_name_text(ctx.simpleName()),
+            # `part <'1'> b: B;`のようなShortName注釈（2026-08-28、
+            # 参照実装比較レポートP1-1で発見）。
+            "shortName": ctx.shortName.text if ctx.shortName is not None else None,
             "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
             "role": None,
             "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
@@ -802,16 +805,37 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
     def _usage_keyword_node(self, node_type: str, ctx, children_ctxs) -> Dict:
         """case/analysis/verification/use case/calc/constraint usageの6規則が
         共有する、partUsage/featureUsageと同型のAST組み立てロジック（型節は
-        `: ID`単体、bodyのルールだけが規則ごとに異なるため引数で受け取る）。"""
-        id_ctx = ctx.ID()
+        `: ID`単体、bodyのルールだけが規則ごとに異なるため引数で受け取る）。
+        `typeRef`という専用ラベルを持つ規則（requirementUsage。shortNameの
+        `ID|QUOTED_NAME`代替と合わせて無ラベル`ctx.ID()`がリストを返すように
+        なるため）ではそちらを優先し、無い規則では従来通り`ctx.ID()`を使う。
+        `hasattr`で判定する（値がNoneかどうかではなく属性自体の有無を見る）
+        必要がある。値で判定すると、`typeRef`が実際に省略された（値がNone）
+        requirementUsageインスタンスで`ctx.ID()`にフォールバックしてしまい、
+        そちらもshortNameのID代替を含むリストを返すため同じ問題が再発する。"""
+        if hasattr(ctx, "typeRef"):
+            id_ctx = ctx.typeRef
+        else:
+            id_ctx = ctx.ID()
         redefines = self._redefine_list_namespace(ctx.preKind, ctx.preTarget) + self._redefine_list_namespace(
             ctx.postKind, ctx.postTarget
         )
         visibility_ctx = ctx.visibilityIndicator()
+        # `requirement <C1> ...`のようなShortName注釈は一部の規則（例:
+        # requirementUsage）にしか無いため、getattrで安全に読む（無い規則は
+        # ctx.shortName属性自体が無い。_named_simple_nodeと同じ方針）。
+        short_name_token = getattr(ctx, "shortName", None)
+        # `typeRef`ラベル経由の場合は生のToken（`.text`）、無ラベル`ctx.ID()`
+        # 経由の場合はTerminalNode（`.getText()`）と型が異なるため、両対応する。
+        if id_ctx is not None:
+            type_name = id_ctx.getText() if hasattr(id_ctx, "getText") else id_ctx.text
+        else:
+            type_name = None
         return {
             "type": node_type,
             "name": _optional_simple_name_text(ctx.simpleName()),
-            "type_name": id_ctx.getText() if id_ctx is not None else None,
+            "shortName": short_name_token.text if short_name_token is not None else None,
+            "type_name": type_name,
             "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
             "isAbstract": ctx.isAbstract is not None,
             "isRef": ctx.isRef is not None,

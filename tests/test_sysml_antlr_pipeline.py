@@ -464,6 +464,7 @@ def test_antlr_calculation_usage_and_constraint_usage():
     assert calc_usage == {
         "type": "calculation_usage",
         "name": "x",
+        "shortName": None,
         "type_name": "Calc",
         "multiplicity": None,
         "isAbstract": False,
@@ -995,6 +996,24 @@ def test_antlr_part_usage_double_colon_qualified_type():
     plain_ast = parse_sysml_antlr("part def P { part x : SomeType; }")
     plain_node = plain_ast["children"][0]["children"][-1]
     assert plain_node["type_name"] == "SomeType"
+
+
+def test_antlr_part_and_requirement_usage_short_name():
+    """`part <'1'> b: B;`（PartTest.sysml）・`requirement <C1> ...`
+    （EVSample.sysml）のようなShortName注釈（山括弧の短縮名）は、以前は
+    一部のdef系規則にしか実装されておらずusage系規則には無かった
+    （2026-08-28、参照実装比較レポートP1-1で発見。公式コーパスで
+    part 5件・requirement 87件）。"""
+    part_ast = parse_sysml_antlr("part def B; part <'1'> b: B;")
+    part_node = part_ast["children"][-1]
+    assert part_node["shortName"] == "'1'"
+    assert part_node["name"] == "b"
+
+    req_ast = parse_sysml_antlr("requirement def R; requirement <C1> r :> R : R;")
+    req_node = req_ast["children"][-1]
+    assert req_node["shortName"] == "C1"
+    assert req_node["type_name"] == "R"
+    assert lint_ast(req_ast) is not None
 
 
 def test_antlr_state_body_element_doc_and_assert_constraint():
