@@ -186,8 +186,12 @@ portionUsageStmt
 // （linter.py:1432-1494、`_check_occurrence_advanced_rules`経由）は
 // いずれも現状発火しない（event_occurrence_usageと同種のlinter.py側の
 // 制約）。
+// `individual occurrence def IO2 { ... }`（IndividualTest.sysml）のように、
+// `individual`は独立構文（individualDef）だけでなく、occurrence/item/part/
+// actionの各defの直前に付くプレフィックス修飾子としても使われる
+// （2026-08-28、参照実装比較レポートP0-3で発見）。
 occurrenceDef
-    : isAbstract='abstract'? 'occurrence' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : isIndividual='individual'? isAbstract='abstract'? 'occurrence' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // `abstract constant ref occurrence causes[1..*] :>> causes :> participant
@@ -210,12 +214,16 @@ occurrenceUsage
     ;
 
 // IndividualDefinitionはEmptyMultiplicityMember（`[]`、上下限を持たない
-// 明示的な空の多重度）を必須で持つ（`_check_individual_definition`が
-// multiplicityの存在とsize=Noneの両方を要求するため）。既存の
-// multiplicityBracketは上下限の記述を必須とするため再利用せず、
-// 空の`[]`をこの規則専用に直接書く。
+// 明示的な空の多重度）を持つことが多い。`_check_individual_definition`
+// （case_and_view_rules.py）はmultiplicityの存在とsize=Noneの両方を
+// 要求し、無ければLintIssueとして報告する仕様のため、文法側では必須に
+// せず省略可能にする（`individual def IO1;`のように`[]`を省略した公式
+// コーパス実例が存在するため。2026-08-28、参照実装比較レポートP0-3で
+// 発見。以前は必須にしていたため、このIndividualTest.sysml自体の1行目
+// でパース自体が失敗していた）。既存のmultiplicityBracketは上下限の
+// 記述を必須とするため再利用せず、空の`[]`をこの規則専用に直接書く。
 individualDef
-    : isAbstract='abstract'? 'individual' 'def' simpleName inheritanceClause? '[' ']' ( '{' partBodyElement* '}' | ';' )
+    : isAbstract='abstract'? 'individual' 'def' simpleName inheritanceClause? (emptyMult='[' ']')? ( '{' partBodyElement* '}' | ';' )
     ;
 
 individualUsage
@@ -720,8 +728,11 @@ inheritanceClause
 
 // `part def <xx> Name { ... }`のように、他のdef系規則（package/view def/
 // metadata def/item def/attribute usage）と同じShortName注釈を取りうる。
+// `individual part def IP1 { ... }`（IndividualTest.sysml）のように、
+// `individual`はpart defのプレフィックス修飾子としても使われる
+// （2026-08-28、参照実装比較レポートP0-3で発見。occurrenceDef参照）。
 partDef
-    : isAbstract='abstract'? 'part' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : isIndividual='individual'? isAbstract='abstract'? 'part' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // 参照: SysML.xtext の `ItemDefinition`（`OccurrenceDefinitionPrefix
@@ -730,8 +741,11 @@ partDef
 // `item def <xxx> Name { ... }`のように、他のdef系規則
 // （package/view def/metadata def/attribute usage）と同じShortName注釈
 // （KerMLの一般的な短縮名機能）を取りうる。
+// `individual item def II1 { ... }`（IndividualTest.sysml）のように、
+// `individual`はitem defのプレフィックス修飾子としても使われる
+// （2026-08-28、参照実装比較レポートP0-3で発見。occurrenceDef参照）。
 itemDef
-    : isAbstract='abstract'? 'item' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : isIndividual='individual'? isAbstract='abstract'? 'item' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // `ref item :>> localClock : Clock[1] default Time::universalClock { ... }`
@@ -745,8 +759,11 @@ itemDef
 // Metadata::metadataItems;`（SysML.sysml、177件）のように、`derived`
 // 修飾キーワード（他の修飾子と同じ位置、visibilityの後・abstract/refより
 // 前）も持つ。
+// `individual item ii : II1;`/`individual item :>> i : II2;`
+// （IndividualTest.sysml）のように、`individual`はusage側にも付く
+// プレフィックス修飾子（2026-08-28、参照実装比較レポートP0-3で発見）。
 itemUsage
-    : visibilityIndicator? isDerived='derived'? isAbstract='abstract'? isRef='ref'? 'item' simpleName?
+    : visibilityIndicator? isIndividual='individual'? isDerived='derived'? isAbstract='abstract'? isRef='ref'? 'item' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       (':' ID)?
       multiplicitySpec?
@@ -954,6 +971,11 @@ partBodyElement
     // （snapshot/timeslice）はpackageBodyElementだけでなくpartBodyElement
     // 内にも書ける（2026-08-28、参照実装比較レポートP0-2で発見）。
     | portionUsageStmt
+    // `individual occurrence def IO2 { individual io : IO1; }`
+    // （IndividualTest.sysml）のように、individualUsageは
+    // packageBodyElementだけでなくpartBodyElement内にも書ける
+    // （2026-08-28、参照実装比較レポートP0-3で発見）。
+    | individualUsage
     ;
 
 // 公式コーパスには`ref self: Part :>> Item::self;`や`ref stateSpace:
@@ -1012,8 +1034,11 @@ featureUsage
 // （他パッケージ参照）を伴う場合もある（公式コーパスでは0件、実モデル
 // 特有）ため、型節は`ID`単体ではなく`namespacePath`（`.`/`::`両方受理）
 // を使う。
+// `individual part p : IP1;`/`individual part :>> p : IP2;`
+// （IndividualTest.sysml）のように、`individual`はusage側にも付く
+// プレフィックス修飾子（2026-08-28、参照実装比較レポートP0-3で発見）。
 partUsage
-    : visibilityIndicator? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
+    : visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
       'part' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       (':' typeRef=namespacePath)?
@@ -1236,8 +1261,11 @@ flowDef
 // --- フェーズ2: action の item パラメータ (8.2.2.17) ------------------------
 // 参照: SysML.xtext の `ItemUsage`（`ItemUsageKeyword: 'item'`）と
 // `FeatureDirection`（'in' | 'out' | 'inout'）。
+// `individual action def AP1 { ... }`（IndividualTest.sysml）のように、
+// `individual`はaction defのプレフィックス修飾子としても使われる
+// （2026-08-28、参照実装比較レポートP0-3で発見。occurrenceDef参照）。
 actionDef
-    : isAbstract='abstract'? 'action' 'def' simpleName inheritanceClause? ( '{' actionBodyElement* '}' | ';' )
+    : isIndividual='individual'? isAbstract='abstract'? 'action' 'def' simpleName inheritanceClause? ( '{' actionBodyElement* '}' | ';' )
     ;
 
 // `abstract calc getNextState: GetNextState;`（StateSpaceRepresentation.
@@ -1458,8 +1486,11 @@ defaultTargetSuccessionStmt
 // と同じ考え方）。
 // `action <'xxx'> Name { ... }`のように、attributeUsageと同じ配置
 // （キーワード直後・名前の前）でShortName注釈を取りうる。
+// `individual action a : AP1;`/`individual action :>> a : IA2;`
+// （IndividualTest.sysml）のように、`individual`はusage側にも付く
+// プレフィックス修飾子（2026-08-28、参照実装比較レポートP0-3で発見）。
 actionUsageStmt
-    : isThen='then'? visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'action' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
+    : isThen='then'? visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? isRef='ref'? 'action' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       (':' typeRef=ID)?
       multiplicitySpec?

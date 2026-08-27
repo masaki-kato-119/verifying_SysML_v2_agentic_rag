@@ -153,7 +153,15 @@ def test_antlr_single_non_package_element_still_wraps_in_root():
     assert ast == {
         "type": "root",
         "children": [
-            {"type": "part_def", "name": "A", "shortName": None, "inheritance": None, "isAbstract": False, "children": []}
+            {
+                "type": "part_def",
+                "name": "A",
+                "shortName": None,
+                "inheritance": None,
+                "isAbstract": False,
+                "isIndividual": False,
+                "children": [],
+            }
         ],
     }
 
@@ -836,6 +844,7 @@ def test_antlr_action_usage_stmt_bare_matches_old_lark_shape_loosely():
         "guard": None,
         "isAbstract": False,
         "isRef": False,
+        "isIndividual": False,
         "visibility": None,
         "redefines": [],
         "params": [],
@@ -2294,10 +2303,14 @@ def test_antlr_occurrence_usage_direction_name_omitted_and_value():
     assert node["value"] is not None
 
 
-def test_antlr_individual_def_requires_empty_multiplicity_brackets():
-    """IndividualDefinitionはEmptyMultiplicityMember(`[]`)必須。
-    `_check_individual_definition`（linter.py:1466）はmultiplicityが
-    存在しかつsize=Noneであることを要求するため、そのまま満たす形にした。"""
+def test_antlr_individual_def_empty_multiplicity_brackets_optional():
+    """IndividualDefinitionはEmptyMultiplicityMember(`[]`)を持つことが多いが、
+    必須ではない（2026-08-28、参照実装比較レポートP0-3で発見:
+    `individual def IO1;`のように`[]`を省略した公式コーパス実例が存在し、
+    以前は必須にしていたため単なる構文エラーになっていた）。`[]`を省略した
+    場合は"multiplicity": Noneとなり、`_check_individual_definition`
+    （case_and_view_rules.py）が既存の「空の多重度が必要」という
+    LintIssueとして報告する（構文エラーではなく意味検証エラーになる）。"""
     ast = parse_sysml_antlr("individual def A[];")
     assert ast["children"][0] == {
         "type": "individual_def",
@@ -2307,8 +2320,19 @@ def test_antlr_individual_def_requires_empty_multiplicity_brackets():
         "inheritance": None,
         "children": [],
     }
-    # 空の`[]`を省略すると構文エラーになる（EmptyMultiplicityMember必須）。
-    assert parse_sysml_antlr("individual def A;").get("type") == "error"
+    # `[]`を省略しても構文エラーにはならない。multiplicityがNoneになるだけ。
+    bare_ast = parse_sysml_antlr("individual def A;")
+    assert bare_ast.get("type") != "error"
+    assert bare_ast["children"][0] == {
+        "type": "individual_def",
+        "name": "A",
+        "multiplicity": None,
+        "isAbstract": False,
+        "inheritance": None,
+        "children": [],
+    }
+    issues = lint_ast(bare_ast)
+    assert any("空の多重度" in i.message for i in issues if i.severity == "error")
 
 
 def test_antlr_individual_usage_bare_and_typed():

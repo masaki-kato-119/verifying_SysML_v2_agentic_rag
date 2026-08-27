@@ -131,6 +131,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "shortName": ctx.shortName.text if ctx.shortName is not None else None,
             "inheritance": self._inheritance_dict(ctx),
             "isAbstract": ctx.isAbstract is not None,
+            "isIndividual": ctx.isIndividual is not None,
             "children": children,
         }
 
@@ -178,6 +179,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "shortName": ctx.shortName.text if ctx.shortName is not None else None,
             "inheritance": self._inheritance_dict(ctx),
             "isAbstract": ctx.isAbstract is not None,
+            "isIndividual": ctx.isIndividual is not None,
             "children": children,
         }
 
@@ -193,6 +195,9 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # `derived ref item receiverArgument : Expression[0..1] ...`のように
         # `derived`修飾キーワードも持つ（SysML.sysml、177件）。
         node["isDerived"] = ctx.isDerived is not None
+        # `individual item ii : II1;`のようなプレフィックス修飾子（2026-08-28、
+        # 参照実装比較レポートP0-3で発見）。
+        node["isIndividual"] = ctx.isIndividual is not None
         return node
 
     def visitRequirementUsage(self, ctx: SysMLMinParser.RequirementUsageContext) -> Dict:
@@ -412,6 +417,9 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "isAbstract": ctx.isAbstract is not None,
             "isConstant": ctx.isConstant is not None,
             "isRef": ctx.isRef is not None,
+            # `individual part p : IP1;`のようなプレフィックス修飾子
+            # （2026-08-28、参照実装比較レポートP0-3で発見）。
+            "isIndividual": ctx.isIndividual is not None,
             "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
             "redefines": redefines,
             "expression": self.visit(ctx.value) if ctx.value is not None else None,
@@ -552,6 +560,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "name": _simple_name_text(ctx.simpleName()),
             "inheritance": self._inheritance_dict(ctx),
             "isAbstract": ctx.isAbstract is not None,
+            "isIndividual": ctx.isIndividual is not None,
             "params": params,
             "children": children,
         }
@@ -769,6 +778,9 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "guard": self.visit(ctx.guard) if ctx.guard is not None else None,
             "isAbstract": ctx.isAbstract is not None,
             "isRef": ctx.isRef is not None,
+            # `individual action a : AP1;`のようなプレフィックス修飾子
+            # （2026-08-28、参照実装比較レポートP0-3で発見）。
+            "isIndividual": ctx.isIndividual is not None,
             "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
             "redefines": redefines,
             "params": params,
@@ -1922,7 +1934,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return {
             "type": "occurrence_def",
             "name": _simple_name_text(ctx.simpleName()),
-            "isIndividual": False,
+            "isIndividual": ctx.isIndividual is not None,
             "isAbstract": ctx.isAbstract is not None,
             "inheritance": self._inheritance_dict(ctx),
             "children": children,
@@ -1949,11 +1961,17 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         }
 
     def visitIndividualDef(self, ctx: SysMLMinParser.IndividualDefContext) -> Dict:
+        # `[]`（EmptyMultiplicityMember）は省略されることがある（`individual
+        # def IO1;`、IndividualTest.sysml。2026-08-28、参照実装比較レポート
+        # P0-3で発見）。省略時は"multiplicity": Noneとし、
+        # `_check_individual_definition`（case_and_view_rules.py）が
+        # 既存の「空の多重度が必要」というLintIssueとして報告する。
         children = [self.visit(el) for el in ctx.partBodyElement()]
+        multiplicity = {"size": None, "is_ordered": False, "is_unique": True} if ctx.emptyMult is not None else None
         return {
             "type": "individual_def",
             "name": _simple_name_text(ctx.simpleName()),
-            "multiplicity": {"size": None, "is_ordered": False, "is_unique": True},
+            "multiplicity": multiplicity,
             "isAbstract": ctx.isAbstract is not None,
             "inheritance": self._inheritance_dict(ctx),
             "children": children,
