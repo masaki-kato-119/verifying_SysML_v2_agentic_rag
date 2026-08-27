@@ -1,0 +1,48 @@
+{
+  "mcpServers": {
+    "Hybrid RAG MCP Server": {
+      "command": "python",
+      "args": ["HybridRAG/mcp_server.py"],
+      "cwd": ".",
+      "env": {"OPENAI_API_KEY": "$OPENAI_API_KEY"},
+      "hide_tool_params": {
+        "hybrid_search": [
+          "use_query_expansion",
+          "use_rerank",
+          "rerank_top_k",
+          "use_mmr",
+          "mmr_lambda",
+          "mmr_top_k",
+          "use_evidence_extraction",
+          "evidence_max_depth",
+          "graph_seed_k",
+          "graph_max_neighbors",
+          "graph_neighbor_weight",
+          "parallel",
+          "dynamic_weight"
+        ]
+      }
+    },
+    "Graph RAG MCP Server": {
+      "command": "python",
+      "args": ["GraphRAG/mcp_server.py"],
+      "cwd": ".",
+      "env": {"OPENAI_API_KEY": "$OPENAI_API_KEY"},
+      "expose_tools": [
+        "smart_search",
+        "search_graph",
+        "explore_graph",
+        "find_path",
+        "find_entry_points",
+        "get_source_text",
+        "get_edge_source_text"
+      ]
+    },
+    "SysML v2 Checker": {
+      "command": "python",
+      "args": ["sysml_v2_checker_advanced/mcp_server.py"],
+      "cwd": ".",
+      "env": {}
+    }
+  }
+}

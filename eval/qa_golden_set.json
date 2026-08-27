@@ -1,0 +1,277 @@
+{
+  "description": "回答精度・検索精度・引用整合性・棄却率を測定するための正解ラベル付きQ&Aセット。SysML_Language_Specification_v2.pdf（HybridRAG: HybridRAG/data/sqlite.db、GraphRAG: GraphRAG/data/graphs/SysML_Language_Specification_v2.pkl）に実際に索引済みの内容のみから作成している。",
+  "reviewed_by_domain_expert": true,
+  "review_note": "【2026-08-24 ドメインレビュー実施済み】全20問についてrelevant_chunk_ids・expected_answer・expected_graph_path・expected_neighborsを実データと突き合わせて検証した。(1) hybrid系11問(qa-hybrid-01〜06/qa-paraphrase-01,02/qa-attribution-01,02/qa-negative-01,02)はHybridRAG/data/sqlite.dbの該当chunk_index本文をSQLiteで直接読み出し、expected_answerの引用文言が実チャンク本文（SysML v2仕様書原文）と一致することを確認した。(2) graph系7問(qa-graph-01〜05/qa-paraphrase-03/qa-attribution-02)はGraphRAG/data/graphs/SysML_Language_Specification_v2.pklをnetworkxで直接ロードし、query_engine.find_pathと同じ`nx.shortest_path`（DiGraph、フィルタなし）・`in_edges`/`out_edges`で再計算し、expected_graph_path/expected_neighbors全件が現在のグラフの実出力と一致することを確認した（port: outgoing6件/incoming4件、constraintは初稿の記録漏れ修正後のincoming15件を含め一致）。(3) qa-negative-01/02の架空要素名(FlowActionDefinition, ProbabilisticRequirementUsage)はchunk_text全文検索で0件ヒットを確認した。修正が必要な誤りは見つからなかった。なお、グラフ抽出そのものの意味的な粗さ（例: 'port'が'constraint'や'case'の直下にis-aで繋がる）はgraph抽出品質の課題であり、golden setの正誤とは別課題として引き続き扱う（下記の元メモ参照）。\n\n【元メモ（下書き作成時）】relevant_chunk_ids・expected_graph_path・expected_answer は、vector_search/hybrid_search/find_path の実出力を人手で確認して作成した下書きだった。特にgraph系ケースはGraphRAGの抽出グラフが102ノードと小規模かつ一部is-a関係が意味的に粗いため、expected_graph_pathは「SysML的に正しい階層」ではなく「現在のグラフが実際に返す経路」を写し取ったものである。グラフ抽出品質そのものの評価は別課題として扱う。",
+  "chunk_id_format_note": "relevant_chunk_ids は hybrid_search が返す chunk_id（例: '<絶対パス>::chunk-1769'）の末尾の整数（chunk_index）のみを記録している。絶対パスは索引時の一時アップロード先に依存し環境非依存ではないため、比較は末尾の数値（もしくは metadata.chunk_index）で行うこと。",
+  "backends": {
+    "hybrid": "Hybrid RAG MCP Server",
+    "graph": "Graph RAG MCP Server",
+    "either": "どちらでもよい（両方が妥当な場合）"
+  },
+  "cases": [
+    {
+      "id": "qa-hybrid-01",
+      "category": "definition",
+      "query": "SysML v2 における Port Definition の定義を、仕様書の原文を引用して説明してください。",
+      "expected_backend": "hybrid",
+      "answerable": true,
+      "relevant_chunk_ids": [1169, 1415],
+      "expected_answer": "A PortDefinition is a kind of OccurrenceDefinition and a kind of KerML Structure（8.4.8.1 Port Definitions）。Port は Part との接続点を表す最も一般的なクラスで、すべての PortDefinition の基底型となる（9.2.5.2.1 Port）。",
+      "notes": "chunk-1169(§8.4.8.1)が主要根拠、chunk-1415(§9.2.5.2.1)は基底クラスの補足。"
+    },
+    {
+      "id": "qa-hybrid-02",
+      "category": "cross-clause",
+      "query": "action definition と action usage の違いを、複数の条項を横断して整理してください。",
+      "expected_backend": "hybrid",
+      "answerable": true,
+      "relevant_chunk_ids": [1220, 1224],
+      "expected_answer": "ActionDefinition は OccurrenceDefinition と KerML Behavior の一種（8.4.13.1 Action Definitions）。ActionUsage は OccurrenceUsage と KerML Step の一種（8.4.13.2 Action Usages）。前者は振る舞いの型そのものの定義、後者はその型の使用（インスタンス的な出現）を表す。",
+      "notes": "chunk-1220(§8.4.13.1)とchunk-1224(§8.4.13.2)の2条文を横断する必要がある。"
+    },
+    {
+      "id": "qa-hybrid-03",
+      "category": "cross-clause",
+      "query": "PartDefinition は ItemDefinition とどのような関係にありますか。仕様書の原文を挙げて説明してください。",
+      "expected_backend": "hybrid",
+      "answerable": true,
+      "relevant_chunk_ids": [1156, 1162],
+      "expected_answer": "A PartDefinition is a kind of ItemDefinition（8.4.7.1 Part Definitions）。ItemDefinition 自体は OccurrenceDefinition と KerML Structure の一種（8.4.6.1 Item Definitions）であり、PartDefinition は ItemDefinition の一般的意味制約をすべて継承したうえで追加の特殊化制約（checkPartDefinitionSpecialization）を持つ。",
+      "notes": "chunk-1156(§8.4.6.1)とchunk-1162(§8.4.7.1)の両方が必要。"
+    },
+    {
+      "id": "qa-hybrid-04",
+      "category": "notation-example",
+      "query": "connection def のテキストノーテーション例（end member の定義を含むもの）を仕様書から探して提示してください。",
+      "expected_backend": "hybrid",
+      "answerable": true,
+      "relevant_chunk_ids": [1179],
+      "expected_answer": "8.4.9.1 Connection Definitions 付近のコード例: `connection def C specializes Connections::Connection { end ref e1 subsets Links::Link::participant; end ref e2 subsets Links::Link::participant; end ref e3 subsets Links::Link::participant; }`。",
+      "notes": "chunk-1179に実際のコード例あり。"
+    },
+    {
+      "id": "qa-hybrid-05",
+      "category": "notation-example",
+      "query": "join ノードを使った制御フローのテキストノーテーション例を仕様書から探してください。",
+      "expected_backend": "hybrid",
+      "answerable": true,
+      "relevant_chunk_ids": [1239],
+      "expected_answer": "8.4.13.4 Control Nodes 付近のコード例: `action def A1 { action a1; action a2; succession s1 first a1[1..1] then j[1..1]; succession s2 first a2[1..1] then j[1..1]; join j; succession s3 first j[1..1] then a3; action a3; }`。",
+      "notes": "chunk-1239に実際のコード例あり。"
+    },
+    {
+      "id": "qa-hybrid-06",
+      "category": "definition",
+      "query": "SatisfyRequirementUsage の定義を仕様書の原文を引用して説明してください。",
+      "expected_backend": "hybrid",
+      "answerable": true,
+      "relevant_chunk_ids": [1032],
+      "expected_answer": "A SatisfyRequirementUsage is an AssertConstraintUsage that asserts, by default, that a satisfiedRequirementUsage is true for a specific satisfyingFeature（8.3.21.10 SatisfyRequirementUsage）。isNegated=true の場合は該当RequirementUsageが偽であることを主張する。",
+      "notes": "chunk-1032が主要根拠。"
+    },
+    {
+      "id": "qa-graph-01",
+      "category": "relation-traversal",
+      "query": "'action' という概念から 'action definition' に至る経路を、関係の種類を示しながら説明してください。",
+      "expected_backend": "graph",
+      "answerable": true,
+      "expected_graph_path": {
+        "start_node": "action",
+        "end_node": "action definition",
+        "nodes": ["action", "usage", "action definition"],
+        "relations": ["is-a", "is-a"]
+      },
+      "notes": "find_path(start_node='action', end_node='action definition') で実際に確認済み。"
+    },
+    {
+      "id": "qa-graph-02",
+      "category": "relation-traversal",
+      "query": "'requirement' と 'requirement usage' の関係を経路として示してください。",
+      "expected_backend": "graph",
+      "answerable": true,
+      "expected_graph_path": {
+        "start_node": "requirement",
+        "end_node": "requirement usage",
+        "nodes": ["requirement", "requirement usage"],
+        "relations": ["satisfies"]
+      },
+      "notes": "find_path(start_node='requirement', end_node='requirement usage') で確認済み。1ホップの直接関係。"
+    },
+    {
+      "id": "qa-graph-03",
+      "category": "relation-traversal",
+      "query": "'partdefinition' から 'item definition' に至る経路を示してください。",
+      "expected_backend": "graph",
+      "answerable": true,
+      "expected_graph_path": {
+        "start_node": "part definition",
+        "end_node": "item definition",
+        "nodes": ["part definition", "element", "namespace", "definition", "item definition"],
+        "relations": ["is-a", "is-a", "is-a", "is-a"]
+      },
+      "notes": "find_path(start_node='part definition', end_node='item definition') で確認済み。SysML的に自然な階層ではなく抽出グラフの実際の経路（review_note参照）。2026-08-24のa4_graph_path_precision対応で、連結スペル'partdefinition'は分かち書き'part definition'へ統合された（表記ゆれ重複ノードの解消）ため、開始ノード名を更新した。"
+    },
+    {
+      "id": "qa-graph-04",
+      "category": "neighborhood",
+      "query": "'port' に直接関係する概念を列挙し、それぞれの関係の種類を示してください。",
+      "expected_backend": "graph",
+      "answerable": true,
+      "expected_neighbors": {
+        "node": "port",
+        "outgoing": [
+          {"relation": "is-a", "target": "port usage"},
+          {"relation": "is-a", "target": "reference"},
+          {"relation": "is-a", "target": "constraint"},
+          {"relation": "is-a", "target": "case"},
+          {"relation": "is-a", "target": "redefines"},
+          {"relation": "is-a", "target": "state"}
+        ],
+        "incoming": [
+          {"relation": "defines", "source": "action usage"},
+          {"relation": "is-a", "source": "interface"},
+          {"relation": "is-a", "source": "case"},
+          {"relation": "defines", "source": "package"}
+        ]
+      },
+      "notes": "networkxグラフの'port'ノードのout_edges/in_edgesを直接確認して記録。explore_graph/query_graphツール経由の出力形式との突き合わせが必要。"
+    },
+    {
+      "id": "qa-graph-05",
+      "category": "neighborhood",
+      "query": "'constraint' に直接関係する概念（1ホップ）を列挙してください。",
+      "expected_backend": "graph",
+      "answerable": true,
+      "expected_neighbors": {
+        "node": "constraint",
+        "outgoing": [
+          {"relation": "is-a", "target": "redefines"},
+          {"relation": "is-a", "target": "specializes"},
+          {"relation": "is-a", "target": "usage"},
+          {"relation": "is-a", "target": "model"},
+          {"relation": "is-a", "target": "feature"},
+          {"relation": "is-a", "target": "action"},
+          {"relation": "is-a", "target": "calculation definition"},
+          {"relation": "is-a", "target": "attribute"}
+        ],
+        "incoming": [
+          {"relation": "defines", "source": "case"},
+          {"relation": "is-a", "source": "requirement"},
+          {"relation": "is-a", "source": "usage"},
+          {"relation": "is-a", "source": "model"},
+          {"relation": "is-a", "source": "port"},
+          {"relation": "is-a", "source": "specializes"},
+          {"relation": "is-a", "source": "action usage"},
+          {"relation": "is-a", "source": "feature"},
+          {"relation": "defines", "source": "package"},
+          {"relation": "is-a", "source": "action"},
+          {"relation": "is-a", "source": "dependency"},
+          {"relation": "is-a", "source": "redefines"},
+          {"relation": "is-a", "source": "element"},
+          {"relation": "is-a", "source": "duration"},
+          {"relation": "is-a", "source": "attribute"}
+        ]
+      },
+      "notes": "networkxグラフの'constraint'ノードのout_edges/in_edges(全15件)を直接確認して記録。初稿ではin_edgesを8件で打ち切っていたため、retrieval評価スクリプトの初回実行でincoming precisionが0.53と誤って低く出た（golden set側の記録漏れが原因、検索側のバグではない）。2026-08-24のa4_graph_path_precision対応で、連結スペル'calculationdefinition'は分かち書き'calculation definition'へ統合された（表記ゆれ重複ノードの解消）ため、outgoingの対象ノード名を更新した。"
+    },
+    {
+      "id": "qa-paraphrase-01",
+      "category": "paraphrase",
+      "query": "接続点を表すSysML v2の型は何と呼ばれ、どのように定義されていますか。",
+      "expected_backend": "hybrid",
+      "answerable": true,
+      "relevant_chunk_ids": [1169, 1415],
+      "expected_answer": "qa-hybrid-01と同一（PortDefinition, 8.4.8.1 / Port, 9.2.5.2.1）。語形が一致しない言い換えでも同じチャンクを引けるかを確認する。",
+      "paraphrase_of": "qa-hybrid-01",
+      "notes": "一貫性測定用。qa-hybrid-01と同じ正解チャンクを期待する。"
+    },
+    {
+      "id": "qa-paraphrase-02",
+      "category": "paraphrase",
+      "query": "PartDefinition は、仕様書の抽象構文上どの種類の Definition を特殊化しており、そこから一般意味制約（general semantic constraints）を継承していますか。",
+      "expected_backend": "hybrid",
+      "answerable": true,
+      "relevant_chunk_ids": [1156, 1162],
+      "expected_answer": "qa-hybrid-03と同一（PartDefinition is a kind of ItemDefinition, 8.4.7.1 / 8.4.6.1）。",
+      "paraphrase_of": "qa-hybrid-03",
+      "notes": "一貫性測定用。qa-hybrid-03と同じ正解チャンクを期待する。2026-08-11の初回実行で旧文言（『どのより一般的な型を特殊化したものですか』）が曖昧だったと判明: モデルが仕様上別に正しい『PartDefinitionはライブラリ要素Parts::Partを特殊化する』という側面で回答し、judgeがcorrectness=1と誤って低評価した。ItemDefinitionへのメタクラスレベルの一般化を明示的に問う形に修正した（旧文言・旧結果はeval/results/answer_20260811T123819Z.jsonに残る）。"
+    },
+    {
+      "id": "qa-paraphrase-03",
+      "category": "paraphrase",
+      "query": "'requirement' の充足関係（satisfies）がつながる先のノードを教えてください。",
+      "expected_backend": "graph",
+      "answerable": true,
+      "expected_graph_path": {
+        "start_node": "requirement",
+        "end_node": "requirement usage",
+        "nodes": ["requirement", "requirement usage"],
+        "relations": ["satisfies"]
+      },
+      "paraphrase_of": "qa-graph-02",
+      "notes": "一貫性測定用。qa-graph-02と同じ経路を期待する。"
+    },
+    {
+      "id": "qa-negative-01",
+      "category": "no-evidence",
+      "query": "SysML v2 の 'FlowActionDefinition' という要素の定義を教えてください。",
+      "expected_backend": "either",
+      "answerable": false,
+      "expected_answer": null,
+      "notes": "'FlowActionDefinition' は仕様書に存在しない架空の要素名（vector_search/hybrid_searchで確認済み、類似語のFlowDefinition/MessageActionしかヒットしない）。「根拠不在」「検証不能」と明示し、存在しない定義を創作しないことを確認する。"
+    },
+    {
+      "id": "qa-negative-02",
+      "category": "no-evidence",
+      "query": "'ProbabilisticRequirementUsage' という要素はSysML v2に存在しますか。存在する場合はその定義を教えてください。",
+      "expected_backend": "either",
+      "answerable": false,
+      "expected_answer": null,
+      "notes": "'ProbabilisticRequirementUsage' は仕様書に存在しない架空の要素名（確認済み）。「存在しない」ことを正しく報告できるかを確認する。"
+    },
+    {
+      "id": "qa-negative-03",
+      "category": "false-premise",
+      "query": "SysML v2 では requirement definition から自動的にテストコードが生成されると仕様書に明記されていますが、その該当箇所を示してください。",
+      "expected_backend": "either",
+      "answerable": false,
+      "expected_answer": null,
+      "notes": "偽の前提（自動テストコード生成の明記）を含む設問。仕様書にそのような記述は無い（確認済み）。前提を鵜呑みにせず根拠不在を報告できるかを確認する。"
+    },
+    {
+      "id": "qa-negative-04",
+      "category": "out-of-scope",
+      "query": "SysML v2 仕様書に基づいて、UML 2.5 のシーケンス図の構文要素をすべて列挙してください。",
+      "expected_backend": "either",
+      "answerable": false,
+      "expected_answer": null,
+      "notes": "索引されているのはSysML v2仕様書のみで、UML 2.5シーケンス図の構文要素はスコープ外。範囲外の質問に対して一般知識で答えず「根拠不在」を報告できるかを確認する。"
+    },
+    {
+      "id": "qa-attribution-01",
+      "category": "attribution",
+      "query": "action usage の定義を示し、参照した仕様書の chunk_id とツール名を明記してください。",
+      "expected_backend": "hybrid",
+      "answerable": true,
+      "relevant_chunk_ids": [1224],
+      "expected_answer": "An ActionUsage is a kind of OccurrenceUsage and a kind of KerML Step（8.4.13.2、chunk-1224）。実際に呼び出したツール名（例: hybrid_rag_mcp_server__hybrid_search）とともに明記されていること。",
+      "notes": "引用整合性チェック用。回答中のchunk-IDが実際にそのターンのツール出力に含まれるIDと一致するかを検証する。"
+    },
+    {
+      "id": "qa-attribution-02",
+      "category": "collaboration",
+      "query": "'requirement' について、仕様書の原文による定義と、他概念との関係（グラフ上の経路）の両方を示してください。",
+      "expected_backend": "either",
+      "answerable": true,
+      "relevant_chunk_ids": [1328],
+      "expected_graph_path": {
+        "start_node": "requirement",
+        "end_node": "requirement usage",
+        "nodes": ["requirement", "requirement usage"],
+        "relations": ["satisfies"]
+      },
+      "expected_answer": "原文定義: A RequirementDefinition is a kind of ConstraintDefinition（8.4.17.1、chunk-1328）。関係: requirement -[satisfies]-> requirement usage。",
+      "notes": "hybridとgraph両方のツールが1ターン内で呼ばれることを期待する協調確認ケース。既存either-02と同種だがトピックを変えている。"
+    }
+  ]
+}

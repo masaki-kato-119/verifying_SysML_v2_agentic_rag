@@ -1,0 +1,122 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentic-rag"
+version = "0.1.0"
+description = "SysML v2 仕様検証のための Hybrid RAG / Graph RAG / SysML v2 Checker（MCP サーバ群）"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+
+# 実行時依存。バージョン下限は動作確認済みの環境に合わせている。
+# ここが依存関係の唯一の定義元。各サブディレクトリの requirements.txt は廃止した。
+dependencies = [
+    "chromadb>=1.4",          # HybridRAG ベクトルストア
+    "fastmcp>=2.14",          # MCP サーバ/クライアント実装
+    "mcp>=1.26",              # 旧 API へのフォールバック経路で直接 import している
+    "antlr4-python3-runtime>=4.13,<4.14",  # SysML v2 文法パーサ（生成コードの実行に必要。Java不要）
+    "networkx>=3.4",          # グラフ表現
+    "nltk>=3.9",              # 英語形態素解析
+    "sudachipy>=0.6.10",      # 日本語形態素解析
+    "sudachidict-core>=20230110",
+    "openai>=2.0",
+    "sentence-transformers>=5.0",
+    "pypdf>=6.0",             # PDF テキスト抽出
+    "pdfplumber>=0.11",
+    "python-docx>=1.2",       # 文書取り込み（docx/xlsx/pptx）
+    "openpyxl>=3.1",
+    "python-pptx>=1.0",
+    # 2026-08-24: NumPy 1.x 固定を撤廃した。当初の理由（sentence-transformers が
+    # NumPy 1.x 前提）は ST 5.x で解消済みで、かつ NumPy 1.x は Python 3.13 用の
+    # wheel が無くソースビルドに落ちる（Windows・非ASCIIパス環境ではビルド自体が
+    # 失敗する）ため、1.x に固定する方が実害が大きいと判断した。
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.21",
+    "pytest-cov>=4.0",
+    "ruff>=0.8",
+]
+docs = [
+    "sphinx>=7.0",
+    "sphinx-rtd-theme>=2.0",
+    "sphinx-autodoc-typehints>=1.24",
+]
+
+[tool.setuptools]
+# 各サブディレクトリのパッケージは同名の実ディレクトリに対応していないため
+# (例: rag は HybridRAG/rag 配下)、自動探索ではなく package-dir で明示的に
+# マッピングする。mcp_server.py 群はスクリプトとして直接実行する前提のため
+# パッケージには含めない(mcp_servers.json 参照)。
+package-dir = { "rag" = "HybridRAG/rag", "graphrag" = "GraphRAG/graphrag" }
+packages = [
+    "rag",
+    "graphrag",
+    "sysml_v2_checker_advanced",
+    "sysml_v2_checker_advanced.antlr",
+    "sysml_v2_checker_advanced.antlr.generated",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+exclude = [
+    ".git",
+    ".ruff_cache",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "backup",
+    "sysml_v2_checker_advanced/antlr/generated",  # ANTLR4の自動生成コード。手で編集しない
+]
+
+[tool.ruff.lint]
+# E4/E7/E9: pycodestyle（構文に近いエラー）, F: Pyflakes, I: import 順（自動修正可）,
+# S110: try-except-pass（例外の握りつぶし）、BLE001: blind-except。
+# W（空白）は差分が大きい割に情報価値が低いため引き続き未採用。
+#
+# BLE001は2026-08-24に全99件（対象外のadas-sysmlv2-main・backup/を除く）を精査済み。
+# 具体的な例外型に絞り込めた箇所は絞り込み、MCPツール境界やLLM/embedding呼び出し・
+# スレッドワーカーなど「何が起きても呼び出し元をクラッシュさせてはならない」意図的な
+# 広い捕捉は`# noqa: BLE001`＋理由コメントを付けて残した。今後B（bugbear）→C901（複雑度）
+# の順で追加を検討する。
+select = ["E4", "E7", "E9", "F", "I", "S110", "BLE001"]
+ignore = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "HybridRAG", "GraphRAG"]
+asyncio_mode = "auto"
+addopts = "-q"
+
+[tool.coverage.run]
+branch = false
+source = ["."]
+omit = [
+    "*/venv/*",
+    "*/.venv/*",
+    "*/tests/*",
+    "scripts/*",
+]
+
+[tool.coverage.report]
+# 水増しのための omit は使わない。目標率は実測で上げたのち fail_under を引き上げる。
+# 2026-08-24時点の実測 TOTAL は64%（t5/t6でHybridRAG/rag・GraphRAG/graphragの
+# 未テストモジュールにテストを追加した後の値）。回帰防止のため、実測値から
+# 数ポイントの余裕を持たせた60%を下限とする。今後さらにカバレッジが上がったら
+# 都度この値を引き上げる。
+fail_under = 60
+show_missing = true
+skip_empty = true
+# カバレッジ改善の優先順位（高→低）:
+#   1) HybridRAG/rag（chunking 等）
+#   2) GraphRAG
+#   3) sysml_v2_checker_advanced/linter（および parser 経由の結合）
+#   4) その他（openai_call_mcp、expression_type_inference 等）
+# リポジトリ全体の TOTAL は上記を押し上げたあとで。
+# 優先順に沿ったレポート例（HybridRAG → GraphRAG → SysML）:
+#   python -m pytest tests/ -q --cov=rag.chunking --cov=graphrag --cov=sysml_v2_checker_advanced.linter --cov=sysml_v2_checker_advanced.parser --cov-report=term-missing

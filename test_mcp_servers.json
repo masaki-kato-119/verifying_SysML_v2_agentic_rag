@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "SysML v2 Checker": {
+      "command": "python",
+      "args": ["sysml_v2_checker_advanced/mcp_server.py"],
+      "cwd": ".",
+      "env": {}
+    }
+  }
+}

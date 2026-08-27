@@ -1,0 +1,13 @@
+case def InspectVehicle;
+case c;
+analysis def PerformanceAnalysis;
+verification def CheckSafety;
+use case def DriveCar;
+use case uc;
+include use case uc;
+view def SystemView;
+view v;
+viewpoint def SafetyViewpoint;
+rendering def Diagram;
+metadata def CustomMetadata;
+metadata m;

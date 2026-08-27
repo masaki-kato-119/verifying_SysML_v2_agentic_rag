@@ -1,0 +1,585 @@
+{
+  "description": "sysml_v2_checker_advanced（parser + linter）の精度評価用データセット。各ケースはSysMLスニペットと期待される診断結果（severity・メッセージ部分一致）を持つ。LLMを一切使わない決定的な評価のためAPIコストは発生しない。",
+  "review_note": "各ケースの期待値は、実際にparse_sysml()/lint_sysml()を実行して得られた結果を人手で確認しながら作成した。'clean'カテゴリは0件の診断を期待する（誤検出=false positiveの回帰検知用）。'broken'カテゴリは意図的な違反を含み、特定の診断が出ることを期待する（見逃し=false negativeの回帰検知用）。'known_bug'カテゴリは、調査の結果すでに存在すると判明したがこのセッションでは未修正の実バグを記録したもので、pass/fail集計には含めない（現状の（誤った）挙動を追跡するためのものであり、正解ではない）。",
+  "cases": [
+    {
+      "id": "sysml-clean-01",
+      "category": "clean",
+      "description": "part definitionの正しい継承",
+      "sysml": "part def Vehicle;\npart def Car specializes Vehicle;\n",
+      "expected_issue_count": 0
+    },
+    {
+      "id": "sysml-clean-02",
+      "category": "clean",
+      "description": "標準ライブラリ ScalarValues::Real への属性型参照（2026-08-11修正の回帰テスト）",
+      "sysml": "part def Sensor {\n    attribute reading : ScalarValues::Real;\n}\n",
+      "expected_issue_count": 0,
+      "regression_for": "ScalarValues/Time等の標準ライブラリ修飾名を「存在しない型」と誤検出するバグ"
+    },
+    {
+      "id": "sysml-clean-03",
+      "category": "clean",
+      "description": "connection defの正しいend member型参照",
+      "sysml": "port def PA;\nport def PB;\nconnection def C {\n    end refA : PA;\n    end refB : PB;\n}\n",
+      "expected_issue_count": 0
+    },
+    {
+      "id": "sysml-clean-04",
+      "category": "clean",
+      "description": "state defとtransitionの正しい参照（2026-08-11修正の回帰テスト）",
+      "sysml": "state def Switch {\n    entry; then Off;\n    state Off;\n    state On;\n    transition first Off accept TurnOn then On;\n    transition first On accept TurnOff then Off;\n}\n",
+      "expected_issue_count": 0,
+      "regression_for": "state usage（bare `state X;`）がシンボルテーブルに登録されず、有効な遷移先/元でも「存在しない」と誤検出するバグ"
+    },
+    {
+      "id": "sysml-clean-05",
+      "category": "clean",
+      "description": "標準ライブラリ ScalarValues のワイルドカードimport（回帰テスト）",
+      "sysml": "import ScalarValues::*;\n",
+      "expected_issue_count": 0,
+      "regression_for": "ScalarValues/Time等の標準ライブラリパッケージのimportを「存在しないパッケージ」と誤検出するバグ"
+    },
+    {
+      "id": "sysml-clean-06",
+      "category": "clean",
+      "description": "標準ライブラリ Time パッケージの名前付きimport（回帰テスト）",
+      "sysml": "import Time::Instant;\n",
+      "expected_issue_count": 0,
+      "regression_for": "sysml-clean-05と同様"
+    },
+    {
+      "id": "sysml-clean-07",
+      "category": "clean",
+      "description": "port definitionの正しい継承",
+      "sysml": "port def BasePort;\nport def SubPort specializes BasePort;\n",
+      "expected_issue_count": 0
+    },
+    {
+      "id": "sysml-clean-08",
+      "category": "clean",
+      "description": "activity defパラメータの正しい型参照",
+      "sysml": "part def Widget;\nactivity def Act1 {\n    in item x : Widget;\n}\n",
+      "expected_issue_count": 0
+    },
+    {
+      "id": "sysml-broken-01",
+      "category": "broken",
+      "description": "part definitionが存在しない型を継承",
+      "sysml": "part def Car specializes NonExistentBase;\n",
+      "expected_issue_count": 2,
+      "expected_issues": [
+        {
+          "severity": "error",
+          "message_contains": "存在しない型を特殊化しています"
+        },
+        {
+          "severity": "error",
+          "message_contains": "Car' が存在しない型 'NonExistentBase' を継承しています"
+        }
+      ],
+      "notes": "型システム(type_system.py)とlinter.py双方の独立したチェックが同じ違反を別メッセージで検出するため2件になる（重複バグではなく意図した多層チェック）。"
+    },
+    {
+      "id": "sysml-broken-02",
+      "category": "broken",
+      "description": "part instanceが存在しない型を参照",
+      "sysml": "part myCar : UndefinedCarType;\n",
+      "expected_issue_count": 1,
+      "expected_issues": [
+        {
+          "severity": "error",
+          "message_contains": "myCar' が存在しない型 'UndefinedCarType' を参照しています"
+        }
+      ]
+    },
+    {
+      "id": "sysml-broken-03",
+      "category": "broken",
+      "description": "attributeが存在しない型を参照",
+      "sysml": "part def Sensor {\n    attribute reading : UndefinedScalarType;\n}\n",
+      "expected_issue_count": 1,
+      "expected_issues": [
+        {
+          "severity": "warning",
+          "message_contains": "reading' が存在しない型 'UndefinedScalarType' を参照しています"
+        }
+      ]
+    },
+    {
+      "id": "sysml-broken-04",
+      "category": "broken",
+      "description": "存在しないパッケージのワイルドカードimport",
+      "sysml": "import NoSuchPackage::*;\n",
+      "expected_issue_count": 1,
+      "expected_issues": [
+        {
+          "severity": "error",
+          "message_contains": "存在しないパッケージ 'NoSuchPackage'"
+        }
+      ]
+    },
+    {
+      "id": "sysml-broken-05",
+      "category": "broken",
+      "description": "satisfy requirement usageが存在しない要件型を参照",
+      "sysml": "assert satisfiedBy requirement w : UndefinedReq;\n",
+      "expected_issue_count": 1,
+      "expected_issues": [
+        {
+          "severity": "error",
+          "message_contains": "存在しない要件 'UndefinedReq'"
+        }
+      ]
+    },
+    {
+      "id": "sysml-broken-06",
+      "category": "broken",
+      "description": "transitionが存在しないターゲットステートを参照",
+      "sysml": "state def Switch {\n    state Off;\n    transition first Off accept TurnOn then NonExistentState;\n}\n",
+      "expected_issue_count": 1,
+      "expected_issues": [
+        {
+          "severity": "error",
+          "message_contains": "ターゲットステート 'NonExistentState' が存在しません"
+        }
+      ]
+    },
+    {
+      "id": "sysml-broken-07",
+      "category": "broken",
+      "description": "connection defのend memberが存在しない型を参照",
+      "sysml": "connection def C {\n    end refA : UndefinedPortA;\n    end refB : UndefinedPortB;\n}\n",
+      "expected_issue_count": 2,
+      "expected_issues": [
+        {
+          "severity": "error",
+          "message_contains": "refA' が存在しない型 'UndefinedPortA'"
+        },
+        {
+          "severity": "error",
+          "message_contains": "refB' が存在しない型 'UndefinedPortB'"
+        }
+      ]
+    },
+    {
+      "id": "sysml-broken-08",
+      "category": "broken",
+      "description": "port definitionが存在しない型を継承",
+      "sysml": "port def SubPort specializes UndefinedPort;\n",
+      "expected_issue_count": 2,
+      "expected_issues": [
+        {
+          "severity": "error",
+          "message_contains": "存在しない型を特殊化しています"
+        },
+        {
+          "severity": "error",
+          "message_contains": "SubPort' が存在しない型 'UndefinedPort' を継承しています"
+        }
+      ],
+      "notes": "sysml-broken-01と同じ理由で2件。"
+    },
+    {
+      "id": "sysml-broken-09",
+      "category": "broken",
+      "description": "activity defパラメータが存在しない型を参照",
+      "sysml": "activity def Act1 {\n    in item x : UndefinedItemType;\n}\n",
+      "expected_issue_count": 1,
+      "expected_issues": [
+        {
+          "severity": "error",
+          "message_contains": "パラメータ 'x' が存在しない型 'UndefinedItemType'"
+        }
+      ]
+    },
+    {
+      "id": "sysml-clean-10",
+      "category": "clean",
+      "description": "part instanceを正しく参照するallocate文（2026-08-20修正の回帰テスト、旧sysml-known-bug-01）",
+      "sysml": "part def A;\npart def B;\npart a : A;\npart b : B;\nallocate a to b;\n",
+      "expected_issue_count": 0,
+      "regression_for": "part_instanceがシンボルテーブルに未登録のため、allocateのfrom/toエンドが正しく定義された参照でも「存在しない」と誤検出するバグ（sysml-known-bug-01）。b3_symbol_table_redesignで、型解決専用のself.symbolsとは別に要素参照専用のself.element_refsを新設し、part_instance等のusage/instanceノードをそちらに登録することで根治した（self.symbolsは型解決のみに使うため、インスタンス名が型名として誤って有効扱いされる副作用は生じない）。"
+    },
+    {
+      "id": "sysml-clean-11",
+      "category": "clean",
+      "description": "item definitionの正しい継承",
+      "sysml": "item def Water;\nitem def Fluid specializes Water;\n",
+      "expected_issue_count": 0
+    },
+    {
+      "id": "sysml-clean-12",
+      "category": "clean",
+      "description": "interface definitionのbare形（継承なし）",
+      "sysml": "interface def IFace;\n",
+      "expected_issue_count": 0
+    },
+    {
+      "id": "sysml-clean-13",
+      "category": "clean",
+      "description": "allocation definitionの正しい継承",
+      "sysml": "allocation def A1;\nallocation def A2 specializes A1;\n",
+      "expected_issue_count": 0
+    },
+    {
+      "id": "sysml-clean-14",
+      "category": "clean",
+      "description": "calculation definitionのbare形",
+      "sysml": "calc def Calc1;\n",
+      "expected_issue_count": 0
+    },
+    {
+      "id": "sysml-clean-15",
+      "category": "clean",
+      "description": "calculation usageの正しい型参照",
+      "sysml": "calc def Calc1;\ncalc c : Calc1;\n",
+      "expected_issue_count": 0
+    },
+    {
+      "id": "sysml-clean-16",
+      "category": "clean",
+      "description": "constraint definitionのbare形",
+      "sysml": "constraint def Con1;\n",
+      "expected_issue_count": 0
+    },
+    {
+      "id": "sysml-clean-17",
+      "category": "clean",
+      "description": "constraint usageの正しい型参照",
+      "sysml": "constraint def Con1;\nconstraint c : Con1;\n",
+      "expected_issue_count": 0
+    },
+    {
+      "id": "sysml-clean-18",
+      "category": "clean",
+      "description": "interface usage（connect付き）の正しいインターフェース型参照",
+      "sysml": "interface def IFace;\npart def PT;\npart a : PT;\npart b : PT;\ninterface x : IFace connect a to b;\n",
+      "expected_issue_count": 0
+    },
+    {
+      "id": "sysml-clean-19",
+      "category": "clean",
+      "description": "multiplicity範囲（下限<=上限）が正しい",
+      "sysml": "part def P;\npart a : P[0..5];\n",
+      "expected_issue_count": 0
+    },
+    {
+      "id": "sysml-clean-20",
+      "category": "clean",
+      "description": "expose文が既存要素を正しく参照",
+      "sysml": "package Pkg {\n    part def X;\n}\nexpose Pkg::X;\n",
+      "expected_issue_count": 0
+    },
+    {
+      "id": "sysml-clean-21",
+      "category": "clean",
+      "description": "dependency文（client/supplierとも存在する要素）",
+      "sysml": "part def A;\npart def B;\ndependency A to B;\n",
+      "expected_issue_count": 0
+    },
+    {
+      "id": "sysml-clean-22",
+      "category": "clean",
+      "description": "binding connector（bind a = b;）",
+      "sysml": "part def PT;\npart a : PT;\npart b : PT;\nbind a = b;\n",
+      "expected_issue_count": 0
+    },
+    {
+      "id": "sysml-clean-23",
+      "category": "clean",
+      "description": "succession（first a then b;、transition外の独立構文）",
+      "sysml": "part def PT;\npart a : PT;\npart b : PT;\nfirst a then b;\n",
+      "expected_issue_count": 0
+    },
+    {
+      "id": "sysml-clean-24",
+      "category": "clean",
+      "description": "connection defのend memberが3個（Nary Connectorの下限内）",
+      "sysml": "port def PA;\nconnection def C {\n    end refA : PA;\n    end refB : PA;\n    end refC : PA;\n}\n",
+      "expected_issue_count": 0
+    },
+    {
+      "id": "sysml-clean-25",
+      "category": "clean",
+      "description": "state defのentry/do/exit actionが正しく発火する（entry_actionのkindフィールド欠落バグ修正済みの回帰テスト）",
+      "sysml": "action act1;\naction act2;\naction act3;\nstate def S {\n    entry act1;\n    do act2;\n    exit act3;\n}\n",
+      "expected_issue_count": 0,
+      "regression_for": "entry_actionにkindフィールドが無く_check_state_actionsが常にERRORを出していたバグ（sysml_v2_checker_advanced/COVERAGE.md参照、修正済み）"
+    },
+    {
+      "id": "sysml-clean-26",
+      "category": "clean",
+      "description": "state defの入れ子（nested state def）とbare形state usage",
+      "sysml": "state def Outer {\n    state def Inner {\n        entry; then A;\n        state A;\n    }\n}\n",
+      "expected_issue_count": 0
+    },
+    {
+      "id": "sysml-clean-27",
+      "category": "clean",
+      "description": "case/analysis/verification/use_case/include_use_case/view/viewpoint/rendering/metadata/assert_constraint_usageの各usageが名前ありで正しく通る（束ねて1ケースにまとめた。いずれも現行パーサーではsimpleNameが文法上必須なため名前欠落エラーは到達不能。8.2.2.22-27, 8.2.2.20参照）",
+      "sysml": "case def Case1;\ncase c specializes Case1;\nanalysis def AC1;\nanalysis a specializes AC1;\nverification def VC1;\nverification v specializes VC1;\nuse case def UC1;\nuse case u specializes UC1;\ninclude use case inc;\nview def V1;\nview vw specializes V1;\nviewpoint def VP1;\nviewpoint vp specializes VP1;\nrendering def R1;\nrendering rd specializes R1;\nmetadata def M1;\nmetadata m specializes M1;\nassert constraint ac;\n",
+      "expected_issue_count": 0
+    },
+    {
+      "id": "sysml-broken-10",
+      "category": "broken",
+      "description": "item definitionが存在しない型を継承",
+      "sysml": "item def Fluid specializes NonExistentItem;\n",
+      "expected_issue_count": 2,
+      "expected_issues": [
+        {
+          "severity": "error",
+          "message_contains": "存在しない型を特殊化しています"
+        },
+        {
+          "severity": "error",
+          "message_contains": "Fluid' が存在しない型 'NonExistentItem' を継承しています"
+        }
+      ],
+      "notes": "sysml-broken-01と同じ理由（型システムとlinter.py双方の多層チェック）で2件。"
+    },
+    {
+      "id": "sysml-broken-11",
+      "category": "broken",
+      "description": "interface definitionが存在しない型を継承",
+      "sysml": "interface def IFace2 specializes NonExistentIface;\n",
+      "expected_issue_count": 2,
+      "expected_issues": [
+        {
+          "severity": "error",
+          "message_contains": "存在しない型を特殊化しています"
+        },
+        {
+          "severity": "error",
+          "message_contains": "IFace2' が存在しない型 'NonExistentIface' を継承しています"
+        }
+      ]
+    },
+    {
+      "id": "sysml-broken-12",
+      "category": "broken",
+      "description": "interface usageが存在しないインターフェース型を参照",
+      "sysml": "part def PT;\npart a : PT;\npart b : PT;\ninterface x : UndefinedIFace connect a to b;\n",
+      "expected_issue_count": 1,
+      "expected_issues": [
+        {
+          "severity": "error",
+          "message_contains": "存在しないインターフェース 'UndefinedIFace'"
+        }
+      ]
+    },
+    {
+      "id": "sysml-broken-13",
+      "category": "broken",
+      "description": "allocation definitionが存在しない型を継承",
+      "sysml": "allocation def A3 specializes NonExistentAlloc;\n",
+      "expected_issue_count": 2,
+      "expected_issues": [
+        {
+          "severity": "error",
+          "message_contains": "存在しない型を特殊化しています"
+        },
+        {
+          "severity": "error",
+          "message_contains": "A3' が存在しない型 'NonExistentAlloc' を継承しています"
+        }
+      ]
+    },
+    {
+      "id": "sysml-broken-14",
+      "category": "broken",
+      "description": "calculation definitionが存在しない型を継承",
+      "sysml": "calc def Calc2 specializes NonExistentCalc;\n",
+      "expected_issue_count": 2,
+      "expected_issues": [
+        {
+          "severity": "error",
+          "message_contains": "存在しない型を特殊化しています"
+        },
+        {
+          "severity": "error",
+          "message_contains": "Calc2' が存在しない型 'NonExistentCalc' を継承しています"
+        }
+      ]
+    },
+    {
+      "id": "sysml-broken-15",
+      "category": "broken",
+      "description": "calculation usageが存在しない計算を参照",
+      "sysml": "calc c : UndefinedCalc;\n",
+      "expected_issue_count": 1,
+      "expected_issues": [
+        {
+          "severity": "error",
+          "message_contains": "存在しない計算 'UndefinedCalc'"
+        }
+      ]
+    },
+    {
+      "id": "sysml-broken-16",
+      "category": "broken",
+      "description": "constraint definitionが存在しない型を継承",
+      "sysml": "constraint def Con2 specializes NonExistentConstraint;\n",
+      "expected_issue_count": 2,
+      "expected_issues": [
+        {
+          "severity": "error",
+          "message_contains": "存在しない型を特殊化しています"
+        },
+        {
+          "severity": "error",
+          "message_contains": "Con2' が存在しない型 'NonExistentConstraint' を継承しています"
+        }
+      ]
+    },
+    {
+      "id": "sysml-broken-17",
+      "category": "broken",
+      "description": "constraint usageが存在しない制約を参照",
+      "sysml": "constraint c : UndefinedConstraint;\n",
+      "expected_issue_count": 1,
+      "expected_issues": [
+        {
+          "severity": "error",
+          "message_contains": "存在しない制約 'UndefinedConstraint'"
+        }
+      ]
+    },
+    {
+      "id": "sysml-broken-18",
+      "category": "broken",
+      "description": "循環継承（part defが互いを継承）",
+      "sysml": "part def A specializes B;\npart def B specializes A;\n",
+      "expected_issue_count": 4,
+      "expected_issues": [
+        {
+          "severity": "error",
+          "message_contains": "[型システム] 循環継承が検出されました: A -> B"
+        },
+        {
+          "severity": "error",
+          "message_contains": "[型システム] 循環継承が検出されました: B -> A"
+        },
+        {
+          "severity": "error",
+          "message_contains": "循環継承が検出されました: A -> B"
+        },
+        {
+          "severity": "error",
+          "message_contains": "循環継承が検出されました: B -> A"
+        }
+      ],
+      "notes": "型システム(type_system.py)とlinter.py(_check_inheritance_consistency)双方が独立に循環を検出するため4件になる。"
+    },
+    {
+      "id": "sysml-broken-19",
+      "category": "broken",
+      "description": "multiplicity範囲が無効（下限が上限を超えている）",
+      "sysml": "part def P;\npart a : P[5..2];\n",
+      "expected_issue_count": 1,
+      "expected_issues": [
+        {
+          "severity": "error",
+          "message_contains": "多重度の範囲が無効です: [5..2]"
+        }
+      ]
+    },
+    {
+      "id": "sysml-broken-20",
+      "category": "broken",
+      "description": "expose文が存在しない要素を参照",
+      "sysml": "expose NoSuchThing;\n",
+      "expected_issue_count": 1,
+      "expected_issues": [
+        {
+          "severity": "error",
+          "message_contains": "Expose 'NoSuchThing' が存在しない要素を参照しています"
+        }
+      ]
+    },
+    {
+      "id": "sysml-broken-21",
+      "category": "broken",
+      "description": "port usageが存在しない型を参照",
+      "sysml": "port def PD;\npart def X {\n    port p : UndefinedPortType;\n}\n",
+      "expected_issue_count": 1,
+      "expected_issues": [
+        {
+          "severity": "error",
+          "message_contains": "Port 'p' が存在しない型 'UndefinedPortType' を参照しています"
+        }
+      ]
+    },
+    {
+      "id": "sysml-broken-23",
+      "category": "broken",
+      "description": "connection defのend memberが11個（Nary Connectorの実用上限10を超過）",
+      "sysml": "port def PA;\nconnection def C {\n    end r0 : PA;\n    end r1 : PA;\n    end r2 : PA;\n    end r3 : PA;\n    end r4 : PA;\n    end r5 : PA;\n    end r6 : PA;\n    end r7 : PA;\n    end r8 : PA;\n    end r9 : PA;\n    end r10 : PA;\n}\n",
+      "expected_issue_count": 1,
+      "expected_issues": [
+        {
+          "severity": "warning",
+          "message_contains": "エンド数が 11 個と多すぎます"
+        }
+      ]
+    },
+    {
+      "id": "sysml-broken-24",
+      "category": "broken",
+      "description": "satisfy requirement usage（assert satisfiedBy構文）の正しい要件型参照（旧sysml-clean-09）。b7_orphaned_advanced_rules_rewireで_check_requirement_advanced_rulesを再配線した結果、doc無しのrequirement defに対する新規の推奨警告が正しく発火するようになった",
+      "sysml": "requirement def R;\nassert satisfiedBy requirement w : R;\n",
+      "expected_issue_count": 1,
+      "expected_issues": [
+        {
+          "severity": "warning",
+          "message_contains": "Requirement 'R' はdoc"
+        }
+      ],
+      "notes": "satisfy_requirement_usageのw:R型解決自体は引き続き0件（正しく解決されている）。唯一の診断は_check_requirement_structureが新たに発する「docが無い」推奨警告であり、誤検出ではなく意図通りの新規カバレッジ。"
+    },
+    {
+      "id": "sysml-broken-25",
+      "category": "broken",
+      "description": "requirement defにdocが無い場合の推奨警告（旧sysml-known-bug-02の解決）",
+      "sysml": "requirement def R2;\n",
+      "expected_issue_count": 1,
+      "expected_issues": [
+        {
+          "severity": "warning",
+          "message_contains": "Requirement 'R2' はdoc"
+        }
+      ],
+      "regression_for": "_check_requirement_advanced_rules / _check_analysis_case_advanced_rules / _check_verification_case_advanced_rules / _check_use_case_advanced_rulesがlint()から一切呼ばれておらず到達不能だったバグ（sysml-known-bug-02）。b7_orphaned_advanced_rules_rewireで、(1)self.analysis_cases/self.verification_cases/self.use_casesの初期化・収集を追加（未初期化のままだと呼び出し時にAttributeErrorで即クラッシュしていた）、(2)_check_requirement_structureが読んでいた実在しない'reqBody'キーを実際のAST形状（documentation子ノードの有無）に基づく検証へ書き換え、(3)_check_analysis_case_structure/_check_verification_case_structure/_check_use_case_structureは実在しない'caseBody'キーを読むデッドコードだったため現行文法では検証すべき内容が無いことを明記した上でno-op化、(4)lint()内の欠番だった第9・第12パスとして4関数を再配線、という4段階の修正で根治した。"
+    },
+    {
+      "id": "sysml-clean-28",
+      "category": "clean",
+      "description": "requirement内のdocが名前無しでも正しく通る（旧sysml-broken-22。d7_documentation_stmt_optional_nameでdocMemberをdocumentationStmtへ統一し、identification必須チェックを撤廃したことでこの既知の制約は解消した）",
+      "sysml": "requirement def R {\n    doc /* text */\n}\n",
+      "expected_issue_count": 0,
+      "regression_for": "requirementBodyElement内の名前無しdoc（docMember）が、独立したdocumentationStmt（名前必須）用のidentification必須チェックに引っかかり、正しく書かれたdocでも常に2件（error+warning）誤って診断されていた既知の制約。documentationStmtのsimpleNameを任意化し、docMemberを廃止してdocumentationStmtへ統一、_check_documentation_stmtのidentification必須チェックも撤廃（仕様上任意なため）することで根治した。"
+    },
+    {
+      "id": "sysml-clean-29",
+      "category": "clean",
+      "description": "名前無しのトップレベルdoc（公式SysML v2標準ライブラリで支配的なイディオム。CONFORMANCE_REPORT_2026-08-20.md参照）",
+      "sysml": "doc /* This package provides supporting definitions. */\n",
+      "expected_issue_count": 0,
+      "regression_for": "以前はdocumentationStmtのsimpleNameが文法上必須で、名前無しdocはrequirement内のdocMemberでしか使えなかった。公式標準ライブラリ58ファイル全件がパッケージ本体先頭で名前無しdocを使うため、この制約が事実上コーパス全体をブロックしていた（d7_documentation_stmt_optional_name）。"
+    },
+    {
+      "id": "sysml-broken-26",
+      "category": "broken",
+      "description": "本文が空のdoc（identification任意化後も、空bodyの警告自体は引き続き有効であることの確認）",
+      "sysml": "doc /*   */\n",
+      "expected_issue_count": 1,
+      "expected_issues": [
+        {
+          "severity": "warning",
+          "message_contains": "Documentation の body が空です"
+        }
+      ]
+    }
+  ]
+}

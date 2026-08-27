@@ -1,0 +1,111 @@
+{
+  "description": "バックエンド選択率と正答率を実測するための評価クエリ集。ORCHESTRATION_AUDIT_2026-08-10.md の P3-11 に対応する。",
+  "how_to_use": [
+    "1. openai_call_mcp.py を起動し（全サーバーが同時提示される状態）、各 query をそのまま入力する。",
+    "2. 会話ログを scripts/analyze_backend_usage.py で集計し、expected_backend との一致率を見る。",
+    "3. 一致率が低い場合、原因が (a) プロンプトの指針 (b) ツール説明文 (c) バックエンドの実力 のどれかを切り分ける。"
+  ],
+  "backends": {
+    "hybrid": "Hybrid RAG MCP Server",
+    "graph": "Graph RAG MCP Server",
+    "either": "どちらでもよい（両方が妥当な場合）"
+  },
+  "cases": [
+    {
+      "id": "graph-01",
+      "category": "multi-hop",
+      "query": "SysML v2 の action definition から辿れる上位概念を順にたどって、最上位の定義まで示してください。",
+      "expected_backend": "graph",
+      "rationale": "is-a 関係の連鎖をたどる問い。ベクトル検索では中間ノードが落ちる。",
+      "success_criteria": "経路上の中間ノードが 2 つ以上示され、各ノードの原文が get_source_text で裏付けられている。"
+    },
+    {
+      "id": "graph-02",
+      "category": "relation-traversal",
+      "query": "part definition と item definition の関係を、両者をつなぐ経路として説明してください。",
+      "expected_backend": "graph",
+      "rationale": "2 ノード間の経路探索そのもの。find_path が本来の担当。",
+      "success_criteria": "2 語をつなぐ経路が提示され、経路上の関係種別（is-a / part-of 等）が明示される。"
+    },
+    {
+      "id": "graph-03",
+      "category": "neighborhood",
+      "query": "port に直接関係する概念を列挙し、それぞれどういう関係かを示してください。",
+      "expected_backend": "graph",
+      "rationale": "近傍列挙。チャンク検索では「関係の種類」が出てこない。",
+      "success_criteria": "関係種別つきの隣接概念が列挙される。"
+    },
+    {
+      "id": "graph-04",
+      "category": "entry-point",
+      "query": "『制約』に関する議論を始めるとき、仕様書のどのノードから辿り始めるのが適切ですか。",
+      "expected_backend": "graph",
+      "rationale": "find_entry_points の想定用途。",
+      "success_criteria": "起点ノードが根拠つきで提示される。"
+    },
+    {
+      "id": "hybrid-01",
+      "category": "definition",
+      "query": "SysML v2 における attribute の定義を、仕様書の原文を引用して説明してください。",
+      "expected_backend": "hybrid",
+      "rationale": "単一箇所の定義文の取得。全文検索＋ベクトル検索が最短。",
+      "success_criteria": "原文引用とセクション番号が示される。"
+    },
+    {
+      "id": "hybrid-02",
+      "category": "cross-clause",
+      "query": "action def と action usage の違いを、複数の条項を横断して整理してください。",
+      "expected_backend": "hybrid",
+      "rationale": "複数条文の横断確認。ハイブリッド検索の得意分野。",
+      "success_criteria": "2 つ以上の異なるセクションからの引用が含まれる。"
+    },
+    {
+      "id": "hybrid-03",
+      "category": "notation-example",
+      "query": "fork ノードのテキストノーテーション例を仕様書から探して提示してください。",
+      "expected_backend": "hybrid",
+      "rationale": "表記例そのものの検索。チャンク本文が必要。",
+      "success_criteria": "実際のコード例が chunk_id つきで引用される。"
+    },
+    {
+      "id": "hybrid-04",
+      "category": "paraphrase",
+      "query": "「振る舞いを定義する要素」に相当する記述を仕様書から探してください。",
+      "expected_backend": "hybrid",
+      "rationale": "表現揺れを含む検索。埋め込み検索が有利。",
+      "success_criteria": "語形が一致しない記述を拾えている。"
+    },
+    {
+      "id": "either-01",
+      "category": "verification",
+      "query": "次のモデルが仕様に準拠しているか検証してください: part def Vehicle { attribute mass : Real; }",
+      "expected_backend": "either",
+      "rationale": "検証タスク。根拠条文（hybrid）と構造照合（graph）の併用が理想。",
+      "success_criteria": "判定・根拠・推奨アクションの 3 点が揃い、根拠に実際のツール名が明示される。"
+    },
+    {
+      "id": "either-02",
+      "category": "collaboration",
+      "query": "requirement と satisfy の関係を、仕様の原文と用語間の関係の両面から説明してください。",
+      "expected_backend": "either",
+      "rationale": "両バックエンドの併用を明示的に要求する問い。協調が成立しているかの確認用。",
+      "success_criteria": "1 ターン内で hybrid 系と graph 系の両方のツールが呼ばれている。"
+    },
+    {
+      "id": "negative-01",
+      "category": "no-evidence",
+      "query": "SysML v2 仕様書の Annex Z に定義されている要素を教えてください。",
+      "expected_backend": "either",
+      "rationale": "存在しない条項。根拠不在を正しく報告できるかの確認。",
+      "success_criteria": "「根拠不在」と明示され、条文が創作されていない。"
+    },
+    {
+      "id": "negative-02",
+      "category": "attribution",
+      "query": "いま挙げた根拠は、どのツールでどう取得したものか教えてください。",
+      "expected_backend": "either",
+      "rationale": "誤帰属の検知用。直前の回答に対する追い質問として使う。",
+      "success_criteria": "実際に呼び出したツール名のみが挙げられ、呼んでいないバックエンドを名乗らない。"
+    }
+  ]
+}
