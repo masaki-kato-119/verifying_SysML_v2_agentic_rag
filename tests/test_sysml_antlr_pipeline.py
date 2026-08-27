@@ -1374,6 +1374,7 @@ def test_antlr_double_colon_qualified_reference_targets():
                 "type": "dependency",
                 "clients": ["意図しない車線逸脱の予防"],
                 "suppliers": ["事故の予防::車線逸脱による事故の予防"],
+                "prefixMetadata": [],
                 "children": [],
             },
         ],
@@ -1387,7 +1388,9 @@ def test_antlr_double_colon_qualified_reference_targets():
     plain_dep = parse_sysml_antlr("part def A; part def B; dependency A to B;")
     assert plain_dep["children"][-1] == {
         "type": "special_stmt",
-        "children": [{"type": "dependency", "clients": ["A"], "suppliers": ["B"], "children": []}],
+        "children": [
+            {"type": "dependency", "clients": ["A"], "suppliers": ["B"], "prefixMetadata": [], "children": []}
+        ],
     }
 
 
@@ -2113,13 +2116,59 @@ def test_antlr_dependency_single_and_multi_client_supplier():
     ast_single = parse_sysml_antlr(single)
     assert ast_single["children"][-1] == {
         "type": "special_stmt",
-        "children": [{"type": "dependency", "clients": ["A"], "suppliers": ["B"], "children": []}],
+        "children": [
+            {"type": "dependency", "clients": ["A"], "suppliers": ["B"], "prefixMetadata": [], "children": []}
+        ],
     }
 
     multi = "part def A; part def X; part def B; part def Y; dependency A, X to B, Y;"
     ast_multi = parse_sysml_antlr(multi)
     dependency = ast_multi["children"][-1]["children"][0]
-    assert dependency == {"type": "dependency", "clients": ["A", "X"], "suppliers": ["B", "Y"], "children": []}
+    assert dependency == {
+        "type": "dependency",
+        "clients": ["A", "X"],
+        "suppliers": ["B", "Y"],
+        "prefixMetadata": [],
+        "children": [],
+    }
+
+
+def test_antlr_dependency_prefix_metadata_annotation():
+    """`#refinement dependency X to Y;`のような#Typeプレフィックスメタデータ
+    注釈（2026-08-28、参照実装比較レポートP0-4で発見。apollo-11-sysml-v2の
+    公式サンプルで300件超使われている、最頻出パターン）。複数個も付けられる。"""
+    ast = parse_sysml_antlr("part def A; part def B; #refinement dependency A to B;")
+    dependency = ast["children"][-1]["children"][0]
+    assert dependency["prefixMetadata"] == ["refinement"]
+
+    multi_prefix = parse_sysml_antlr("part def A; part def B; #Foo #Bar::Baz dependency A to B;")
+    dependency2 = multi_prefix["children"][-1]["children"][0]
+    assert dependency2["prefixMetadata"] == ["Foo", "Bar::Baz"]
+
+
+def test_antlr_metadata_usage_at_shorthand():
+    """`@Classified { ... }`/`@Security;`という`metadata`キーワード省略の
+    ショートハンド形（2026-08-28、参照実装比較レポートP0-4で発見）。
+    `@`は以前lexerにトークンとして登録されておらず、遭遇すると
+    token recognition errorになっていた（構文エラーより重症）。"""
+    bare = parse_sysml_antlr("metadata def Classified; part def P { @Security; }")
+    node = bare["children"][-1]["children"][-1]
+    assert node == {
+        "type": "metadata_usage",
+        "name": "Security",
+        "shortName": None,
+        "inheritance": None,
+        "isAbstract": False,
+        "children": [],
+    }
+    with_body = parse_sysml_antlr(
+        "metadata def Classified; part def P { @Classified { attribute level : Integer; } }"
+    )
+    lint_ast(with_body)
+    node2 = with_body["children"][-1]["children"][-1]
+    assert node2["type"] == "metadata_usage"
+    assert node2["name"] == "Classified"
+    assert len(node2["children"]) == 1
 
 
 def test_antlr_event_occurrence_usage_is_new_construct():

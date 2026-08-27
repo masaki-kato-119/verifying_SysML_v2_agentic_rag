@@ -29,6 +29,11 @@ class SysMLMinVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by SysMLMinParser#prefixMetadataAnnotation.
+    def visitPrefixMetadataAnnotation(self, ctx:SysMLMinParser.PrefixMetadataAnnotationContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by SysMLMinParser#dependencyStmt.
     def visitDependencyStmt(self, ctx:SysMLMinParser.DependencyStmtContext):
         return self.visitChildren(ctx)
@@ -199,8 +204,13 @@ class SysMLMinVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
-    # Visit a parse tree produced by SysMLMinParser#metadataUsage.
-    def visitMetadataUsage(self, ctx:SysMLMinParser.MetadataUsageContext):
+    # Visit a parse tree produced by SysMLMinParser#metadataUsageKeyword.
+    def visitMetadataUsageKeyword(self, ctx:SysMLMinParser.MetadataUsageKeywordContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by SysMLMinParser#metadataUsageShorthand.
+    def visitMetadataUsageShorthand(self, ctx:SysMLMinParser.MetadataUsageShorthandContext):
         return self.visitChildren(ctx)
 
 

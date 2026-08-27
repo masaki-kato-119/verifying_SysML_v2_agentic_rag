@@ -1755,8 +1755,19 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
     def visitMetadataDef(self, ctx: SysMLMinParser.MetadataDefContext) -> Dict:
         return self._named_simple_node("metadata_def", ctx)
 
-    def visitMetadataUsage(self, ctx: SysMLMinParser.MetadataUsageContext) -> Dict:
+    def visitMetadataUsageKeyword(self, ctx: SysMLMinParser.MetadataUsageKeywordContext) -> Dict:
         return self._named_simple_node("metadata_usage", ctx)
+
+    def visitMetadataUsageShorthand(self, ctx: SysMLMinParser.MetadataUsageShorthandContext) -> Dict:
+        # `@Classified { ... }`/`@Security;`という`metadata`キーワード省略形。
+        return {
+            "type": "metadata_usage",
+            "name": _namespace_path_text(ctx.typeRef),
+            "shortName": None,
+            "inheritance": None,
+            "isAbstract": False,
+            "children": [self.visit(el) for el in ctx.partBodyElement()],
+        }
 
     # --- フェーズ2続き: comment / documentation / textual representation (8.2.2.4) --
     #
@@ -1890,10 +1901,16 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # 入れ子で返す。identification（名前部分）は無視する。
         clients = [_namespace_path_text(q) for q in ctx.clients.namespacePath()]
         suppliers = [_namespace_path_text(q) for q in ctx.suppliers.namespacePath()]
+        # `#refinement dependency X to Y;`のような#Typeプレフィックス注釈
+        # （2026-08-28、参照実装比較レポートP0-4で発見）。
+        prefix_metadata = [
+            _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
+        ]
         dependency_node = {
             "type": "dependency",
             "clients": clients,
             "suppliers": suppliers,
+            "prefixMetadata": prefix_metadata,
             "children": [],
         }
         return {"type": "special_stmt", "children": [dependency_node]}

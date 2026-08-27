@@ -126,8 +126,18 @@ packageBodyElement
 // （例: `dependency '意図しない車線逸脱の予防' to '事故の予防'::'車線逸脱
 // による事故の予防';`、adas-sysmlv2-main）ため、`.`/`::`両方を受理できる
 // `namespacePathList`を使う（単一セグメント名の出力は不変）。
+// `#Type`プレフィックスメタデータ注釈（PrefixMetadataMember、8.2.2.9）。
+// 公式コーパスでは`#refinement dependency X to Y;`のように`dependency`文の
+// 前に付く形が圧倒的多数（apollo-11-sysml-v2だけで300件超）。他の宣言
+// （enum/attribute/part/connect等）にも同様に付きうるが、まずは実際の
+// 出現頻度が最も高いdependencyStmtに限定して対応する（2026-08-28、
+// 参照実装比較レポートP0-4で発見。他の宣言への拡張は別タスクで追う）。
+prefixMetadataAnnotation
+    : '#' namespacePath
+    ;
+
 dependencyStmt
-    : 'dependency' ( simpleName 'from' )? clients=namespacePathList 'to' suppliers=namespacePathList ';'
+    : prefixMetadataAnnotation* 'dependency' ( simpleName 'from' )? clients=namespacePathList 'to' suppliers=namespacePathList ';'
     ;
 
 // --- event occurrence usage (8.2.2.9) -------------------------------------------
@@ -444,8 +454,15 @@ metadataDef
     : isAbstract='abstract'? 'metadata' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
+// `@Classified { classificationLevel = ...; }`/`@Security;`
+// （MetadataTest.sysml）のように、`metadata`キーワードを省略した
+// `@Type`ショートハンド形も使われる（2026-08-28、参照実装比較レポート
+// P0-4で発見）。`@`はこれまでlexerのどの規則にも登場しないトークンで、
+// 遭遇すると`token recognition error`（構文エラーより重症、エラー回復
+// すら効かない）になっていた。
 metadataUsage
-    : isAbstract='abstract'? 'metadata' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : isAbstract='abstract'? 'metadata' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )  # metadataUsageKeyword
+    | '@' typeRef=namespacePath ( '{' partBodyElement* '}' | ';' )                                        # metadataUsageShorthand
     ;
 
 // --- calculation def / constraint def (8.2.2.19, 8.2.2.20) --------------------
@@ -976,6 +993,11 @@ partBodyElement
     // packageBodyElementだけでなくpartBodyElement内にも書ける
     // （2026-08-28、参照実装比較レポートP0-3で発見）。
     | individualUsage
+    // `ref y { @Classified { ... } @Security; }`（MetadataTest.sysml）
+    // のように、metadataUsage（`metadata X { ... }`および`@X { ... }`
+    // ショートハンド）もpackageBodyElementだけでなくpartBodyElement内に
+    // 書ける（2026-08-28、参照実装比較レポートP0-4で発見）。
+    | metadataUsage
     ;
 
 // 公式コーパスには`ref self: Part :>> Item::self;`や`ref stateSpace:
