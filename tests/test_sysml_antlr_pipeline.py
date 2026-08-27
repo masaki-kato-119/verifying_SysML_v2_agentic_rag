@@ -554,6 +554,56 @@ def test_antlr_transition_full_form_with_trigger_guard_effect():
     assert lint_ast(ast) == []
 
 
+def test_antlr_transition_accept_when_and_at_triggers():
+    """`accept when EXPR`（変化トリガー）/`accept at EXPR`（時刻トリガー）は
+    既存の単純な信号参照トリガーとは別の代替（2026-08-28、参照実装比較
+    レポートP0-5で発見。`5-State-based Behavior-1a.sysml`で確認）。"""
+    when_ast = parse_sysml_antlr(
+        "state def S { state def A; state def B; "
+        "transition first A accept when x > 0 then B; }"
+    )
+    when_transition = when_ast["children"][0]["children"][2]
+    assert when_transition["trigger"] == {
+        "kind": "trigger",
+        "trigger_kind": "when",
+        "expression": {
+            "type": "binary_expr",
+            "op": ">",
+            "left": {"type": "name_ref", "reference": "x"},
+            "right": {"type": "literal", "literal_type": "int", "value": 0},
+        },
+    }
+    assert lint_ast(when_ast) == []
+
+    at_ast = parse_sysml_antlr(
+        "state def S { state def A; state def B; "
+        "transition first A accept at t then B; }"
+    )
+    at_transition = at_ast["children"][0]["children"][2]
+    assert at_transition["trigger"] == {
+        "kind": "trigger",
+        "trigger_kind": "at",
+        "expression": {"type": "name_ref", "reference": "t"},
+    }
+
+
+def test_antlr_transition_do_inline_send_effect():
+    """`do send new 'Over Temp'() to target;`のようなインラインsendアクション
+    （2026-08-28、参照実装比較レポートP0-5で発見）。既存の`do action Y`
+    （既存アクション参照）とは別の代替。"""
+    ast = parse_sysml_antlr(
+        "state def S { state def A; state def B; "
+        "transition first A do send new Signal() to B then B; }"
+    )
+    transition = ast["children"][0]["children"][2]
+    effect = transition["effect"]
+    assert effect["kind"] == "effect"
+    assert effect["send"]["to"] == "B"
+    assert effect["send"]["via"] is None
+    assert effect["send"]["payload"]["type"] == "new_instance"
+    assert lint_ast(ast) == []
+
+
 def test_antlr_transition_undefined_source_state_is_detected():
     """transitionのsource/targetは_find_state_in_symbolsでstate_defとして
     登録された名前しか見つけられない（bare `state X;` usageは未対応）。"""

@@ -1737,11 +1737,34 @@ exitActionMember
 // （例: `transition first Sub::off then Sub::on;`）を取りうるため、
 // qualifiedNameではなくnamespacePathを使う（2026-08-28、参照実装比較
 // レポートP0-1で発見）。
+// `accept when 'sense temperature'.temp > vehicle1_c1.Tmax`（変化トリガー、
+// ChangeTriggerKind）・`accept at vehicle1_c1.maintenanceTime`（時刻トリガー、
+// TimeTriggerKind）は、既存の`trigger=namespacePath`（単純な信号参照）とは
+// 別の代替として持つ（2026-08-28、参照実装比較レポートP0-5で発見。
+// `5-State-based Behavior-1a.sysml`で確認）。
+transitionTrigger
+    : triggerKind=('when' | 'at') triggerExpr=expression
+    | trigger=namespacePath (':' triggerType=namespacePath)? ('via' via=namespacePath)?
+    ;
+
+// `do send new 'Start Signal'() to vehicle1_c1.vehicleController`のように、
+// `do`節は既存アクション参照（`effect=namespacePath`）だけでなく、その場で
+// 組み立てるsendアクションも効果として持てる（2026-08-28、参照実装比較
+// レポートP0-5で発見）。ペイロードは`new X()`（newExpr）等の式一般を
+// 受理する必要があるため、`sendActionStmt`の`payload=namespacePath`
+// （単純参照のみ）は再利用せず、この文脈専用に`expression`を使う。
+// また`sendActionStmt`は独自の`;`終端を持つため、`then`まで続く
+// transitionStmt本体には埋め込めない（終端記号が重複してしまう）。
+transitionEffect
+    : 'send' payload=expression ( 'to' sendTarget=namespacePath | 'via' sendVia=namespacePath )?
+    | ('action')? effect=namespacePath
+    ;
+
 transitionStmt
     : 'transition' simpleName? 'first' source=namespacePath
-      ( 'accept' trigger=namespacePath (':' triggerType=namespacePath)? ('via' via=namespacePath)? )?
+      ( 'accept' transitionTrigger )?
       ( 'if' guard=expression )?
-      ( 'do' ('action')? effect=namespacePath )?
+      ( 'do' transitionEffect )?
       'then' target=namespacePath ';'
     ;
 

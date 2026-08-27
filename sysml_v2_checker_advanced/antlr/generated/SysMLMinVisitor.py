@@ -614,6 +614,16 @@ class SysMLMinVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by SysMLMinParser#transitionTrigger.
+    def visitTransitionTrigger(self, ctx:SysMLMinParser.TransitionTriggerContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by SysMLMinParser#transitionEffect.
+    def visitTransitionEffect(self, ctx:SysMLMinParser.TransitionEffectContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by SysMLMinParser#transitionStmt.
     def visitTransitionStmt(self, ctx:SysMLMinParser.TransitionStmtContext):
         return self.visitChildren(ctx)

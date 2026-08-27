@@ -1048,22 +1048,50 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
 
     def visitTransitionStmt(self, ctx: SysMLMinParser.TransitionStmtContext) -> Dict:
         trigger = None
-        if ctx.trigger is not None:
-            trigger = {"kind": "trigger", "reference": _namespace_path_text(ctx.trigger)}
-            # `accept apayload: Anything via receiver`のように、型節・
-            # via節を伴うことがある（Actions.sysml）。
-            if ctx.triggerType is not None:
-                trigger["type_name"] = _namespace_path_text(ctx.triggerType)
-            if ctx.via is not None:
-                trigger["via"] = _namespace_path_text(ctx.via)
+        trigger_ctx = ctx.transitionTrigger()
+        if trigger_ctx is not None:
+            if trigger_ctx.triggerKind is not None:
+                # `accept when EXPR`（変化トリガー）/`accept at EXPR`
+                # （時刻トリガー）。2026-08-28、参照実装比較レポートP0-5で発見。
+                trigger = {
+                    "kind": "trigger",
+                    "trigger_kind": trigger_ctx.triggerKind.text,
+                    "expression": self.visit(trigger_ctx.triggerExpr),
+                }
+            else:
+                trigger = {"kind": "trigger", "reference": _namespace_path_text(trigger_ctx.trigger)}
+                # `accept apayload: Anything via receiver`のように、型節・
+                # via節を伴うことがある（Actions.sysml）。
+                if trigger_ctx.triggerType is not None:
+                    trigger["type_name"] = _namespace_path_text(trigger_ctx.triggerType)
+                if trigger_ctx.via is not None:
+                    trigger["via"] = _namespace_path_text(trigger_ctx.via)
 
         guard = None
         if ctx.guard is not None:
             guard = {"kind": "guard", "expression": self.visit(ctx.guard)}
 
         effect = None
-        if ctx.effect is not None:
-            effect = {"kind": "effect", "action_reference": _namespace_path_text(ctx.effect)}
+        effect_ctx = ctx.transitionEffect()
+        if effect_ctx is not None:
+            if effect_ctx.payload is not None:
+                # `do send new 'Start Signal'() to vehicle1_c1.vehicleController`
+                # というインラインsendアクション。2026-08-28、参照実装比較
+                # レポートP0-5で発見。
+                effect = {
+                    "kind": "effect",
+                    "send": {
+                        "payload": self.visit(effect_ctx.payload),
+                        "to": _namespace_path_text(effect_ctx.sendTarget)
+                        if effect_ctx.sendTarget is not None
+                        else None,
+                        "via": _namespace_path_text(effect_ctx.sendVia)
+                        if effect_ctx.sendVia is not None
+                        else None,
+                    },
+                }
+            elif effect_ctx.effect is not None:
+                effect = {"kind": "effect", "action_reference": _namespace_path_text(effect_ctx.effect)}
 
         return {
             "type": "transition",
