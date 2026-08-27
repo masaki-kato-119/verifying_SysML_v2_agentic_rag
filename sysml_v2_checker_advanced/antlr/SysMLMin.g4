@@ -927,6 +927,12 @@ partBodyElement
     // dependencyStmtはpartBodyElement（requirementBodyElementが委譲する
     // 先）内にも書ける。
     | dependencyStmt
+    // `part def SomeDevice { state def DeviceLifecycle { ... } }`
+    // （smart-home-complex.sysml）のように、ネストした状態機械定義
+    // （`state def`）はstateUsage（914行目）と同じくpartBodyElement内にも
+    // 書ける。公式SysML v2比較評価（2026-08-28、
+    // eval/SYSML_LINTER_REFERENCE_COMPARISON_REPORT.md §P1-3）で発見。
+    | stateDef
     ;
 
 // 公式コーパスには`ref self: Part :>> Item::self;`や`ref stateSpace:
