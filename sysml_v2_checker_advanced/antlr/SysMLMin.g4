@@ -281,12 +281,14 @@ bareDocComment
 // RectangularCuboid;`のように単純だが、名前・対象どちらも記号を含む名前
 // （`'3dVectorQuantityValue'`、`'m/s²'`、`'*'`等）をQUOTED_NAME形式で書く
 // ケースが多い（`simpleName`はID/QUOTED_NAME両方を包含済みのためそのまま
-// 再利用できる）。公式コーパスに`::`修飾された対象は無いため、対象も
-// qualifiedName等の複合規則ではなく単純なsimpleNameで十分。`alias`は`;`
-// 終端だけでなく、`alias AttributeValue for DataValue { doc /* ... */ }`
-// のようにbodyを持てる形も公式コーパスに存在する（`Attributes.sysml`）。
+// 再利用できる）。対象は`alias Torque for ISQ::TorqueValue;`
+// （Documentation Example.sysml）のように`::`修飾されることがあるため
+// namespacePathを使う（2026-08-28、参照実装比較レポートP0-1で発見）。
+// `alias`は`;`終端だけでなく、`alias AttributeValue for DataValue
+// { doc /* ... */ }`のようにbodyを持てる形も公式コーパスに存在する
+// （`Attributes.sysml`）。
 aliasStmt
-    : 'alias' simpleName 'for' target=simpleName ( '{' partBodyElement* '}' | ';' )
+    : 'alias' simpleName 'for' target=namespacePath ( '{' partBodyElement* '}' | ';' )
     ;
 
 // --- case / analysis case / verification case / use case (8.2.2.22-25) --------
@@ -1316,9 +1318,12 @@ flowControlNode
 // 裸`then`（公式のEmptySuccessionMember、対象参照を伴わない`then`単体）も
 // 持つ。visibility修飾子（`private`）も同時に必要。連鎖の意味解釈は
 // linter.py側の仕事であり本パーサーの範囲外（bareThenStmt/bareFirstStmtと
-// 同じ方針）。
+// 同じ方針）。代入先は`do assign counter.count := counter.count + 1;`
+// （AssignmentTest.sysml）のようにドット区切りのfeature chainを取りうる
+// ため、simpleNameではなくnamespacePathを使う（2026-08-28、参照実装比較
+// レポートP0-1/P0-5で発見）。
 assignmentStmt
-    : isThen='then'? visibilityIndicator? ('action' actionName=simpleName?)? 'assign'? target=simpleName op=('=' | ':=') value=expression ';'
+    : isThen='then'? visibilityIndicator? ('action' actionName=simpleName?)? 'assign'? target=namespacePath op=('=' | ':=') value=expression ';'
     ;
 
 // --- send action (Section 7.17 SendActionUsage) ------------------------------
@@ -1656,12 +1661,16 @@ exitActionMember
 // `transition aTransition first start accept apayload: Anything via
 // receiver then done;`（Actions.sysml）のように、`accept`パラメータに
 // 型節（`: Anything`）と`via`節（受信ポート/参照）が付く形も持つ。
+// source/trigger/via/effect/targetはいずれも`::`修飾された参照
+// （例: `transition first Sub::off then Sub::on;`）を取りうるため、
+// qualifiedNameではなくnamespacePathを使う（2026-08-28、参照実装比較
+// レポートP0-1で発見）。
 transitionStmt
-    : 'transition' simpleName? 'first' source=qualifiedName
-      ( 'accept' trigger=qualifiedName (':' triggerType=namespacePath)? ('via' via=qualifiedName)? )?
+    : 'transition' simpleName? 'first' source=namespacePath
+      ( 'accept' trigger=namespacePath (':' triggerType=namespacePath)? ('via' via=namespacePath)? )?
       ( 'if' guard=expression )?
-      ( 'do' ('action')? effect=qualifiedName )?
-      'then' target=qualifiedName ';'
+      ( 'do' ('action')? effect=namespacePath )?
+      'then' target=namespacePath ';'
     ;
 
 // --- 式 (KerMLExpressions.xtext) -----------------------------------------------

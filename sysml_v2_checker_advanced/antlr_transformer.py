@@ -648,7 +648,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         visibility_ctx = ctx.visibilityIndicator()
         return {
             "type": "assignment_stmt",
-            "name": _simple_name_text(ctx.target),
+            "name": _namespace_path_text(ctx.target),
             "operator": ctx.op.text,
             "value": self.visit(ctx.value),
             **({"isThen": True} if ctx.isThen is not None else {}),
@@ -1037,13 +1037,13 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
     def visitTransitionStmt(self, ctx: SysMLMinParser.TransitionStmtContext) -> Dict:
         trigger = None
         if ctx.trigger is not None:
-            trigger = {"kind": "trigger", "reference": _qualified_name_text(ctx.trigger)}
+            trigger = {"kind": "trigger", "reference": _namespace_path_text(ctx.trigger)}
             # `accept apayload: Anything via receiver`のように、型節・
             # via節を伴うことがある（Actions.sysml）。
             if ctx.triggerType is not None:
                 trigger["type_name"] = _namespace_path_text(ctx.triggerType)
             if ctx.via is not None:
-                trigger["via"] = _qualified_name_text(ctx.via)
+                trigger["via"] = _namespace_path_text(ctx.via)
 
         guard = None
         if ctx.guard is not None:
@@ -1051,13 +1051,13 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
 
         effect = None
         if ctx.effect is not None:
-            effect = {"kind": "effect", "action_reference": _qualified_name_text(ctx.effect)}
+            effect = {"kind": "effect", "action_reference": _namespace_path_text(ctx.effect)}
 
         return {
             "type": "transition",
             "name": _simple_name_text(ctx.simpleName()) if ctx.simpleName() is not None else None,
-            "source": _qualified_name_text(ctx.source),
-            "target": _qualified_name_text(ctx.target),
+            "source": _namespace_path_text(ctx.source),
+            "target": _namespace_path_text(ctx.target),
             "trigger": trigger,
             "guard": guard,
             "effect": effect,
@@ -1798,8 +1798,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # { doc /* ... */ }`）も許容する。
         return {
             "type": "alias",
-            "name": _simple_name_text(ctx.simpleName(0)),
-            "target": _simple_name_text(ctx.target),
+            "name": _simple_name_text(ctx.simpleName()),
+            "target": _namespace_path_text(ctx.target),
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 
