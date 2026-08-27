@@ -157,8 +157,22 @@ exhibitStateUsageStmt
 
 // --- portion usage: snapshot/timeslice (8.2.2.9) --------------------------------
 // 構文的完全性のためのみ実装。linter.py側に対応するチェック関数は無い。
+// 当初は`kind simpleName ';'`のみの簡略形だったが、`Time Slice and
+// Snapshot Example.sysml`（公式コーパス）に見られる以下の形を受理できな
+// かったため拡張した（2026-08-28、参照実装比較レポートP0-2で発見）:
+//   snapshot delivery { attribute deliveryDate : Date; }   -- 本体
+//   then timeslice ownership[0..*] ordered { ... }         -- then連鎖+多重度+ordered+本体
+//   snapshot sale = start;                                 -- 値代入
+// `then`はoccurrenceUsage自体の連鎖宣言（`then timeslice X { ... }`が
+// 「直前の要素からの遷移であると同時にXを新規宣言する」という複合文）を
+// 表すプレフィックスで、bareThenStmt（既存要素への参照のみ）とは別に
+// portionUsageStmt自身が持つ。`ordered`/`nonunique`はmultiplicitySpec
+// （8.2.2.6.6）が既に対応済みのため追加の規則は不要。
 portionUsageStmt
-    : kind=('snapshot' | 'timeslice') simpleName ';'
+    : isThen='then'? kind=('snapshot' | 'timeslice') simpleName?
+      multiplicitySpec?
+      ('=' value=expression)?
+      ( '{' partBodyElement* '}' | ';' )
     ;
 
 // --- occurrence def / occurrence usage / individual def / individual usage (8.2.2.9) --
@@ -935,6 +949,11 @@ partBodyElement
     // 書ける。公式SysML v2比較評価（2026-08-28、
     // eval/SYSML_LINTER_REFERENCE_COMPARISON_REPORT.md §P1-3）で発見。
     | stateDef
+    // `part def Vehicle { timeslice assembly; snapshot delivery { ... } }`
+    // （Time Slice and Snapshot Example.sysml）のように、portion usage
+    // （snapshot/timeslice）はpackageBodyElementだけでなくpartBodyElement
+    // 内にも書ける（2026-08-28、参照実装比較レポートP0-2で発見）。
+    | portionUsageStmt
     ;
 
 // 公式コーパスには`ref self: Part :>> Item::self;`や`ref stateSpace:

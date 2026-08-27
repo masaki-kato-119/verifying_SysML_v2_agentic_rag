@@ -1910,8 +1910,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return {
             "type": "portion_usage",
             "kind": ctx.kind.text,
-            "name": _simple_name_text(ctx.simpleName()),
-            "children": [],
+            "name": _optional_simple_name_text(ctx.simpleName()),
+            "isThen": ctx.isThen is not None,
+            "value": self.visit(ctx.value) if ctx.value is not None else None,
+            "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
+            "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 
     def visitOccurrenceDef(self, ctx: SysMLMinParser.OccurrenceDefContext) -> Dict:

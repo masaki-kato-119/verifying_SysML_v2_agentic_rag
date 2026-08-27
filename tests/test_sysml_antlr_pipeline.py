@@ -2186,8 +2186,38 @@ def test_antlr_portion_usage_snapshot_and_timeslice():
     チェック関数も無い（構文的完全性のみ）。"""
     snapshot = parse_sysml_antlr("snapshot A;")
     timeslice = parse_sysml_antlr("timeslice A;")
-    assert snapshot["children"][0] == {"type": "portion_usage", "kind": "snapshot", "name": "A", "children": []}
-    assert timeslice["children"][0] == {"type": "portion_usage", "kind": "timeslice", "name": "A", "children": []}
+    base = {"isThen": False, "value": None, "multiplicity": None, "children": []}
+    assert snapshot["children"][0] == {"type": "portion_usage", "kind": "snapshot", "name": "A", **base}
+    assert timeslice["children"][0] == {"type": "portion_usage", "kind": "timeslice", "name": "A", **base}
+
+
+def test_antlr_portion_usage_body_multiplicity_then_and_value():
+    """2026-08-28、参照実装比較レポートP0-2で発見: 公式コーパス（Time Slice
+    and Snapshot Example.sysml）はportion usageに本体・多重度・`then`連鎖
+    宣言・値代入を組み合わせて使うため、いずれも受理できる必要がある。"""
+    ast = parse_sysml_antlr(
+        """
+        part def Vehicle {
+            then timeslice ownership[0..*] ordered {
+                snapshot sale = start;
+            }
+        }
+        """
+    )
+    vehicle = ast["children"][0]
+    outer = vehicle["children"][0]
+    assert outer["type"] == "portion_usage"
+    assert outer["kind"] == "timeslice"
+    assert outer["name"] == "ownership"
+    assert outer["isThen"] is True
+    assert outer["multiplicity"] is not None
+
+    inner = outer["children"][0]
+    assert inner["type"] == "portion_usage"
+    assert inner["kind"] == "snapshot"
+    assert inner["name"] == "sale"
+    assert inner["value"] is not None
+    lint_ast(ast)
 
 
 # --- occurrence def/usage・individual def/usage (8.2.2.9) -----------------------
