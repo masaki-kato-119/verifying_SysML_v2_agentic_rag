@@ -1136,6 +1136,12 @@ enumBodyElement
     : documentationStmt
     | bareDocComment
     | enumLiteral
+    // `enum red { :>> val = 0; }`（EnumerationTest.sysml）のように、
+    // enumLiteralの本体内で継承した属性を再定義する裸の`:>> name = expr;`
+    // 値束縛リデファイン文が使われる（partBodyElement等では既にvalueBindingStmt
+    // を含むが、enumBodyElementには未登録だった。2026-08-28、730件パース
+    // 失敗の要因分析で発見）。
+    | valueBindingStmt
     ;
 
 // (a) `enum 'literal';`という明示的キーワード形、(b)/(c) 裸の名前に

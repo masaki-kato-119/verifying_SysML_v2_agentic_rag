@@ -5075,3 +5075,32 @@ def test_antlr_bracket_multiplicity_after_type_clause():
         "is_ordered": False,
         "is_unique": True,
     }
+
+
+def test_antlr_enum_literal_bare_redefine_shorthand():
+    """`enum red { :>> val = 0; }`（EnumerationTest.sysml）のように、
+    enumLiteralの本体内で継承した属性を再定義する裸の`:>> name = expr;`
+    値束縛リデファイン文（valueBindingStmt）が使われる。partBodyElement等
+    では既にvalueBindingStmtを含んでいたが、enumBodyElementには未登録
+    だった。2026-08-28、730件パース失敗の要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "attribute def Color { attribute val : ScalarValues::Natural; }\n"
+        "enum def ColorKind :> Color {\n"
+        "    enum red { :>> val = 0; }\n"
+        "    enum blue { :>> val = 1; }\n"
+        "}\n"
+    )
+    enum_def = ast["children"][1]
+    assert enum_def["type"] == "enum_def"
+    red_literal = enum_def["children"][0]
+    assert red_literal["type"] == "enum_literal"
+    assert red_literal["name"] == "red"
+    assert red_literal["children"] == [
+        {
+            "type": "value_binding",
+            "kind": "redefines",
+            "target": "val",
+            "value": {"type": "literal", "literal_type": "int", "value": 0},
+            "children": [],
+        },
+    ]
