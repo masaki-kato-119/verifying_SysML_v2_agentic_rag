@@ -1951,7 +1951,12 @@ performActionStmt
     // occurrenceを合算したリストを返すようになり、第1代替（裸参照）との
     // 判別に使えなくなったため。トランスフォーマー側はこのラベルの有無で
     // 代替を判別する）。
+    // `perform action takePicture[*] :> PictureTaking::takePicture;`
+    // （camera.sysml）のように、`action`キーワード付き形にも名前直後の
+    // 多重度`[...]`が付くことがある（2026-08-29、235件パース失敗の要因
+    // 分析で発見）。
     | variability=('variation' | 'variant')? isThen='then'? 'perform' hasActionKeyword='action' actionName=simpleName?
+      mult=multiplicitySpec?
       (':' typeRef=namespacePath)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' actionBodyElement* '}' | ';' )

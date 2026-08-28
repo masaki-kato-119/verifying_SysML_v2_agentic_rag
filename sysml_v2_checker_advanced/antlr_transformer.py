@@ -988,6 +988,10 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "type": "perform_action",
             "name": _optional_simple_name_text(ctx.actionName),
             "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
+            # `perform action takePicture[*] :> PictureTaking::takePicture;`
+            # （camera.sysml）のように、名前直後に多重度が付くことがある
+            # （2026-08-29、235件パース失敗の要因分析で発見）。
+            "multiplicity": self._multiplicity_dict(ctx.mult),
             "redefines": redefines,
             "params": params,
             "children": children,

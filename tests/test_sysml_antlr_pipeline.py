@@ -2058,7 +2058,8 @@ def test_antlr_perform_action_named_redefine_body():
     unnamed_ast = parse_sysml_antlr("part def P { perform action { } }")
     unnamed_node = unnamed_ast["children"][0]["children"][-1]
     assert unnamed_node == {
-        "type": "perform_action", "name": None, "type_name": None, "redefines": [], "params": [], "children": [],
+        "type": "perform_action", "name": None, "type_name": None, "multiplicity": None,
+        "redefines": [], "params": [], "children": [],
     }
 
     bare_ast = parse_sysml_antlr("part def P { perform y; }")
@@ -5345,3 +5346,36 @@ def test_antlr_transitionstmt_target_with_doc_body():
     assert semi_node["type"] == "transition"
     assert semi_node["target"] == "b"
     assert semi_node["children"] == []
+
+
+def test_antlr_performactionstmt_action_form_multiplicity():
+    """`perform action takePicture[*] :> PictureTaking::takePicture;`
+    （camera.sysml）のように、performActionStmtの`action`キーワード付き
+    形にも名前直後の多重度`[...]`が付くことがある（従来は型節
+    （`: Type`）かredefine節に直接続くのみだった）。2026-08-29、235件
+    パース失敗の要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "part def P { perform action takePicture[*] :> "
+        "PictureTaking::takePicture; }"
+    )
+    node = ast["children"][0]["children"][-1]
+    assert node["type"] == "perform_action"
+    assert node["name"] == "takePicture"
+    assert node["multiplicity"] == {
+        "size": {"min": "*", "max": "*"},
+        "is_ordered": False,
+        "is_unique": True,
+    }
+    assert node["redefines"] == [
+        {"kind": "subsets", "target": "PictureTaking::takePicture"}
+    ]
+
+    # 既存の多重度無し形が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr(
+        "part def P { perform action performLunarMission : PerformLunarMission; }"
+    )
+    plain_node = plain_ast["children"][0]["children"][-1]
+    assert plain_node["type"] == "perform_action"
+    assert plain_node["name"] == "performLunarMission"
+    assert plain_node["type_name"] == "PerformLunarMission"
+    assert plain_node["multiplicity"] is None
