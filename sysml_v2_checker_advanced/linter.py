@@ -204,7 +204,14 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
 
         # 第13パス: ConjugatedPortTyping 特殊ルールチェック (8.2.2.12)
         self._check_conjugated_port_typing_rules()
-        
+
+        # 第14パス: accessible feature path チェック (8.2.2.7 feature chaining、
+        # 参照実装比較レポートで発見した偽陰性)。`children`等の決まった
+        # キーだけを辿る_check_rulesの再帰では`expression`/`from_end`/
+        # `to_end`等のネストしたreferenceフィールドまで届かないため、
+        # 専用の全木走査で行う。
+        self._check_accessible_feature_paths(ast)
+
         return self.issues
     
     def _collect_symbols(self, node: Dict, namespace: str = "") -> None:

@@ -155,6 +155,165 @@ class DefinitionUsageRulesMixin:
                         child
                     ))
 
+    def _is_feature_only_name(self, name: str) -> bool:
+        """`name`が型/パッケージとしては解決できず、feature/instance
+        （self.element_refs）としてのみ解決できるかを判定する
+        （_find_element_in_symbolsと同じ末尾一致方式）。型解決を優先する
+        既存の設計方針に合わせ、型/パッケージとして解決できる場合は
+        featureとはみなさない（同名衝突時に誤検出しないため）。"""
+        if not name:
+            return False
+        if name in self.types:
+            return False
+        for pkg_name in self.packages:
+            if pkg_name.endswith(f"::{name}") or pkg_name == name:
+                return False
+        for sym_name in self.element_refs:
+            if sym_name.endswith(f"::{name}") or sym_name == name:
+                return True
+        return False
+
+    def _check_accessible_feature_paths(self, ast: Dict) -> None:
+        """
+        Must be an accessible feature (use dot notation for nesting)
+        （FeaturePath_Invalid.sysml/Connector_Invalid.sysml/
+        BindingConnector_redefine.sysml参照）
+
+        KerMLでは`::`は型/パッケージ限定の名前空間解決専用で、feature
+        （usage）へのネストしたアクセスには`.`を使うべき、という制約。
+        重要な点として、この制約は「パスの先頭セグメントが型かfeatureか」
+        ではなく、「`::`の直後のセグメントがそのスコープのfeatureか型か」
+        で決まる（`A::x`は`A`が型`part def A`であっても、`x`が
+        `part x;`というfeatureであるため不正——Connector_Invalid.sysml
+        で確認。逆に先頭で単純にfeature名を使うだけなら問題ない）。
+        `children`等の決まったキーだけを辿る`_check_rules`の再帰では
+        `expression`（`part g = f::a;`のname_ref）や`from_end`/`to_end`
+        （`connect ... to c::aa;`のconnector_end）等のネストしたreference
+        フィールドまで届かないため、AST全体を独自に走査する
+        （2026-08-28、参照実装比較レポートで発見した偽陰性）。
+
+        `reference`文字列自体は区切り文字を常に`::`へ正規化済みのため
+        （`_namespace_path_text`）、区切り文字ごとの`.`/`::`の別を
+        `segments`（`[(セグメント名, 直前の区切り文字), ...]`、
+        antlr_transformer.py側で付与）から読む。
+
+        730件回帰チェックで2種類の偽陽性を発見し、以下の除外条件を追加した:
+        (1) 自己参照（`action dyn2 { calc acc { in dt = dyn2::dt; } }`、
+        Dynamics.sysml/Action Decomposition.sysml等）— 自分自身を囲む
+        スコープの名前を`::`で参照する形は参照実装でも許容されている
+        （`_iter_reference_bearing_dicts`が辿った祖先ノードの名前と
+        先頭セグメントが一致する場合は除外）。
+        (2) `meta`式のbase（`system_of_systems::locclouds meta
+        SysML::PartUsage;`、AHFProfileLib.sysml）— メタデータ注釈内で
+        要素を記法上参照する慣用句であり、通常のfeature chainアクセスとは
+        異なる規則で解決されるため対象外とする。
+
+        `::`直後のセグメント名が確実にfeature/instanceとして解決でき、
+        かつ型/パッケージとしては解決できない場合のみ判定する（型解決
+        なしで安全に判定できる範囲に限定し、偽陽性リスクを抑えるため）。
+        """
+        for candidate, ancestor_names in self._iter_reference_bearing_dicts(ast):
+            segments = candidate.get("segments")
+            if not isinstance(segments, list) or len(segments) < 2:
+                continue
+            root_name = segments[0][0]
+            if root_name in ancestor_names:
+                continue
+            reference = candidate.get("reference")
+            # `ISQ::torque`（EVSample.sysml）のように、ルートが標準ライブラリ
+            # パッケージや中身の見えないワイルドカードimport由来の可能性が
+            # ある「単一ファイルlintでは検証不能」な参照は判定対象外にする
+            # （`_find_type_in_symbols`と同じ既存の安全側の設計方針。
+            # 2026-08-28、730件回帰チェックで発見）。
+            if isinstance(reference, str) and self._is_unverifiable_reference(reference):
+                continue
+            for seg_name, separator in segments[1:]:
+                if separator != "::":
+                    continue
+                if self._is_feature_only_name(seg_name):
+                    self.issues.append(LintIssue(
+                        SEVERITY_ERROR,
+                        "Must be an accessible feature (use dot notation for nesting)",
+                        candidate
+                    ))
+                    break
+
+    def _inheritance_base_names(self, type_name: str, _seen: set | None = None) -> set:
+        """`type_name`の基底型を`self.symbols`経由でたどり、継承チェーン
+        全体の型名集合を返す（循環防止に`_seen`で訪問済み集合を保持する）。
+        accessible feature path制約の「サブタイプ本体内から基底型名で
+        `::`参照するのは許容される」という除外判定にのみ使う軽量ヘルパー
+        （2026-08-28、730件回帰チェックで発見）。"""
+        if _seen is None:
+            _seen = set()
+        if type_name in _seen:
+            return set()
+        _seen.add(type_name)
+        node = self.symbols.get(type_name)
+        if node is None:
+            for sym_name, sym_node in self.symbols.items():
+                if sym_name.endswith(f"::{type_name}") or sym_name == type_name:
+                    node = sym_node
+                    break
+        if node is None:
+            return set()
+        inheritance = node.get("inheritance")
+        if not isinstance(inheritance, dict):
+            return set()
+        bases = inheritance.get("bases") or ([inheritance["base"]] if inheritance.get("base") else [])
+        result = set(bases)
+        for base in bases:
+            result |= self._inheritance_base_names(base, _seen)
+        return result
+
+    _SCOPE_CONTAINMENT_KEYS = ("children", "params", "attributes", "exposes")
+
+    def _iter_reference_bearing_dicts(self, node, ancestor_names: frozenset = frozenset()):
+        """ASTを`children`等の決まったキーに限らず全フィールドにわたって
+        再帰し、`"reference"`キーを持つ辞書（connector_end/name_ref等）を
+        `(辞書, 祖先スコープ名の集合)`のペアで列挙する。祖先スコープ名は
+        `_SCOPE_CONTAINMENT_KEYS`（`_check_rules`の再帰と同じキー集合）を
+        辿って入れ子になった際に、その親ノード自身の`name`を積み上げた
+        もの（自己参照の除外判定に使う）。`meta`式のbaseは通常の
+        feature chainアクセスとは異なる記法上の慣用句のため、
+        その内側は列挙対象から除外する。"""
+        if isinstance(node, dict):
+            if "reference" in node:
+                yield node, ancestor_names
+            if node.get("type") == "meta_expr":
+                for key, value in node.items():
+                    if key == "base":
+                        continue
+                    yield from self._iter_reference_bearing_dicts(value, ancestor_names)
+                return
+            own_name = node.get("name")
+            child_ancestor_names = (
+                ancestor_names | {own_name} if isinstance(own_name, str) and own_name else ancestor_names
+            )
+            # `item def RightTriangle :> Triangle { ... Triangle::width ... }`
+            # （ShapeItems.sysml）のように、サブタイプの本体内から基底型の名前で
+            # `::`参照するのも許容されている（継承済みfeatureは実質的に
+            # 「アクセス可能」であるため、レキシカルな自己参照と同様に扱う。
+            # 2026-08-28、730件回帰チェックで発見）。
+            if isinstance(own_name, str) and own_name and isinstance(node.get("inheritance"), dict):
+                child_ancestor_names = child_ancestor_names | self._inheritance_base_names(own_name)
+            # `calc :>> getNextState: GetNextState { ... GetNextState::stateSpace
+            # ... }`（StateSpaceRepresentation.sysml）のように、usageの
+            # 「自分自身の型名」（`type_name`）による`::`自己参照も同様に
+            # 許容されている（型名もその継承チェーンも含める。
+            # 2026-08-28、730件回帰チェックで発見）。
+            own_type_name = node.get("type_name")
+            if isinstance(own_type_name, str) and own_type_name:
+                child_ancestor_names = child_ancestor_names | {own_type_name} | self._inheritance_base_names(
+                    own_type_name
+                )
+            for key, value in node.items():
+                next_ancestor_names = child_ancestor_names if key in self._SCOPE_CONTAINMENT_KEYS else ancestor_names
+                yield from self._iter_reference_bearing_dicts(value, next_ancestor_names)
+        elif isinstance(node, list):
+            for item in node:
+                yield from self._iter_reference_bearing_dicts(item, ancestor_names)
+
     def _check_action_def(self, node: Dict, namespace: str) -> None:
         """
         アクション定義のチェック

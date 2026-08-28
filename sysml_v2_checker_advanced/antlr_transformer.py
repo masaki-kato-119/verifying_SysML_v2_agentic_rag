@@ -66,6 +66,32 @@ def _namespace_path_text(ctx) -> str:
     return "::".join(parts)
 
 
+def _namespace_path_segments(ctx) -> list:
+    """namespacePathの各セグメントを`(セグメント名, 直前の区切り文字)`の
+    リストにする（先頭セグメントの区切りは`None`）。`_namespace_path_text`は
+    区切り文字の違いを意味の差とみなさず出力を常に`::`へ正規化して
+    捨ててしまうため、`B0::p0.myDefIn`（`B0`→`p0`はfeatureアクセスに
+    `::`を誤用、`p0`→`myDefIn`は正しく`.`）のように、パス中のどの区切りが
+    実際に`::`だったかをセグメント単位で保持する必要がある。
+    accessible feature path制約（2026-08-28、発見。KerMLの`::`は型/
+    パッケージ限定の名前空間解決専用で、feature（usage）へのネストした
+    アクセスには`.`を使うべきという制約）の判定専用のヘルパー。"""
+    segments = []
+    pending_separator = None
+    for child in ctx.getChildren():
+        text = child.getText()
+        if text in ("::", "."):
+            pending_separator = text
+            continue
+        if text.startswith("'") and text.endswith("'"):
+            seg_text = text[1:-1].replace("\\'", "'").replace("\\\\", "\\")
+        else:
+            seg_text = text
+        segments.append((seg_text, pending_separator))
+        pending_separator = None
+    return segments
+
+
 def _optional_qualified_name_text(ctx):
     """QualifiedNameContext が省略可能な箇所用（entry;/do;/exit;のように名前無しもある）。"""
     return _qualified_name_text(ctx) if ctx is not None else None
@@ -580,10 +606,13 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # `connectorEnd`と同じ出力shapeだが、`connectUsage`専用に
         # `.`/`::`混在パスを受理する`namespacePath`を使う。
         declared_name = ctx.ID().getText() if ctx.ID() is not None else None
+        # `segments`はaccessible feature path制約の判定用（2026-08-28、
+        # 発見。visitNamespacePathRefExprと同じ理由）。
         return {
             "type": "connector_end",
             "declared_name": declared_name,
             "reference": _namespace_path_text(ctx.namespacePath()),
+            "segments": _namespace_path_segments(ctx.namespacePath()),
         }
 
     def _binary_part(self, part_type: str, from_ctx, to_ctx) -> Dict:
@@ -1904,7 +1933,15 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # `::`修飾名（`MeasurementUnit::unitPowerFactors`）による式。
         # nameRefExprと同形状のASTを返す（reference文字列は`::`区切りの
         # まま保持）。
-        return {"type": "name_ref", "reference": _namespace_path_text(ctx.namespacePath())}
+        # `segments`は各セグメントの直前区切りを保持する（accessible
+        # feature path制約の判定用、2026-08-28、発見。`_namespace_path_text`
+        # は区切り文字を常に`::`へ正規化するため、素の`reference`文字列
+        # だけでは元が`.`だったか`::`だったか区別できない）。
+        return {
+            "type": "name_ref",
+            "reference": _namespace_path_text(ctx.namespacePath()),
+            "segments": _namespace_path_segments(ctx.namespacePath()),
+        }
 
     def visitLiteralExpr(self, ctx: SysMLMinParser.LiteralExprContext) -> Dict:
         return self.visit(ctx.literal())

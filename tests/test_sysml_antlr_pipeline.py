@@ -1621,9 +1621,9 @@ def test_antlr_nary_connect_and_double_colon_gt_references():
     assert nary_node["from_end"] is None
     assert nary_node["to_end"] is None
     assert nary_node["ends"] == [
-        {"type": "connector_end", "declared_name": "cause1", "reference": "causer1"},
-        {"type": "connector_end", "declared_name": "cause2", "reference": "causer2"},
-        {"type": "connector_end", "declared_name": "effect1", "reference": "effected1"},
+        {"type": "connector_end", "declared_name": "cause1", "reference": "causer1", "segments": [("causer1", None)]},
+        {"type": "connector_end", "declared_name": "cause2", "reference": "causer2", "segments": [("causer2", None)]},
+        {"type": "connector_end", "declared_name": "effect1", "reference": "effected1", "segments": [("effected1", None)]},
     ]
 
     plain_refs_ast = parse_sysml_antlr(
@@ -1631,9 +1631,9 @@ def test_antlr_nary_connect_and_double_colon_gt_references():
     )
     plain_refs_node = plain_refs_ast["children"][-1]["children"][0]
     assert plain_refs_node["ends"] == [
-        {"type": "connector_end", "declared_name": None, "reference": "causeA"},
-        {"type": "connector_end", "declared_name": None, "reference": "causeB"},
-        {"type": "connector_end", "declared_name": None, "reference": "effectC"},
+        {"type": "connector_end", "declared_name": None, "reference": "causeA", "segments": [("causeA", None)]},
+        {"type": "connector_end", "declared_name": None, "reference": "causeB", "segments": [("causeB", None)]},
+        {"type": "connector_end", "declared_name": None, "reference": "effectC", "segments": [("effectC", None)]},
     ]
 
     # 既存の2項`A to B`形も変わらず動作する。
@@ -1650,8 +1650,8 @@ def test_antlr_nary_connect_and_double_colon_gt_references():
     typed_nary_node = typed_nary_ast["children"][-1]["children"][0]
     assert typed_nary_node["type"] == "connection_usage"
     assert typed_nary_node["ends"] == [
-        {"type": "connector_end", "declared_name": "cause1", "reference": "causer1"},
-        {"type": "connector_end", "declared_name": "cause2", "reference": "causer2"},
+        {"type": "connector_end", "declared_name": "cause1", "reference": "causer1", "segments": [("causer1", None)]},
+        {"type": "connector_end", "declared_name": "cause2", "reference": "causer2", "segments": [("causer2", None)]},
     ]
 
 
@@ -2000,8 +2000,8 @@ def test_antlr_flow_connect_endpoint_double_colon_mixed():
     connect_node = connect_ast["children"][0]["children"][-1]
     assert connect_node == {
         "type": "connect_usage",
-        "from_end": {"type": "connector_end", "declared_name": None, "reference": "A::B::C"},
-        "to_end": {"type": "connector_end", "declared_name": None, "reference": "D::E"},
+        "from_end": {"type": "connector_end", "declared_name": None, "reference": "A::B::C", "segments": [("A", None), ("B", "::"), ("C", ".")]},
+        "to_end": {"type": "connector_end", "declared_name": None, "reference": "D::E", "segments": [("D", None), ("E", ".")]},
         "ends": None,
         "prefixMetadata": [],
         "children": [],
@@ -2011,8 +2011,8 @@ def test_antlr_flow_connect_endpoint_double_colon_mixed():
     plain_connect_node = plain_connect_ast["children"][0]["children"][-1]
     assert plain_connect_node == {
         "type": "connect_usage",
-        "from_end": {"type": "connector_end", "declared_name": "end1", "reference": "a::b"},
-        "to_end": {"type": "connector_end", "declared_name": None, "reference": "c::d"},
+        "from_end": {"type": "connector_end", "declared_name": "end1", "reference": "a::b", "segments": [("a", None), ("b", ".")]},
+        "to_end": {"type": "connector_end", "declared_name": None, "reference": "c::d", "segments": [("c", None), ("d", ".")]},
         "ends": None,
         "prefixMetadata": [],
         "children": [],
@@ -2566,8 +2566,8 @@ def test_antlr_binding_connector_endpoint_double_colon_mixed():
     `connectorEnd`自体は他の参照元への影響を避けるため変更しない）。"""
     ast = parse_sysml_antlr("part def P { bind LDW::'A'.'B' = 'C'; }")
     node = ast["children"][0]["children"][0]
-    assert node["leftEnd"] == {"type": "connector_end", "declared_name": None, "reference": "LDW::A::B"}
-    assert node["rightEnd"] == {"type": "connector_end", "declared_name": None, "reference": "C"}
+    assert node["leftEnd"] == {"type": "connector_end", "declared_name": None, "reference": "LDW::A::B", "segments": [("LDW", None), ("A", "::"), ("B", ".")]}
+    assert node["rightEnd"] == {"type": "connector_end", "declared_name": None, "reference": "C", "segments": [("C", None)]}
 
 
 def test_antlr_new_expr_positional_argument():
@@ -2602,7 +2602,7 @@ def test_antlr_new_expr_positional_argument():
     )
     named_value = named_ast["children"][0]["children"][0]["value"]
     assert named_value["arguments"] == [
-        {"type": "named_argument", "name": "probability", "value": {"type": "name_ref", "reference": "LevelEnum::low"}, "children": []},
+        {"type": "named_argument", "name": "probability", "value": {"type": "name_ref", "reference": "LevelEnum::low", "segments": [("LevelEnum", None), ("low", "::")]}, "children": []},
     ]
 
 
@@ -3771,3 +3771,74 @@ def test_lint_subsetting_uniqueness_conformance():
     unresolved_ast = parse_sysml_antlr(unresolved_text)
     unresolved_issues = lint_ast(unresolved_ast)
     assert not any("nonunique if subsetted" in i.message for i in unresolved_issues)
+
+
+def test_lint_accessible_feature_path():
+    """FeaturePath_Invalid.sysml参照。`::`で辿った先がtype（def）ではなく
+    feature（usage）である場合は不正（8.2.2.7、参照実装比較で発見した偽陰性）。
+    ルートがfeatureか型かは問わない。"""
+    text = (
+        "package Q {\n"
+        "  part def F {\n"
+        "    part a : A;\n"
+        "  }\n"
+        "  part f : F;\n"
+        "  part def A {\n"
+        "    part g = f::a;\n"
+        "  }\n"
+        "}\n"
+    )
+    ast = parse_sysml_antlr(text)
+    issues = lint_ast(ast)
+    accessible_errors = [
+        i for i in issues
+        if i.severity == "error" and "accessible feature" in i.message
+    ]
+    assert len(accessible_errors) == 1
+
+    # dot記法で書き直せばエラーなし。
+    ok_text = text.replace("f::a", "f.a")
+    ok_ast = parse_sysml_antlr(ok_text)
+    ok_issues = lint_ast(ok_ast)
+    assert not any("accessible feature" in i.message for i in ok_issues)
+
+    # 自スコープの名前への`::`自己参照は許容する
+    # （`action dyn2 { calc acc { in dt = dyn2::dt; } }`型のパターン）。
+    self_ref_text = (
+        "action def D {\n"
+        "    in attribute dt;\n"
+        "}\n"
+        "action dyn2 : D {\n"
+        "    calc acc {\n"
+        "        in x = dyn2::dt;\n"
+        "    }\n"
+        "}\n"
+    )
+    self_ref_ast = parse_sysml_antlr(self_ref_text)
+    self_ref_issues = lint_ast(self_ref_ast)
+    assert not any("accessible feature" in i.message for i in self_ref_issues)
+
+    # 基底型名を通じた自己参照（継承済みfeatureは実質アクセス可能）も許容する
+    # （`item def RightTriangle :> Triangle { ... Triangle::width ... }`型）。
+    inherited_base_text = (
+        "item def Triangle {\n"
+        "    attribute width;\n"
+        "}\n"
+        "item def RightTriangle :> Triangle {\n"
+        "    attribute w2 = Triangle::width;\n"
+        "}\n"
+    )
+    inherited_base_ast = parse_sysml_antlr(inherited_base_text)
+    inherited_base_issues = lint_ast(inherited_base_ast)
+    assert not any("accessible feature" in i.message for i in inherited_base_issues)
+
+    # 標準ライブラリ等、単体ファイルでは検証不能な参照は判定対象外にする
+    # （`ISQ::torque`型、既存の_is_unverifiable_referenceと同じ設計方針）。
+    unverifiable_text = (
+        "part def P {\n"
+        "    attribute t = ISQ::torque;\n"
+        "}\n"
+    )
+    unverifiable_ast = parse_sysml_antlr(unverifiable_text)
+    unverifiable_issues = lint_ast(unverifiable_ast)
+    assert not any("accessible feature" in i.message for i in unverifiable_issues)
