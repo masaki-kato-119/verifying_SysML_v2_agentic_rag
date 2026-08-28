@@ -477,16 +477,30 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
     # --- フェーズ2: connect --------------------------------------------------
 
     def visitConnectUsage(self, ctx: SysMLMinParser.ConnectUsageContext) -> Dict:
-        ends = ctx.connectorEndPath()
         # `#multicausation connect a to b;`のような`#Type`プレフィックス注釈
         # （2026-08-28、730件回帰チェックで発見）。
         prefix_metadata = [
             _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
         ]
+        # `#multicausation connect ( cause1 ::> causer1, cause2 ::> causer2,
+        # ... );`のような、括弧で囲んだ3項以上のend列（n元connect）も
+        # 持ちうる（2026-08-28、730件回帰チェックで発見）。2項の`A to B`形とは
+        # 別に`ends`フィールドを持たせる（`from_end`/`to_end`はn元形では
+        # Noneのまま。既存の2項形の出力互換性は保つ）。
+        if ctx.naryEnds:
+            return {
+                "type": "connect_usage",
+                "from_end": None,
+                "to_end": None,
+                "ends": [self.visit(e) for e in ctx.naryEnds],
+                "prefixMetadata": prefix_metadata,
+                "children": [],
+            }
         return {
             "type": "connect_usage",
-            "from_end": self.visit(ends[0]),
-            "to_end": self.visit(ends[1]),
+            "from_end": self.visit(ctx.fromEnd),
+            "to_end": self.visit(ctx.toEnd),
+            "ends": None,
             "prefixMetadata": prefix_metadata,
             "children": [],
         }
@@ -501,6 +515,21 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # のように、`connectUsage`（キーワード無し型）とは別の、`connection`
         # キーワード+型節+connectorEnd側multiplicityを伴う形。
         if ctx.typeRef is not None:
+            # `connect ( end1 ::> a, end2 ::> b, ... );`のような括弧付きn元
+            # end列（2026-08-28、730件回帰チェックで発見。connectUsageと
+            # 同じ設計）。
+            if ctx.naryEnds:
+                return {
+                    "type": "connection_usage",
+                    "type_name": _namespace_path_text(ctx.typeRef),
+                    "firstMultiplicity": None,
+                    "firstEnd": None,
+                    "thenMultiplicity": None,
+                    "thenEnd": None,
+                    "ends": [self.visit(e) for e in ctx.naryEnds],
+                    "prefixMetadata": prefix_metadata,
+                    "children": [self.visit(el) for el in ctx.partBodyElement()],
+                }
             return {
                 "type": "connection_usage",
                 "type_name": _namespace_path_text(ctx.typeRef),
@@ -508,6 +537,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 "firstEnd": self.visit(ctx.firstEnd),
                 "thenMultiplicity": self._multiplicity_dict(ctx.thenMult),
                 "thenEnd": self.visit(ctx.thenEnd),
+                "ends": None,
                 "prefixMetadata": prefix_metadata,
                 "children": [self.visit(el) for el in ctx.partBodyElement()],
             }
@@ -958,10 +988,17 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
     def visitRequireUsage(self, ctx: SysMLMinParser.RequireUsageContext) -> Dict:
         # `require viewpointSatisfactions { ... }`（`constraint`キーワードを
         # 伴わない、`satisfyRequirementUsage`のbody内にネストして使われる形、
-        # Views.sysmlのみ1件）。
+        # Views.sysmlのみ1件）。`assume c1 [0..*];`のように`assume`
+        # キーワード・多重度も取りうる（2026-08-28、730件回帰チェックで発見）。
+        prefix_metadata = [
+            _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
+        ]
         return {
             "type": "require_usage",
+            "kind": ctx.kind.text,
             "name": _simple_name_text(ctx.simpleName()),
+            "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
+            "prefixMetadata": prefix_metadata,
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 
@@ -1927,13 +1964,24 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         ]
         result_expression = self.visit(ctx.resultExpr) if ctx.resultExpr is not None else None
         visibility_ctx = ctx.visibilityIndicator()
+        # `require constraint c1 :>> c;`（RequirementTest.sysml）のような
+        # redefine節（2026-08-28、730件回帰チェックで発見）。
+        redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
+        # `#goal requirement { assume #goal constraint ...; }`のような
+        # `#Type`プレフィックス注釈（2026-08-28、730件回帰チェックで発見）。
+        prefix_metadata = [
+            _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
+        ]
         inner = {
             "type": "assert_constraint_usage",
+            "kind": ctx.assertKind.text,
             "is_negated": is_negated,
             "name": _optional_simple_name_text(ctx.simpleName()),
             "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else "",
             "result_expression": result_expression,
             "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
+            "redefines": redefines,
+            "prefixMetadata": prefix_metadata,
             "children": children,
         }
         return {"type": "constraint_stmt", "children": [inner]}

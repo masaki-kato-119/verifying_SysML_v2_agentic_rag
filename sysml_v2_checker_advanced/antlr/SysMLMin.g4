@@ -597,9 +597,18 @@ calcParameter
 // 真偽式のみのbody（`resultExpr`）の前に`doc`コメントが先行することが
 // ある（3件すべてで確認）ため、`documentationStmt*`を`resultExpr`の前に
 // 持つ。
+// `assume constraint fuelConstraint { ... }`（8-Requirements.sysml）のように、
+// `assert`/`require`と同じ位置・形状で`assume`キーワードも使われる
+// （KerMLの要求済み制約：`assume`は「前提」の意味）。`require constraint
+// c1 :>> c;`（RequirementTest.sysml）のようにredefine節（複数可）も
+// 取りうる。`#goal requirement { assume #goal constraint ...; }`
+// （RequirementMetadataExample.sysml）のような`#Type`プレフィックス注釈
+// も持つ（2026-08-28、730件回帰チェックで発見。以前は`assume`キーワード
+// 自体・redefine節・prefixMetadataAnnotationのいずれも未対応だった）。
 assertConstraintUsage
-    : visibilityIndicator? assertKind=('assert' | 'require') ('not')? 'constraint' simpleName?
+    : visibilityIndicator? assertKind=('assert' | 'require' | 'assume') prefixMetadataAnnotation* ('not')? 'constraint' simpleName?
       ( ':' typeRef=namespacePath )?
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' documentationStmt* resultExpr=expression '}' | '{' calcBodyElement* '}' | ';' )
     ;
 
@@ -662,9 +671,11 @@ satisfyRequirementUsage
 // `satisfyRequirementUsage`のbody内にネスト）のように、`require`単体
 // （`constraint`キーワード無し）で名前+bodyを導入する形が別途存在する
 // （`require constraint { expr }`とは`constraint`キーワードの有無で異なる
-// 別形）。公式コーパスでこの1箇所のみ確認。
+// 別形）。`assume c1 [0..*];`（RequirementTest.sysml）のように`assume`
+// キーワードも同じ位置で使われ、多重度（`[...]`）も取りうる（2026-08-28、
+// 730件回帰チェックで発見）。
 requireUsage
-    : 'require' simpleName ( '{' partBodyElement* '}' | ';' )
+    : kind=('require' | 'assume') prefixMetadataAnnotation* simpleName multiplicitySpec? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // --- interface usage (8.2.2.14) -----------------------------------------------
@@ -1333,8 +1344,17 @@ multiplicityBound
 // `::`/`.`両対応版`connectorEndPath`を使う。
 // `#multicausation connect ( ... );`（CauseAndEffectExample.sysml）のような
 // `#Type`プレフィックス注釈（2026-08-28、730件回帰チェックで発見）。
+// `#multicausation connect ( cause1 ::> causer1, cause2 ::> causer2,
+// effect1 ::> effected1, effect2 ::> effected2 );`
+// （CauseAndEffectExample.sysml）のように、2項の`A to B`形とは別に、
+// 括弧で囲んだ3項以上のend列（n元connect、KerMLのNaryConnectorPart）も
+// 存在する（2026-08-28、730件回帰チェックで発見）。
 connectUsage
-    : prefixMetadataAnnotation* 'connect' connectorEndPath 'to' connectorEndPath ';'
+    : prefixMetadataAnnotation* 'connect'
+      ( fromEnd=connectorEndPath 'to' toEnd=connectorEndPath
+      | '(' naryEnds+=connectorEndPath (',' naryEnds+=connectorEndPath)+ ')'
+      )
+      ';'
     ;
 
 // `connection :MatesWith connect [1] be to [1] be;`（ShapeItems.sysml、
@@ -1351,10 +1371,16 @@ connectUsage
 // される）。
 // `#derivation connection { ... }`（Drone_BaseArchitecture.sysml）のような
 // `#Type`プレフィックス注釈（2026-08-28、730件回帰チェックで発見）。
+// `#multicausation connection : MultiCauseEffect connect ( cause1 ::>
+// causer1, cause2 ::> causer2, ... );`（CauseAndEffectExample.sysml）の
+// ように、型付き`connect`節にも括弧で囲んだn元end列（connectUsageと
+// 同じ設計）が付きうる（2026-08-28、730件回帰チェックで発見）。
 connectionUsage
     : prefixMetadataAnnotation* 'connection' ':' typeRef=namespacePath 'connect'
-      firstMult=multiplicitySpec? firstEnd=connectorEnd
-      'to' thenMult=multiplicitySpec? thenEnd=connectorEnd
+      ( firstMult=multiplicitySpec? firstEnd=connectorEnd
+        'to' thenMult=multiplicitySpec? thenEnd=connectorEnd
+      | '(' naryEnds+=connectorEndPath (',' naryEnds+=connectorEndPath)+ ')'
+      )
       ( '{' partBodyElement* '}' | ';' )
     | prefixMetadataAnnotation* isAbstract='abstract'? 'connection' simpleName?
       (':' ID)?
@@ -1372,8 +1398,11 @@ connectorEnd
 // `connectorEnd`と同型だが、`connectUsage`専用に`.`/`::`両対応の
 // `namespacePath`を使う（`connectorEnd`自体は他の共有箇所の既存出力に
 // 影響するため変更しない）。
+// `cause1 ::> causer1`（CauseAndEffectExample.sysml）のように、`::>`は
+// `references`キーワードの記号形の同義語（KerMLのReferences定義）。
+// 2026-08-28、n元connect文の調査で発見。
 connectorEndPath
-    : (ID 'references')? namespacePath
+    : (ID ('references' | '::>'))? namespacePath
     ;
 
 // 各セグメントはIDまたはQUOTED_NAME（例: `'Boil Water'.w`）。単一引用符名は

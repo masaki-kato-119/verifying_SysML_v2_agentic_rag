@@ -1509,6 +1509,117 @@ def test_antlr_state_body_element_bare_action_usage():
     ]
 
 
+def test_antlr_assume_keyword_and_redefine_on_assert_constraint_usage():
+    """`assume constraint fuelConstraint { ... }`（8-Requirements.sysml）・
+    `require constraint c1 :>> c;`（RequirementTest.sysml）のように、
+    assertConstraintUsageは`assert`/`require`に加えて`assume`キーワードも
+    使え、redefine節（複数可）も持ちうる（2026-08-28、730件回帰チェックで
+    発見。以前は`assume`キーワード自体・redefine節のいずれも未対応
+    だった）。`#goal requirement { assume #goal constraint ...; }`
+    （RequirementMetadataExample.sysml）のような`#Type`プレフィックス注釈
+    （`assume`/`require`キーワードの直後、`constraint`キーワードの前に
+    付く）も持つ。"""
+    assume_ast = parse_sysml_antlr(
+        "requirement def R { attribute def C; assume constraint c1 : C; }"
+    )
+    assume_node = assume_ast["children"][-1]["children"][-1]["children"][0]
+    assert assume_node["type"] == "assert_constraint_usage"
+    assert assume_node["kind"] == "assume"
+    assert assume_node["name"] == "c1"
+    assert assume_node["type_name"] == "C"
+
+    redefine_ast = parse_sysml_antlr(
+        "requirement def R2 { constraint c; } "
+        "requirement def R :> R2 { require constraint c1 :>> c; }"
+    )
+    redefine_node = redefine_ast["children"][-1]["children"][-1]["children"][0]
+    assert redefine_node["kind"] == "require"
+    assert redefine_node["redefines"] == [{"kind": "redefines", "target": "c"}]
+
+    prefix_ast = parse_sysml_antlr(
+        "metadata def goal; requirement def R { assume #goal constraint payloadMassLimit; }"
+    )
+    prefix_node = prefix_ast["children"][-1]["children"][-1]["children"][0]
+    assert prefix_node["kind"] == "assume"
+    assert prefix_node["prefixMetadata"] == ["goal"]
+    assert prefix_node["name"] == "payloadMassLimit"
+
+
+def test_antlr_require_usage_assume_keyword_multiplicity_and_prefix():
+    """`assume c1 [0..*];`（RequirementTest.sysml）のように、requireUsage
+    （`constraint`キーワードを伴わない裸参照形）は`require`だけでなく
+    `assume`キーワードも使え、多重度（`[...]`）も持ちうる（2026-08-28、
+    730件回帰チェックで発見）。`require #goal vehicleMassRequirement;`
+    （RequirementMetadataExample.sysml）のような`#Type`プレフィックス注釈
+    も持つ。"""
+    ast = parse_sysml_antlr(
+        "requirement def R { requirement c1; assume c1 [0..*]; }"
+    )
+    node = ast["children"][-1]["children"][-1]
+    assert node["type"] == "require_usage"
+    assert node["kind"] == "assume"
+    assert node["name"] == "c1"
+    assert node["multiplicity"]["size"] == {"min": 0, "max": "*"}
+
+    prefix_ast = parse_sysml_antlr(
+        "metadata def goal; requirement vehicleMassRequirement; "
+        "requirement def R { require #goal vehicleMassRequirement; }"
+    )
+    prefix_node = prefix_ast["children"][-1]["children"][-1]
+    assert prefix_node["kind"] == "require"
+    assert prefix_node["prefixMetadata"] == ["goal"]
+
+
+def test_antlr_nary_connect_and_double_colon_gt_references():
+    """`#multicausation connect ( cause1 ::> causer1, cause2 ::> causer2,
+    effect1 ::> effected1, effect2 ::> effected2 );`
+    （CauseAndEffectExample.sysml）のように、connectUsage/connectionUsageは
+    2項の`A to B`形に加えて、括弧で囲んだ3項以上のend列（n元connect）も
+    持ちうる（2026-08-28、730件回帰チェックで発見）。`::>`は`references`
+    キーワードの記号形の同義語（connectorEndPathで対応）。"""
+    nary_ast = parse_sysml_antlr(
+        "part def P { connect ( cause1 ::> causer1, cause2 ::> causer2, "
+        "effect1 ::> effected1 ); }"
+    )
+    nary_node = nary_ast["children"][-1]["children"][0]
+    assert nary_node["type"] == "connect_usage"
+    assert nary_node["from_end"] is None
+    assert nary_node["to_end"] is None
+    assert nary_node["ends"] == [
+        {"type": "connector_end", "declared_name": "cause1", "reference": "causer1"},
+        {"type": "connector_end", "declared_name": "cause2", "reference": "causer2"},
+        {"type": "connector_end", "declared_name": "effect1", "reference": "effected1"},
+    ]
+
+    plain_refs_ast = parse_sysml_antlr(
+        "part def P { connect ( causeA, causeB, effectC ); }"
+    )
+    plain_refs_node = plain_refs_ast["children"][-1]["children"][0]
+    assert plain_refs_node["ends"] == [
+        {"type": "connector_end", "declared_name": None, "reference": "causeA"},
+        {"type": "connector_end", "declared_name": None, "reference": "causeB"},
+        {"type": "connector_end", "declared_name": None, "reference": "effectC"},
+    ]
+
+    # 既存の2項`A to B`形も変わらず動作する。
+    binary_ast = parse_sysml_antlr("part def P { connect a to b; }")
+    binary_node = binary_ast["children"][-1]["children"][0]
+    assert binary_node["ends"] is None
+    assert binary_node["from_end"]["reference"] == "a"
+    assert binary_node["to_end"]["reference"] == "b"
+
+    typed_nary_ast = parse_sysml_antlr(
+        "connection def MultiCauseEffect; "
+        "part def P { connection : MultiCauseEffect connect ( cause1 ::> causer1, cause2 ::> causer2 ); }"
+    )
+    typed_nary_node = typed_nary_ast["children"][-1]["children"][0]
+    assert typed_nary_node["type"] == "connection_usage"
+    assert typed_nary_node["ends"] == [
+        {"type": "connector_end", "declared_name": "cause1", "reference": "causer1"},
+        {"type": "connector_end", "declared_name": "cause2", "reference": "causer2"},
+    ]
+
+
 def test_antlr_action_usage_while_guard():
     """`action X while cond { ... }`のwhileガードは旧Lark実装に規則が無い
     新規拡張（WhileLoopActionUsageの簡略形。COVERAGE.md参照）。"""
@@ -1833,6 +1944,7 @@ def test_antlr_flow_connect_endpoint_double_colon_mixed():
         "type": "connect_usage",
         "from_end": {"type": "connector_end", "declared_name": None, "reference": "A::B::C"},
         "to_end": {"type": "connector_end", "declared_name": None, "reference": "D::E"},
+        "ends": None,
         "prefixMetadata": [],
         "children": [],
     }
@@ -1843,6 +1955,7 @@ def test_antlr_flow_connect_endpoint_double_colon_mixed():
         "type": "connect_usage",
         "from_end": {"type": "connector_end", "declared_name": "end1", "reference": "a::b"},
         "to_end": {"type": "connector_end", "declared_name": None, "reference": "c::d"},
+        "ends": None,
         "prefixMetadata": [],
         "children": [],
     }
