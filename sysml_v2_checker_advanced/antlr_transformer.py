@@ -1475,6 +1475,17 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
     def visitRelationalExpr(self, ctx: SysMLMinParser.RelationalExprContext) -> Dict:
         return self._binary_expr(ctx)
 
+    def visitClassificationExpr(self, ctx: SysMLMinParser.ClassificationExprContext) -> Dict:
+        # KerMLの分類判定式（`expr istype Type`/`expr hastype Type`）。
+        # asCastExpr/metaExprと同型。
+        return {
+            "type": "classification_expr",
+            "op": ctx.op.text,
+            "base": self.visit(ctx.expression()),
+            "type_name": _namespace_path_text(ctx.typeRef),
+            "children": [],
+        }
+
     def visitEqualityExpr(self, ctx: SysMLMinParser.EqualityExprContext) -> Dict:
         return self._binary_expr(ctx)
 

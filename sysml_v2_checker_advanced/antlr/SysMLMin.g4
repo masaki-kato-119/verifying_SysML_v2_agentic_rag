@@ -1930,6 +1930,14 @@ expression
     // `expression`にしてある。
     | expression '[' unit=expression ']'                        # quantityLiteralExpr
     | expression op=('<'|'>'|'<='|'>=') expression              # relationalExpr
+    // KerMLの分類判定式（ClassificationExpression、`istype`/`hastype`）。
+    // 例: `sys istype PowerProvider`（CalculationsPackage.sysml）、
+    // `engine istype '6CylEngine'`（QUOTED_NAME型名）。優先順位階層の
+    // 「EqualityExpression > ClassificationExpression >
+    // RelationalExpression」（このファイル冒頭のコメント参照）に従い、
+    // relationalExprとequalityExprの間（asCastExpr/metaExprと同型）に置く
+    // （2026-08-28、730件回帰チェックで発見）。
+    | expression op=('istype'|'hastype') typeRef=namespacePath  # classificationExpr
     | expression op=('=='|'!=') expression                     # equalityExpr
     // `and`/`or`論理演算子（例: `assert constraint boundMatch { (isBound ==
     // mRef.isBound) or (not isBound and mRef.isBound) }`）。比較・等価

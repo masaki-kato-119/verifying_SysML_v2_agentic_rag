@@ -754,6 +754,11 @@ class SysMLMinVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by SysMLMinParser#classificationExpr.
+    def visitClassificationExpr(self, ctx:SysMLMinParser.ClassificationExprContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by SysMLMinParser#mulDivExpr.
     def visitMulDivExpr(self, ctx:SysMLMinParser.MulDivExprContext):
         return self.visitChildren(ctx)

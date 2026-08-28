@@ -1163,6 +1163,33 @@ def test_antlr_bare_nonunique_ordered_modifier():
     assert bracket_node["multiplicity"]["is_ordered"] is True
 
 
+def test_antlr_istype_hastype_classification_expression():
+    """`sys istype PowerProvider`（CalculationsPackage.sysml）のように、
+    KerMLの分類判定式演算子`istype`/`hastype`が式文法に実装されて
+    いなかった（2026-08-28、730件回帰チェックで発見）。QUOTED_NAME型名
+    （`engine istype '6CylEngine'`）も取りうる。"""
+    ast = parse_sysml_antlr(
+        "calc def C { in sys; return : Boolean = sys istype PowerProvider; }"
+    )
+    calc = ast["children"][-1]
+    return_param = next(
+        c for c in calc["children"] if c.get("type") == "calc_parameter" and c.get("direction") == "return"
+    )
+    expr = return_param["value"]
+    assert expr["type"] == "classification_expr"
+    assert expr["op"] == "istype"
+    assert expr["type_name"] == "PowerProvider"
+
+    hastype_ast = parse_sysml_antlr(
+        "calc def C { in engine; return : Boolean = engine hastype 'Quoted Type'; }"
+    )
+    hastype_return = hastype_ast["children"][-1]["children"][-1]
+    hastype_expr = hastype_return["value"]
+    assert hastype_expr["type"] == "classification_expr"
+    assert hastype_expr["op"] == "hastype"
+    assert hastype_expr["type_name"] == "Quoted Type"
+
+
 def test_antlr_state_body_element_doc_and_assert_constraint():
     """d57_state_body_element_documentation_stmt_missing: States.sysmlの
     `state def StateAction { doc /* ... */ ... assert constraint {...} }`
