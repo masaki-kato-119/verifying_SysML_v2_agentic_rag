@@ -142,8 +142,13 @@ prefixMetadataAnnotation
     : '#' namespacePath
     ;
 
+// `dependency from 'System Assembly'::'Computer Subsystem' to
+// 'Software Design';`（Dependency Example.sysml）のように、名前を省略した
+// 無名dependency文にも`from`節が付く（名前と`from`が常にペアという
+// 従来の前提を外し、両者を独立に任意とする。2026-08-28、730件パース失敗の
+// 要因分析で発見）。
 dependencyStmt
-    : prefixMetadataAnnotation* 'dependency' ( simpleName 'from' )? clients=namespacePathList 'to' suppliers=namespacePathList ';'
+    : prefixMetadataAnnotation* 'dependency' simpleName? 'from'? clients=namespacePathList 'to' suppliers=namespacePathList ';'
     ;
 
 // --- event occurrence usage (8.2.2.9) -------------------------------------------

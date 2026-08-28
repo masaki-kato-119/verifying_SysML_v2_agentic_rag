@@ -4342,3 +4342,34 @@ def test_antlr_import_statement_inside_typedef_body():
     assert import_node["name"] == "PictureTaking"
     assert import_node["wildcard"] is True
     assert import_node["visibility"] == "private"
+
+
+def test_antlr_dependency_from_to_without_name():
+    """`dependency from 'System Assembly'::'Computer Subsystem' to
+    'Software Design';`（Dependency Example.sysml）のように、名前を省略した
+    dependency文にも`from`節が付く形が未対応だった（従来は名前と`from`が
+    常にペアという前提だった。2026-08-28、730件パース失敗の要因分析で
+    発見）。名前付き形・`#Type`プレフィックス付き無名形も壊れていないことを
+    合わせて確認する。"""
+    unnamed_ast = parse_sysml_antlr(
+        "part def A;\npart def B;\ndependency from A to B;\n"
+    )
+    dependency_node = unnamed_ast["children"][-1]["children"][0]
+    assert dependency_node["type"] == "dependency"
+    assert dependency_node["clients"] == ["A"]
+    assert dependency_node["suppliers"] == ["B"]
+
+    named_ast = parse_sysml_antlr(
+        "part def A;\npart def B;\ndependency D from A to B;\n"
+    )
+    named_dependency_node = named_ast["children"][-1]["children"][0]
+    assert named_dependency_node["clients"] == ["A"]
+    assert named_dependency_node["suppliers"] == ["B"]
+
+    prefixed_ast = parse_sysml_antlr(
+        "requirement def A;\nrequirement def B;\n#refinement dependency from A to B;\n"
+    )
+    prefixed_dependency_node = prefixed_ast["children"][-1]["children"][0]
+    assert prefixed_dependency_node["prefixMetadata"] == ["refinement"]
+    assert prefixed_dependency_node["clients"] == ["A"]
+    assert prefixed_dependency_node["suppliers"] == ["B"]
