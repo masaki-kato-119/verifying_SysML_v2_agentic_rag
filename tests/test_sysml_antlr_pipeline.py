@@ -3927,3 +3927,40 @@ def test_lint_binding_feature_override():
     ok_ast = parse_sysml_antlr(ok_text)
     ok_issues = lint_ast(ok_ast)
     assert not any("override a binding feature" in i.message for i in ok_issues)
+
+
+def test_antlr_recursive_wildcard_import():
+    """`import Pkg::**;`（再帰ワイルドカードimport。パッケージ自身に加え
+    その配下の入れ子パッケージのメンバまでインポートする形）が未対応
+    だった（2026-08-28、730件パース失敗の要因分析で発見。コーパス全体で
+    13件のパース失敗の直接原因）。再現: apollo-11-sysml-v2/Technical/
+    SystemSpecificationPackage.sysml `private import
+    TechnicalRequirementsPackage::**;`。`**`はレキサー上`*`トークン2つの
+    並びとして扱われる。"""
+    ast = parse_sysml_antlr(
+        "package P { private import TechnicalRequirementsPackage::**; }"
+    )
+    import_node = ast["children"][0]
+    assert import_node["type"] == "import"
+    assert import_node["name"] == "TechnicalRequirementsPackage"
+    assert import_node["wildcard"] is True
+    assert import_node["visibility"] == "private"
+
+    # 既存の単一`*`ワイルドカード形・非ワイルカード形・expose文への同種の
+    # 拡張が壊れていないことも確認する。
+    single_wildcard_ast = parse_sysml_antlr(
+        "package P { import TechnicalRequirementsPackage::*; }"
+    )
+    assert single_wildcard_ast["children"][0]["wildcard"] is True
+
+    member_ast = parse_sysml_antlr(
+        "package P { import TechnicalRequirementsPackage::Foo; }"
+    )
+    assert member_ast["children"][0]["wildcard"] is False
+
+    expose_ast = parse_sysml_antlr(
+        "package P { expose TechnicalRequirementsPackage::**; }"
+    )
+    expose_node = expose_ast["children"][0]
+    assert expose_node["type"] == "special_stmt"
+    assert expose_node["children"][0]["type"] == "expose"

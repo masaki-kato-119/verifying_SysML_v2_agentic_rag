@@ -2249,10 +2249,13 @@ portUsage
 // qualified name は `::` 区切り（`.` 区切りの feature chain とは別概念）
 // なので、connect/flow で使っている qualifiedName（`.`区切り）とは
 // 別の namespacePath（`::`区切り）を用意する。
-// visibility indicator（'private import ...;' 等）に対応する。'all'、再帰
-// '::**'、'{ }' 形の RelationshipBody は未対応。
+// visibility indicator（'private import ...;' 等）に対応する。'all'、
+// '{ }' 形の RelationshipBody は未対応。
+// 再帰ワイルドカード`::**`（パッケージ自身に加えその配下の入れ子パッケージの
+// メンバまでインポートする形）に対応する（2026-08-28、730件パース失敗の
+// 要因分析で発見。`**`はレキサー上`*`トークン2つの並びとして扱われる）。
 importStmt
-    : visibilityIndicator? 'import' namespacePath ('::' '*')? ';'
+    : visibilityIndicator? 'import' namespacePath ('::' '*' '*'?)? ';'
     ;
 
 visibilityIndicator
@@ -2299,11 +2302,12 @@ namespacePathList
 
 // --- expose (8.2.2.3) --------------------------------------------------------
 // 参照: KerML.xtext の `expose_stmt: KW_EXPOSE qualified_id ";"`。
-// importと同様、namespacePath（`::`区切り）とワイルドカードに対応する。
+// importと同様、namespacePath（`::`区切り）と再帰ワイルドカード`::**`を含む
+// ワイルドカードに対応する（2026-08-28、importStmtと同じ理由で追加）。
 // exposeノードは{"type":"special_stmt","children":[{"type":
 // "expose",...}]}という入れ子で返す。
 exposeStmt
-    : 'expose' namespacePath ('::' '*')? ';'
+    : 'expose' namespacePath ('::' '*' '*'?)? ';'
     ;
 
 // --- interface def (8.2.2.14) -------------------------------------------------
