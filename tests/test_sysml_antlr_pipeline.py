@@ -1073,6 +1073,23 @@ def test_antlr_part_and_requirement_usage_short_name():
     assert lint_ast(req_ast) is not None
 
 
+def test_antlr_requirement_def_short_name():
+    """`requirement def <'FLR-R001'> PropellantLoadingRequirement { ... }`
+    （FunctionalRequirementsPackage.sysml）のように、requirementDefにも
+    ShortName注釈（山括弧の短縮名）がある。requirementUsageへは
+    P1-1で追加済みだったが、requirementDefへの追加を見落としていた
+    （2026-08-28、730件回帰チェックで発見）。"""
+    ast = parse_sysml_antlr("requirement def <'FLR-R001'> PropellantLoadingRequirement;")
+    node = ast["children"][-1]
+    assert node["type"] == "requirement_def"
+    assert node["shortName"] == "'FLR-R001'"
+    assert node["name"] == "PropellantLoadingRequirement"
+
+    plain_ast = parse_sysml_antlr("requirement def R;")
+    plain_node = plain_ast["children"][-1]
+    assert plain_node["shortName"] is None
+
+
 def test_antlr_state_body_element_doc_and_assert_constraint():
     """d57_state_body_element_documentation_stmt_missing: States.sysmlの
     `state def StateAction { doc /* ... */ ... assert constraint {...} }`

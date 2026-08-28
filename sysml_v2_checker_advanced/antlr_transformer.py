@@ -892,6 +892,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return {
             "type": "requirement_def",
             "name": _simple_name_text(ctx.simpleName()),
+            # `requirement def <'FLR-R001'> Name { ... }`のようなShortName注釈。
+            "shortName": ctx.shortName.text if ctx.shortName is not None else None,
             "inheritance": self._inheritance_dict(ctx),
             "isAbstract": ctx.isAbstract is not None,
             "children": children,

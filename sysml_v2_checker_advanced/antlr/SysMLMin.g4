@@ -1589,8 +1589,13 @@ actionUsageStmt
 //
 // requirementBodyElementはdocumentationStmtのみ（simpleNameは任意）で
 // 表す。専用のdocMember規則は持たない。
+// `requirement def <'FLR-R001'> PropellantLoadingRequirement { ... }`
+// （FunctionalRequirementsPackage.sysml）のように、ShortName注釈（山括弧の
+// 短縮名）を持つことがある（2026-08-28、730件回帰チェックで発見。
+// requirementUsageへは既にP1-1で追加済みだったが、requirementDefへの
+// 追加を見落としていた）。
 requirementDef
-    : isAbstract='abstract'? 'requirement' 'def' simpleName inheritanceClause? ( '{' requirementBodyElement* '}' | ';' )
+    : isAbstract='abstract'? 'requirement' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' requirementBodyElement* '}' | ';' )
     ;
 
 // 公式コーパスの`requirement def RequirementCheck { ... }`
