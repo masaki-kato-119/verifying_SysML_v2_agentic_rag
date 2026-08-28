@@ -170,8 +170,13 @@ eventOccurrenceUsageStmt
 // `exhibit state 'vehicle states': 'Vehicle States';`（5-State-based
 // Behavior-1a.sysml）のように型節（`: Type`）を伴うことがある
 // （2026-08-28、参照実装比較レポートP1-2で発見）。
+// `exhibit state vehicleStates parallel { state s1; ... }`
+// （VehicleModel_2_Simplified.sysml等、実コーパスで6件超）のように、
+// 本体（stateBodyElement*）・`parallel`修飾子のいずれも持ちうる
+// （2026-08-28、state parallel修飾子の調査で発見。以前は`;'`終端のみで
+// 本体を一切持てなかった）。
 exhibitStateUsageStmt
-    : 'exhibit' 'state' simpleName (':' namespacePath)? ';'
+    : 'exhibit' 'state' simpleName (':' namespacePath)? isParallel='parallel'? ( '{' stateBodyElement* '}' | ';' )
     ;
 
 // --- portion usage: snapshot/timeslice (8.2.2.9) --------------------------------
@@ -1696,8 +1701,11 @@ concernDef
 // 参照: SysML.xtext の `EntryActionMember`（`kind = EntryActionKind` = 'entry'）。
 // StateActionUsage の完全な一般形（インライン定義等）は未対応。既存アクションへの
 // 参照 (`entry act1;`) のみサポート。
+// `state def S1 parallel { ... }`（TransitionUsage_invalid.sysml.xt）のように、
+// 直交(orthogonal)状態を表す`parallel`修飾子が本体の直前に付きうる
+// （2026-08-28、StateTest.sysmlの調査で発見。実コーパスで10件超）。
 stateDef
-    : isAbstract='abstract'? 'state' 'def' simpleName inheritanceClause? ( '{' stateBodyElement* '}' | ';' )
+    : isAbstract='abstract'? 'state' 'def' simpleName inheritanceClause? isParallel='parallel'? ( '{' stateBodyElement* '}' | ';' )
     ;
 
 // nested `state def Sub;`はsymbolとして登録される。`_find_state_in_symbols`
@@ -1747,12 +1755,17 @@ stateBodyElement
 // performedActions { ... }`（Parts.sysml）・`ref state self: StateAction
 // :>> Action::self, StatePerformance::self;`（States.sysml）のように、
 // `ref`修飾子・型節・redefine節（itemUsage/partUsage等と同型）も持つ。
+// `state s parallel { ... }`（StateTest.sysml）・`exhibit state
+// vehicleStates parallel { ... }`（VehicleModel_2_Simplified.sysml）の
+// ように、直交(orthogonal)状態を表す`parallel`修飾子が本体の直前に付きうる
+// （2026-08-28、StateTest.sysmlの調査で発見。実コーパスで10件超）。
 stateUsage
     : isAbstract='abstract'? isRef='ref'? 'state' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       (':' ID)?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      isParallel='parallel'?
       ( '{' stateBodyElement* '}' | ';' )
     ;
 

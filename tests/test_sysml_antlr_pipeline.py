@@ -770,6 +770,39 @@ def test_antlr_implicit_transition_first_omitted():
     assert bare_then_transition["target"] == "S1"
 
 
+def test_antlr_state_parallel_orthogonal_modifier():
+    """`state s parallel { state s1; state s2; }`（StateTest.sysml、公式
+    xpectテスト、noErrors指定）・`state def S1 parallel { ... }`のように、
+    直交(orthogonal)状態を表す`parallel`修飾子がstateUsage/stateDefに
+    付きうる（2026-08-28、730件回帰チェックで発見）。`exhibit state
+    vehicleStates parallel { ... }`（VehicleModel_2_Simplified.sysml）の
+    ように、exhibitStateUsageStmtにも同様に付きうる（以前は`;`終端のみで
+    本体を一切持てなかった）。"""
+    usage_ast = parse_sysml_antlr("state def S { state s parallel { state s1; state s2; } }")
+    usage_node = usage_ast["children"][-1]["children"][0]
+    assert usage_node["type"] == "state_usage"
+    assert usage_node["isParallel"] is True
+    assert len(usage_node["children"]) == 2
+
+    def_ast = parse_sysml_antlr("state def S1 parallel { state s1; }")
+    def_node = def_ast["children"][-1]
+    assert def_node["type"] == "state_def"
+    assert def_node["isParallel"] is True
+
+    plain_ast = parse_sysml_antlr("state def S { state s { state s1; } }")
+    plain_node = plain_ast["children"][-1]["children"][0]
+    assert plain_node["isParallel"] is False
+
+    exhibit_ast = parse_sysml_antlr(
+        "state def VehicleStates; "
+        "part def P { exhibit state vehicleStates : VehicleStates parallel { state s1; } }"
+    )
+    exhibit_node = exhibit_ast["children"][-1]["children"][0]
+    assert exhibit_node["type"] == "exhibit_state_usage"
+    assert exhibit_node["isParallel"] is True
+    assert len(exhibit_node["children"]) == 1
+
+
 def test_antlr_do_action_member_inline_send():
     """`do send new Sig(T.s.x) to p;`（StateTest.sysml）のように、`do`節が
     transitionを伴わず単独のdo-actionメンバーとしてインラインsendアクション
@@ -812,12 +845,14 @@ def test_antlr_nested_state_def():
                 "name": "S",
                 "inheritance": None,
                 "isAbstract": False,
+                "isParallel": False,
                 "children": [
                     {
                         "type": "state_def",
                         "name": "Sub",
                         "inheritance": None,
                         "isAbstract": False,
+                        "isParallel": False,
                         "children": [],
                     }
                 ],
@@ -1546,6 +1581,7 @@ def test_antlr_state_usage_with_empty_body():
         "inheritance": None,
         "isAbstract": False,
         "isRef": False,
+        "isParallel": False,
         "redefines": [],
         "children": [],
     }
@@ -2729,6 +2765,7 @@ def test_antlr_exhibit_state_usage_is_new_construct():
         "type": "exhibit_state_usage",
         "name": "A",
         "type_name": None,
+        "isParallel": False,
         "children": [],
     }
     lint_ast(ast)
@@ -2747,6 +2784,7 @@ def test_antlr_exhibit_state_usage_type_clause_and_partbody():
         "type": "exhibit_state_usage",
         "name": "vehicle states",
         "type_name": "Vehicle States",
+        "isParallel": False,
         "children": [],
     }
     lint_ast(ast)

@@ -988,6 +988,9 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "name": _simple_name_text(ctx.simpleName()),
             "inheritance": self._inheritance_dict(ctx),
             "isAbstract": ctx.isAbstract is not None,
+            # `state def S1 parallel { ... }`のような直交(orthogonal)状態
+            # 修飾子（2026-08-28、StateTest.sysmlの調査で発見）。
+            "isParallel": ctx.isParallel is not None,
             "children": children,
         }
 
@@ -1012,6 +1015,9 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "inheritance": None,
             "isAbstract": ctx.isAbstract is not None,
             "isRef": ctx.isRef is not None,
+            # `state s parallel { ... }`のような直交(orthogonal)状態修飾子
+            # （2026-08-28、StateTest.sysmlの調査で発見）。
+            "isParallel": ctx.isParallel is not None,
             "redefines": redefines,
             "children": children,
         }
@@ -2197,7 +2203,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             # `exhibit state 'vehicle states': 'Vehicle States';`のような型節
             # （2026-08-28、参照実装比較レポートP1-2で発見）。
             "type_name": _namespace_path_text(type_ctx) if type_ctx is not None else None,
-            "children": [],
+            # `exhibit state vehicleStates parallel { ... }`のような直交
+            # (orthogonal)状態修飾子・本体（2026-08-28、state parallel
+            # 修飾子の調査で発見）。
+            "isParallel": ctx.isParallel is not None,
+            "children": [self.visit(el) for el in ctx.stateBodyElement()],
         }
 
     def visitPortionUsageStmt(self, ctx: SysMLMinParser.PortionUsageStmtContext) -> Dict:
