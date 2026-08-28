@@ -3842,3 +3842,88 @@ def test_lint_accessible_feature_path():
     unverifiable_ast = parse_sysml_antlr(unverifiable_text)
     unverifiable_issues = lint_ast(unverifiable_ast)
     assert not any("accessible feature" in i.message for i in unverifiable_issues)
+
+
+def test_lint_binding_feature_override():
+    """Vehicle.sysml/toaster-system.sysml参照。既に値束縛(`= expr`)を持つ
+    フィーチャをredefineしつつ、redefine側も新たに値束縛を与えるのは不正
+    （2026-08-28、参照実装比較で発見した偽陰性）。"""
+    # `:>> name = value;`という、ターゲット省略の値束縛ショートハンド形。
+    shorthand_text = (
+        "part def Toaster {\n"
+        "    attribute maxTemp : Real;\n"
+        "    attribute slots : Integer = 2;\n"
+        "}\n"
+        "part myToaster : Toaster {\n"
+        "    :>> maxTemp = 230.0;\n"
+        "    :>> slots = 2;\n"
+        "}\n"
+    )
+    shorthand_ast = parse_sysml_antlr(shorthand_text)
+    shorthand_issues = lint_ast(shorthand_ast)
+    override_errors = [
+        i for i in shorthand_issues
+        if i.severity == "error" and "override a binding feature" in i.message
+    ]
+    # maxTempは基底に値束縛が無いので許容、slotsのみ不正。
+    assert len(override_errors) == 1
+
+    # 明示的な`attribute :>> Target = value;`形、かつ多段階の継承チェーン
+    # （vehicle_1a :> vehicle_1が、vehicle_1自身のredefine済みフィーチャを
+    # 更にredefineする）でも検出できる。
+    explicit_text = (
+        "package Vehicle {\n"
+        "    part def Vehicle {\n"
+        "        attribute cylinders: Integer = 3;\n"
+        "    }\n"
+        "    part vehicle_1 : Vehicle {\n"
+        "        attribute cylinders :>> Vehicle::cylinders = 4;\n"
+        "    }\n"
+        "    part vehicle_1a :> vehicle_1 {\n"
+        "        attribute cylinders :>> vehicle_1::cylinders = 6;\n"
+        "    }\n"
+        "}\n"
+    )
+    explicit_ast = parse_sysml_antlr(explicit_text)
+    explicit_issues = lint_ast(explicit_ast)
+    explicit_errors = [
+        i for i in explicit_issues
+        if i.severity == "error" and "override a binding feature" in i.message
+    ]
+    assert len(explicit_errors) == 2
+
+    # 型付きusage本体内で継承フィーチャと同名のフィーチャを宣言する暗黙の
+    # redefine（明示的な`:>>`が無くとも、KerMLの仕様上は自動的に継承
+    # フィーチャをredefineしたものとみなされる）でも検出できる。
+    implicit_text = (
+        "package CalculationExample {\n"
+        "    calc def MassSum {\n"
+        "        in partMasses;\n"
+        "        return totalMass = 1;\n"
+        "    }\n"
+        "    calc ms : MassSum {\n"
+        "        in partMasses = 2;\n"
+        "        return totalMass = 3;\n"
+        "    }\n"
+        "}\n"
+    )
+    implicit_ast = parse_sysml_antlr(implicit_text)
+    implicit_issues = lint_ast(implicit_ast)
+    implicit_errors = [
+        i for i in implicit_issues
+        if i.severity == "error" and "override a binding feature" in i.message
+    ]
+    assert len(implicit_errors) == 1
+
+    # 基底フィーチャに値束縛が無ければ誤検出しない。
+    ok_text = (
+        "part def P {\n"
+        "    attribute x : Integer;\n"
+        "}\n"
+        "part p1 : P {\n"
+        "    attribute x :>> P::x = 5;\n"
+        "}\n"
+    )
+    ok_ast = parse_sysml_antlr(ok_text)
+    ok_issues = lint_ast(ok_ast)
+    assert not any("override a binding feature" in i.message for i in ok_issues)

@@ -394,6 +394,7 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         # 2026-08-28、参照実装比較レポートで発見した偽陰性）。
         if "children" in node:
             self._check_subsetting_uniqueness_conformance(node)
+            self._check_binding_feature_override(node)
 
         # 多重度のチェック（後方互換性）
         if "multiplicity" in node:

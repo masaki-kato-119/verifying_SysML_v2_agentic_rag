@@ -155,6 +155,104 @@ class DefinitionUsageRulesMixin:
                         child
                     ))
 
+    def _resolve_type_node(self, type_name: str):
+        """`type_name`が指す型定義ノードをself.symbols/self.element_refsから
+        解決する（末尾セグメント一致のフォールバック込み。_find_type_in_symbols/
+        _find_element_in_symbolsと同じ検索方針だが、真偽値ではなくノード自体を
+        返す点が異なる）。`vehicle_1a :> vehicle_1 { attribute cylinders :>>
+        vehicle_1::cylinders = 6; }`のように、redefine対象の修飾プレフィックスが
+        def自体ではなく別のusage/instance（part_instance等）を指すケースが
+        あるため、self.element_refsも検索対象に含める（Vehicle.sysml参照）。"""
+        if not type_name:
+            return None
+        node = self.symbols.get(type_name)
+        if node is not None:
+            return node
+        for sym_name, sym_node in self.symbols.items():
+            if sym_name == type_name or sym_name.endswith(f"::{type_name}"):
+                return sym_node
+        node = self.element_refs.get(type_name)
+        if node is not None:
+            return node
+        for sym_name, sym_node in self.element_refs.items():
+            if sym_name == type_name or sym_name.endswith(f"::{type_name}"):
+                return sym_node
+        return None
+
+    @staticmethod
+    def _find_child_by_name(type_node, name: str):
+        if not isinstance(type_node, dict) or not name:
+            return None
+        for child in type_node.get("children", []) or []:
+            if isinstance(child, dict) and child.get("name") == name:
+                return child
+        return None
+
+    def _resolve_redefine_target_node(self, target: str, fallback_type_name):
+        """redefines/value_bindingの`target`（`"Vehicle::cylinders"`のような
+        修飾名、または`fallback_type_name`（囲むusageの型名）に対する裸の
+        フィーチャ名）が指す、ローカルに解決可能な基底フィーチャのノードを
+        返す（解決できなければNone）。"""
+        if not target:
+            return None
+        if "::" in target:
+            prefix, feature_name = target.rsplit("::", 1)
+        else:
+            prefix, feature_name = fallback_type_name, target
+        if not prefix:
+            return None
+        return self._find_child_by_name(self._resolve_type_node(prefix), feature_name)
+
+    def _check_binding_feature_override(self, node: Dict) -> None:
+        """
+        Cannot override a binding feature value
+
+        参照実装比較評価で発見した偽陰性（Vehicle.sysml/toaster-system.sysml
+        参照）。あるフィーチャが既に値束縛（`= expr`）を持つ場合、それを
+        redefine（明示的な`:>>`/`redefines`、`:>> name = value;`という
+        ターゲット省略の値束縛ショートハンド形、または型付きusage本体内で
+        継承フィーチャと同名のフィーチャを宣言する暗黙のredefine（KerMLの
+        仕様上、同名なら自動的に継承フィーチャをredefineしたものとみなされる。
+        `calc ms: MassSum { return totalMass = ...; }`がMassSum::totalMassを
+        暗黙にredefineする例、CalculationExample.sysml参照）のいずれかで
+        redefineしつつ、redefine側も自身の値束縛を新たに与えるのは不正
+        （基底の値束縛をそのまま継承する以外の方法がない）。`node`は任意の
+        親ノード（`_check_rules`からchildrenを持つ全ノードに対して呼ばれる）。
+        """
+        children = node.get("children")
+        if not isinstance(children, list):
+            return
+        node_type_name = node.get("type_name")
+        for child in children:
+            if not isinstance(child, dict) or child.get("value") is None:
+                continue
+
+            if child.get("type") == "value_binding":
+                if child.get("kind") != "redefines":
+                    continue
+                base = self._resolve_redefine_target_node(child.get("target", ""), node_type_name)
+                if base is not None and base.get("value") is not None:
+                    self.issues.append(LintIssue(
+                        SEVERITY_ERROR, "Cannot override a binding feature value", child
+                    ))
+                continue
+
+            base = None
+            redefines = child.get("redefines")
+            if isinstance(redefines, list):
+                for redefine in redefines:
+                    if isinstance(redefine, dict) and redefine.get("kind") == "redefines":
+                        base = self._resolve_redefine_target_node(redefine.get("target", ""), None)
+                        if base is not None:
+                            break
+            if base is None and node_type_name and child.get("name"):
+                base = self._find_child_by_name(self._resolve_type_node(node_type_name), child.get("name"))
+
+            if base is not None and base is not child and base.get("value") is not None:
+                self.issues.append(LintIssue(
+                    SEVERITY_ERROR, "Cannot override a binding feature value", child
+                ))
+
     def _is_feature_only_name(self, name: str) -> bool:
         """`name`が型/パッケージとしては解決できず、feature/instance
         （self.element_refs）としてのみ解決できるかを判定する
