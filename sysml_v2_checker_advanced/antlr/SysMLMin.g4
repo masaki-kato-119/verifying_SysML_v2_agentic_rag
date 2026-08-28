@@ -688,12 +688,16 @@ connectionBodyElement
 // `occurrence`/`port`/`item`はリテラルキーワードのため`endName`
 // （`simpleName`はID/QUOTED_NAMEのみ）と衝突せず、ANTLRの通常の
 // 先読みで曖昧性なく解決される。
+// `end p2: ~P;`（ConjugationTest.sysml）・`end communicationPartnerB :
+// ~VerbalExchange;`（family.sysml）のように、型節が`~`接頭辞（共役ポート
+// 参照）を取りうる。portUsage（1990行目付近）は既に対応済みで非対称
+// だった（2026-08-28、参照実装比較レポートP1-4で発見）。
 connectionEndMember
     : 'end' (endName=simpleName endMult=multiplicitySpec?)?
       kind=('occurrence' | 'port' | 'item')?
       isRef='ref'?
       innerName=simpleName?
-      (':' ID)?
+      (':' conjugated='~'? ID)?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )

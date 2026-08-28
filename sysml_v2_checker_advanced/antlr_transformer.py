@@ -1323,13 +1323,19 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
         end_name = _optional_simple_name_text(ctx.endName)
         inner_name = _optional_simple_name_text(ctx.innerName)
+        # `end p2: ~P;`という共役ポート参照。portUsageと同じく、`~`を
+        # type_nameの先頭に合成する（2026-08-28、参照実装比較レポートP1-4で
+        # 発見）。
+        type_name = None
+        if id_ctx is not None:
+            type_name = ("~" + id_ctx.getText()) if ctx.conjugated is not None else id_ctx.getText()
         return {
             "type": "connection_end_member",
             "name": inner_name or end_name,
             "endName": end_name,
             "kind": ctx.kind.text if ctx.kind is not None else None,
             "isRef": ctx.isRef is not None,
-            "type_name": id_ctx.getText() if id_ctx is not None else None,
+            "type_name": type_name,
             "multiplicity": self._multiplicity_dict(inner_mult_ctx),
             "endMultiplicity": self._multiplicity_dict(ctx.endMult),
             "redefines": redefines,

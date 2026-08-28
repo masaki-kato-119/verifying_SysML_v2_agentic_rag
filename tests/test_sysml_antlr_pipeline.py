@@ -455,6 +455,16 @@ def test_antlr_connection_end_member_outer_name_and_body():
     assert len(node["children"]) == 1
 
 
+def test_antlr_connection_end_member_conjugated_type():
+    """`end p2: ~P;`（ConjugationTest.sysml）のような共役ポート参照。
+    portUsageは既に対応していたが非対称だった（2026-08-28、参照実装比較
+    レポートP1-4で発見）。"""
+    ast = parse_sysml_antlr("interface def I { end p1: P; end p2: ~P; }")
+    plain, conjugated = ast["children"][0]["children"]
+    assert plain["type_name"] == "P"
+    assert conjugated["type_name"] == "~P"
+
+
 # --- calculation usage / constraint usage / satisfy requirement usage ------------
 # (8.2.2.19, 8.2.2.20, 8.2.2.21.2)
 
