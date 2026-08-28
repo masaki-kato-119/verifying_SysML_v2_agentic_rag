@@ -1981,9 +1981,13 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         }
 
     def visitExhibitStateUsageStmt(self, ctx: SysMLMinParser.ExhibitStateUsageStmtContext) -> Dict:
+        type_ctx = ctx.namespacePath()
         return {
             "type": "exhibit_state_usage",
             "name": _simple_name_text(ctx.simpleName()),
+            # `exhibit state 'vehicle states': 'Vehicle States';`のような型節
+            # （2026-08-28、参照実装比較レポートP1-2で発見）。
+            "type_name": _namespace_path_text(type_ctx) if type_ctx is not None else None,
             "children": [],
         }
 

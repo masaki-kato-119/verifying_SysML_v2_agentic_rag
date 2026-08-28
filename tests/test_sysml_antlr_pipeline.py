@@ -2303,7 +2303,30 @@ def test_antlr_exhibit_state_usage_is_new_construct():
     混じりの断片で実用に耐えず、linter.py側に対応するチェック関数も無い
     （構文的完全性のみ）。"""
     ast = parse_sysml_antlr("exhibit state A;")
-    assert ast["children"][0] == {"type": "exhibit_state_usage", "name": "A", "children": []}
+    assert ast["children"][0] == {
+        "type": "exhibit_state_usage",
+        "name": "A",
+        "type_name": None,
+        "children": [],
+    }
+    lint_ast(ast)
+
+
+def test_antlr_exhibit_state_usage_type_clause_and_partbody():
+    """`exhibit state 'vehicle states': 'Vehicle States';`
+    （5-State-based Behavior-1a.sysml）のように、型節を伴い、かつ
+    part def本体内にも書ける（2026-08-28、参照実装比較レポートP1-2で発見。
+    以前はpackageBodyElementにしか登録されておらず型節も無かった）。"""
+    ast = parse_sysml_antlr(
+        "part def VehicleA { exhibit state 'vehicle states': 'Vehicle States'; }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node == {
+        "type": "exhibit_state_usage",
+        "name": "vehicle states",
+        "type_name": "Vehicle States",
+        "children": [],
+    }
     lint_ast(ast)
 
 

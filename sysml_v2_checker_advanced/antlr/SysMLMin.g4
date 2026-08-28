@@ -161,8 +161,11 @@ eventOccurrenceUsageStmt
 
 // --- exhibit state usage (8.2.2.18) ---------------------------------------------
 // 構文的完全性のためのみ実装。linter.py側に対応するチェック関数は無い。
+// `exhibit state 'vehicle states': 'Vehicle States';`（5-State-based
+// Behavior-1a.sysml）のように型節（`: Type`）を伴うことがある
+// （2026-08-28、参照実装比較レポートP1-2で発見）。
 exhibitStateUsageStmt
-    : 'exhibit' 'state' simpleName ';'
+    : 'exhibit' 'state' simpleName (':' namespacePath)? ';'
     ;
 
 // --- portion usage: snapshot/timeslice (8.2.2.9) --------------------------------
@@ -1005,6 +1008,11 @@ partBodyElement
     // ショートハンド）もpackageBodyElementだけでなくpartBodyElement内に
     // 書ける（2026-08-28、参照実装比較レポートP0-4で発見）。
     | metadataUsage
+    // `part def VehicleA { exhibit state 'vehicle states': 'Vehicle States'; }`
+    // （5-State-based Behavior-1a.sysml）のように、exhibitStateUsageStmtは
+    // packageBodyElementだけでなくpartBodyElement内にも書ける
+    // （2026-08-28、参照実装比較レポートP1-2で発見）。
+    | exhibitStateUsageStmt
     ;
 
 // 公式コーパスには`ref self: Part :>> Item::self;`や`ref stateSpace:
