@@ -1497,9 +1497,13 @@ messageStmt
 // actions { ... }`（Flows.sysml）のように、`from`/`to`を伴わない裸の
 // `message`usage形（itemUsage/partUsage等と同型）も持つ
 // （`messageStmt`は`from`/`to`必須の別構文のため衝突しない）。
+// `message publish_message of Publish[1];`（17b-Sequence-Modeling.sysml）
+// のように、ペイロード型節が`of Type`形を取ることがある（`: ID`単一
+// セグメントとは異なり`::`区切りの型参照も受理できるようnamespacePathを
+// 使う）（2026-08-28、参照実装比較レポートP2-1で発見）。
 messageUsage
     : isAbstract='abstract'? 'message' simpleName?
-      (':' ID)?
+      ( ':' ID | 'of' payloadType=namespacePath )?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )

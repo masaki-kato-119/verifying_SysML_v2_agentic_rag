@@ -1324,6 +1324,21 @@ def test_antlr_bare_allocation_and_message_usage():
     assert message_node["redefines"][0]["targets"] == ["transfers", "actions"]
 
 
+def test_antlr_message_usage_of_payload_type():
+    """`message publish_message of Publish[1];`（17b-Sequence-Modeling.sysml）
+    のようなペイロード型節（2026-08-28、参照実装比較レポートP2-1で発見）。
+    既存の`: ID`単一セグメント形とは別の代替（`::`区切り型参照にも対応）。"""
+    ast = parse_sysml_antlr(
+        "part def P { message publish_message of Pkg::Publish[1]; } "
+        "item def Publish;"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "message_usage"
+    assert node["name"] == "publish_message"
+    assert node["type_name"] == "Pkg::Publish"
+    assert node["multiplicity"]["size"] == {"min": 1, "max": 1}
+
+
 def test_antlr_bare_flow_usage_no_from_to():
     """d67_bare_flow_usage_missing: Flows.sysmlの`abstract flow flows:
     Flow[0..*] nonunique :> messages, flowTransfers { ... }`のように、

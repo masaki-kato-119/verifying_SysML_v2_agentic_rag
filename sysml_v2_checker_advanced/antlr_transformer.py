@@ -1378,10 +1378,18 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # 裸の`message`usage形。
         id_ctx = ctx.ID()
         redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
+        # `of Publish[1]`というペイロード型節（2026-08-28、参照実装比較
+        # レポートP2-1で発見）。`: ID`形との排他的代替。
+        if ctx.payloadType is not None:
+            type_name = _namespace_path_text(ctx.payloadType)
+        elif id_ctx is not None:
+            type_name = id_ctx.getText()
+        else:
+            type_name = None
         return {
             "type": "message_usage",
             "name": _optional_simple_name_text(ctx.simpleName()),
-            "type_name": id_ctx.getText() if id_ctx is not None else None,
+            "type_name": type_name,
             "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
             "isAbstract": ctx.isAbstract is not None,
             "redefines": redefines,
