@@ -1655,6 +1655,29 @@ def test_antlr_nary_connect_and_double_colon_gt_references():
     ]
 
 
+def test_antlr_connect_usage_with_body():
+    """`#causation connect b to d { @CausationMetadata { isNecessary =
+    true; probability = 0.1; } }`（CauseAndEffectExample.sysml）のように、
+    connectUsageは`;`終端だけでなくbody（`{ ... }`）も持ちうる
+    （2026-08-28、発見。以前は`;`終端のみだった）。"""
+    ast = parse_sysml_antlr(
+        "metadata def CausationMetadata; "
+        "part def P { part a; part d; "
+        "connect a to d { @CausationMetadata { isNecessary = true; } } }"
+    )
+    node = ast["children"][-1]["children"][-1]
+    assert node["type"] == "connect_usage"
+    assert node["from_end"]["reference"] == "a"
+    assert node["to_end"]["reference"] == "d"
+    assert len(node["children"]) == 1
+    assert node["children"][0]["type"] == "metadata_usage"
+
+    # 既存の`;`終端形も変わらず動作する。
+    plain_ast = parse_sysml_antlr("part def P { part a; part b; connect a to b; }")
+    plain_node = plain_ast["children"][-1]["children"][-1]
+    assert plain_node["children"] == []
+
+
 def test_antlr_action_usage_while_guard():
     """`action X while cond { ... }`のwhileガードは旧Lark実装に規則が無い
     新規拡張（WhileLoopActionUsageの簡略形。COVERAGE.md参照）。"""

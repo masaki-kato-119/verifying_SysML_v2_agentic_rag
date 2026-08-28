@@ -1361,12 +1361,16 @@ multiplicityBound
 // （CauseAndEffectExample.sysml）のように、2項の`A to B`形とは別に、
 // 括弧で囲んだ3項以上のend列（n元connect、KerMLのNaryConnectorPart）も
 // 存在する（2026-08-28、730件回帰チェックで発見）。
+// `#causation connect b to d { @CausationMetadata { isNecessary = true;
+// probability = 0.1; } }`（CauseAndEffectExample.sysml）のように、`;`
+// 終端だけでなくbody（`{ ... }`）も持ちうる（2026-08-28、発見。以前は
+// `;`終端のみだった）。
 connectUsage
     : prefixMetadataAnnotation* 'connect'
       ( fromEnd=connectorEndPath 'to' toEnd=connectorEndPath
       | '(' naryEnds+=connectorEndPath (',' naryEnds+=connectorEndPath)+ ')'
       )
-      ';'
+      ( '{' partBodyElement* '}' | ';' )
     ;
 
 // `connection :MatesWith connect [1] be to [1] be;`（ShapeItems.sysml、

@@ -494,6 +494,9 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # 持ちうる（2026-08-28、730件回帰チェックで発見）。2項の`A to B`形とは
         # 別に`ends`フィールドを持たせる（`from_end`/`to_end`はn元形では
         # Noneのまま。既存の2項形の出力互換性は保つ）。
+        # `#causation connect b to d { @CausationMetadata { ... } }`のような
+        # body（2026-08-28、発見。以前は`;`終端のみだった）。
+        children = [self.visit(el) for el in ctx.partBodyElement()]
         if ctx.naryEnds:
             return {
                 "type": "connect_usage",
@@ -501,7 +504,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 "to_end": None,
                 "ends": [self.visit(e) for e in ctx.naryEnds],
                 "prefixMetadata": prefix_metadata,
-                "children": [],
+                "children": children,
             }
         return {
             "type": "connect_usage",
@@ -509,7 +512,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "to_end": self.visit(ctx.toEnd),
             "ends": None,
             "prefixMetadata": prefix_metadata,
-            "children": [],
+            "children": children,
         }
 
     def visitConnectionUsage(self, ctx: SysMLMinParser.ConnectionUsageContext) -> Dict:
