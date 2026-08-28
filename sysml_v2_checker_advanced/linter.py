@@ -382,7 +382,12 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         
         if node_type in check_functions:
             check_functions[node_type](node, namespace)
-        
+
+        # subsetting/redefiningのuniqueness制約チェック（シブリングスコープ、
+        # 2026-08-28、参照実装比較レポートで発見した偽陰性）。
+        if "children" in node:
+            self._check_subsetting_uniqueness_conformance(node)
+
         # 多重度のチェック（後方互換性）
         if "multiplicity" in node:
             self._check_multiplicity(node["multiplicity"], node.get("name", "unknown"))

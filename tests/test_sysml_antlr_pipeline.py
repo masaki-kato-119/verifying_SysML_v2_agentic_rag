@@ -3725,3 +3725,49 @@ def test_lint_requirement_subject_after_doc_and_self_redefine_is_not_flagged():
     ast = parse_sysml_antlr(text)
     issues = lint_ast(ast)
     assert not any("8.2.2.21" in i.message for i in issues if i.severity == "error")
+
+
+def test_lint_subsetting_uniqueness_conformance():
+    """Subsetting_UniquenessConformance_Invalid.sysml参照。subsets/redefines
+    対象がシブリングスコープ（同じ親のchildren内）でunique(既定)な場合、
+    subsetting/redefining側はnonuniqueにできない（2026-08-28、参照実装
+    比較で発見した偽陰性）。"""
+    text = (
+        "part rearAxleAssembly {\n"
+        "    part rearWheel: Wheel[2];\n"
+        "    part rearWheel_1: Wheel[2] nonunique subsets rearWheel;\n"
+        "    part rearWheel_2[0..1] nonunique subsets rearWheel;\n"
+        "}\n"
+        "part def Wheel;\n"
+    )
+    ast = parse_sysml_antlr(text)
+    issues = lint_ast(ast)
+    uniqueness_errors = [
+        i for i in issues
+        if i.severity == "error" and "nonunique if subsetted" in i.message
+    ]
+    assert len(uniqueness_errors) == 2
+
+    # unique制約の対象がnonunique自体なら誤検出しない。
+    ok_text = (
+        "part rearAxleAssembly {\n"
+        "    part rearWheel: Wheel[2] nonunique;\n"
+        "    part rearWheel_1: Wheel[2] nonunique subsets rearWheel;\n"
+        "}\n"
+        "part def Wheel;\n"
+    )
+    ok_ast = parse_sysml_antlr(ok_text)
+    ok_issues = lint_ast(ok_ast)
+    assert not any("nonunique if subsetted" in i.message for i in ok_issues)
+
+    # subsets対象がシブリングに存在しない場合は判定しない（型解決なしの
+    # 安全側の設計）。
+    unresolved_text = (
+        "part rearAxleAssembly {\n"
+        "    part rearWheel_1: Wheel[2] nonunique subsets elsewhereWheel;\n"
+        "}\n"
+        "part def Wheel;\n"
+    )
+    unresolved_ast = parse_sysml_antlr(unresolved_text)
+    unresolved_issues = lint_ast(unresolved_ast)
+    assert not any("nonunique if subsetted" in i.message for i in unresolved_issues)

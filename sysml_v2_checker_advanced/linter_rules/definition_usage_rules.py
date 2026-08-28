@@ -105,6 +105,56 @@ class DefinitionUsageRulesMixin:
                 f"Part instance '{node.get('name')}' が存在しない型 '{type_name}' を参照しています",
                 node
             ))
+
+    def _check_subsetting_uniqueness_conformance(self, node: Dict) -> None:
+        """
+        Subsetting/redefining feature cannot be nonunique if subsetted/redefined
+        feature is unique (KerML 8.4 Uniqueness Conformance)
+
+        参照実装（OMG SysML v2 Pilot Implementation）との比較評価で発見した
+        偽陰性（Subsetting_UniquenessConformance_Invalid.sysml参照）。
+        `part rearWheel_1: Wheel[2] nonunique subsets rearWheel;`のように、
+        subsets/redefines対象がシブリングスコープ（同じ親のchildren内）に
+        いる場合のみ判定する（継承経由の解決は行わない。型解決なしで安全に
+        判定できる範囲に限定し、偽陽性リスクを抑えるため）。`node`は任意の
+        親ノード（`_check_rules`からchildrenを持つ全ノードに対して呼ばれる）。
+        """
+        children = node.get("children")
+        if not isinstance(children, list):
+            return
+        sibling_by_name = {
+            c.get("name"): c
+            for c in children
+            if isinstance(c, dict) and c.get("name")
+        }
+        for child in children:
+            if not isinstance(child, dict):
+                continue
+            multiplicity = child.get("multiplicity")
+            if not isinstance(multiplicity, dict) or multiplicity.get("is_unique") is not False:
+                continue
+            redefines = child.get("redefines")
+            if not isinstance(redefines, list):
+                continue
+            for redefine in redefines:
+                if not isinstance(redefine, dict) or redefine.get("kind") not in ("subsets", "redefines"):
+                    continue
+                target = sibling_by_name.get(redefine.get("target"))
+                if target is None:
+                    continue
+                target_multiplicity = target.get("multiplicity")
+                target_is_unique = (
+                    target_multiplicity.get("is_unique", True)
+                    if isinstance(target_multiplicity, dict)
+                    else True
+                )
+                if target_is_unique:
+                    self.issues.append(LintIssue(
+                        SEVERITY_ERROR,
+                        "Subsetting/redefining feature cannot be nonunique if subsetted/redefined feature is unique",
+                        child
+                    ))
+
     def _check_action_def(self, node: Dict, namespace: str) -> None:
         """
         アクション定義のチェック
