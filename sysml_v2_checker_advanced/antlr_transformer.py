@@ -1493,6 +1493,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         type_name = None
         if id_ctx is not None:
             type_name = ("~" + id_ctx.getText()) if ctx.conjugated is not None else id_ctx.getText()
+        # `end #cause cause1 : Causer1;`のような`#Type`プレフィックス注釈
+        # （2026-08-28、730件回帰チェックで発見）。
+        prefix_metadata = [
+            _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
+        ]
         return {
             "type": "connection_end_member",
             "name": inner_name or end_name,
@@ -1503,6 +1508,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "multiplicity": self._multiplicity_dict(inner_mult_ctx),
             "endMultiplicity": self._multiplicity_dict(ctx.endMult),
             "redefines": redefines,
+            "prefixMetadata": prefix_metadata,
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 

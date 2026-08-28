@@ -454,12 +454,12 @@ def test_antlr_connection_def_end_members():
         {
             "type": "connection_end_member", "name": "a", "endName": "a", "kind": None,
             "isRef": False, "type_name": "PortA", "multiplicity": None, "endMultiplicity": None,
-            "redefines": [], "children": [],
+            "redefines": [], "prefixMetadata": [], "children": [],
         },
         {
             "type": "connection_end_member", "name": "b", "endName": "b", "kind": None,
             "isRef": False, "type_name": "PortB", "multiplicity": None, "endMultiplicity": None,
-            "redefines": [], "children": [],
+            "redefines": [], "prefixMetadata": [], "children": [],
         },
     ]
     lint_ast(ast)  # クラッシュしないことを確認
@@ -801,6 +801,22 @@ def test_antlr_state_parallel_orthogonal_modifier():
     assert exhibit_node["type"] == "exhibit_state_usage"
     assert exhibit_node["isParallel"] is True
     assert len(exhibit_node["children"]) == 1
+
+
+def test_antlr_hash_prefix_on_connection_end_member():
+    """`end #cause cause1 : Causer1;`（CauseAndEffectExample.sysml）のように、
+    `#Type`プレフィックス注釈はconnectionEndMember（`end`節）にも付きうる
+    （2026-08-28、730件回帰チェックで発見。extend_hash_prefix_annotation_
+    and_bare_ref_featureで他規則へは拡張済みだったがこの規則を見落として
+    いた）。"""
+    ast = parse_sysml_antlr(
+        "part def Causer1; connection def C { end #cause cause1 : Causer1; }"
+    )
+    end_member = ast["children"][-1]["children"][0]
+    assert end_member["type"] == "connection_end_member"
+    assert end_member["prefixMetadata"] == ["cause"]
+    assert end_member["endName"] == "cause1"
+    assert end_member["type_name"] == "Causer1"
 
 
 def test_antlr_do_action_member_inline_send():

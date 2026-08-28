@@ -740,8 +740,10 @@ connectionBodyElement
 // ~VerbalExchange;`（family.sysml）のように、型節が`~`接頭辞（共役ポート
 // 参照）を取りうる。portUsage（1990行目付近）は既に対応済みで非対称
 // だった（2026-08-28、参照実装比較レポートP1-4で発見）。
+// `end #cause cause1 : Causer1;`（CauseAndEffectExample.sysml）のような
+// `#Type`プレフィックス注釈（2026-08-28、730件回帰チェックで発見）。
 connectionEndMember
-    : 'end' (endName=simpleName endMult=multiplicitySpec?)?
+    : 'end' prefixMetadataAnnotation* (endName=simpleName endMult=multiplicitySpec?)?
       kind=('occurrence' | 'port' | 'item')?
       isRef='ref'?
       innerName=simpleName?
