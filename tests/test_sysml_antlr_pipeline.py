@@ -2304,6 +2304,33 @@ def test_antlr_bare_interface_usage_no_connect():
     assert connect_node["interface_part"] is not None
 
 
+def test_antlr_interface_and_allocation_connect_colon_colon_and_body():
+    """`interface engineToTransmissionInterface: EngineToTransmissionInterface
+    connect engine::drivePwrPort to transmission::clutchPort { ... }`
+    （VehicleModel.sysml）のように、interfaceUsageのインライン`connect`節は
+    `::`修飾参照とbody（`{ ... }`）のいずれも取りうる（以前は`.`区切りの
+    qualifiedNameのみ・`;`終端のみだった）。`allocate DSLA::DroneSystem::
+    navigationModule to Drone::controlUnit;`（The-SysMLv2-Book-
+    DroneSystemModel-Example.sysml）のように、allocationUsageの`allocate`
+    節も同様に`::`を取りうる（2026-08-28、investigate_connectorend_
+    coloncolonで発見。共有connectorEnd自体は変更せず、connectUsage/
+    bindingConnectorと同じくこの2規則をconnectorEndPathへ切り替えた）。"""
+    ast = parse_sysml_antlr(
+        "interface def IF { interface x : IFace connect a::b to c::d { doc /* note */ } }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "interface_usage"
+    assert node["interface_part"]["from_end"]["reference_subsetting"]["referenced_feature"] == "a::b"
+    assert node["interface_part"]["to_end"]["reference_subsetting"]["referenced_feature"] == "c::d"
+    assert len(node["children"]) == 1
+
+    allocation_ast = parse_sysml_antlr("part def P { allocate x::y to z::w; }")
+    allocation_node = allocation_ast["children"][-1]["children"][0]
+    assert allocation_node["type"] == "allocation_usage"
+    assert allocation_node["connector_part"]["from_end"]["reference_subsetting"]["referenced_feature"] == "x::y"
+    assert allocation_node["connector_part"]["to_end"]["reference_subsetting"]["referenced_feature"] == "z::w"
+
+
 def test_antlr_named_multiplicity_binding_connector():
     """d74_named_multiplicity_binding_connector_missing: ShapeItems.sysmlの
     `binding [1] bind [0..*] base.edges = [0..*] be;`（公式コーパス

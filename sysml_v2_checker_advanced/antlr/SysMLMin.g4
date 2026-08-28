@@ -671,8 +671,19 @@ requireUsage
 // `_check_interface_usage`（linter.py:662）が読む `type_name`/
 // `interface_part.{type,from_end,to_end}.reference_subsetting.
 // referenced_feature` に合わせて実装する。
+// `interface engineToTransmissionInterface: EngineToTransmissionInterface
+// connect engine::drivePwrPort to transmission::clutchPort { ... }`
+// （VehicleModel.sysml）のように、endが`::`修飾参照を取ることがあり
+// （共有`connectorEnd`はqualifiedNameのみのため受理できない。
+// investigate_connectorend_coloncolonで実際に必要と確認）、かつbody
+// （`{ ... }`）を持つこともある（以前は`;`終端のみだった）。他の共有
+// 参照元（allocationUsage/successionStmt/successionUsage/
+// connectionUsage）は`::`が必要な公式サンプルが見つからなかったため、
+// 共有connectorEnd自体は変更せず、connectUsage/bindingConnectorと同じ
+// パターンでこの規則専用にconnectorEndPathへ切り替える
+// （2026-08-28、investigate_connectorend_coloncolonで発見）。
 interfaceUsage
-    : isAbstract='abstract'? 'interface' simpleName ':' ID ( 'connect' connectorEnd 'to' connectorEnd )? ';'
+    : isAbstract='abstract'? 'interface' simpleName ':' ID ( 'connect' connectorEndPath 'to' connectorEndPath )? ( '{' partBodyElement* '}' | ';' )
     // `abstract interface interfaces: Interface[0..*] nonunique :>
     // connections { doc ... }`（Interfaces.sysml）のように、`connect`を
     // 伴わない裸のinterface usage形（connection/allocation/message/flow等と
@@ -693,14 +704,20 @@ interfaceUsage
 // binaryConnections { ... }`（Allocations.sysml）のように、`allocate`
 // 節を伴わない裸の`allocation`usage形（multiplicity・redefine節・body
 // を伴う、itemUsage/partUsage等と同型）も持つ。
+// `allocate DSLA::DroneSystem::navigationModule to Drone::controlUnit;`
+// （The-SysMLv2-Book-DroneSystemModel-Example.sysml）のように、endが
+// `::`修飾参照を取ることがある（共有`connectorEnd`はqualifiedNameのみの
+// ため受理できない。investigate_connectorend_coloncolonで実際に必要と
+// 確認）。connectUsage/interfaceUsageと同じパターンでこの規則専用に
+// connectorEndPathへ切り替える（2026-08-28、発見）。
 allocationUsage
     : isAbstract='abstract'? 'allocation' simpleName
       ( ':' ID )?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
-      ( 'allocate' connectorEnd 'to' connectorEnd )?
+      ( 'allocate' connectorEndPath 'to' connectorEndPath )?
       ( '{' partBodyElement* '}' | ';' )
-    | 'allocate' connectorEnd 'to' connectorEnd ';'
+    | 'allocate' connectorEndPath 'to' connectorEndPath ';'
     ;
 
 // 本体は他の全ての_def（part_def, item_def, port_def, interface_def等）と

@@ -552,10 +552,19 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         linter.pyの _check_interface_usage / _check_allocation_usage が読む
         `{"type": part_type, "from_end": {"reference_subsetting": {"referenced_feature": str}}, "to_end": {...}}`
         の形に合わせる（connect_usageのconnectorEndとは別の、より深い入れ子）。
+        `from_ctx`/`to_ctx`はConnectorEndContext（qualifiedName、`.`区切りのみ）
+        またはConnectorEndPathContext（namespacePath、`::`混在対応）のいずれか
+        （2026-08-28、investigate_connectorend_coloncolonでinterfaceUsage/
+        allocationUsageをconnectorEndPathへ切り替えたため両対応にした）。
         """
 
         def _end(ctx):
-            return {"reference_subsetting": {"referenced_feature": _qualified_name_text(ctx.qualifiedName())}}
+            qualified_ctx = getattr(ctx, "qualifiedName", None)
+            if qualified_ctx is not None:
+                reference = _qualified_name_text(qualified_ctx())
+            else:
+                reference = _namespace_path_text(ctx.namespacePath())
+            return {"reference_subsetting": {"referenced_feature": reference}}
 
         return {"type": part_type, "from_end": _end(from_ctx), "to_end": _end(to_ctx)}
 
@@ -1404,7 +1413,17 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # `abstract interface interfaces: Interface[0..*] nonunique :>
         # connections { ... }`という、`connect`を伴わない裸のinterface
         # usage形（connection/allocation/message/flow等と同型）。
-        if ctx.multiplicitySpec() is not None or len(ctx.postKind) > 0 or ctx.partBodyElement() or ctx.simpleName() is None:
+        # 型付きconnect形（第1代替）は`simpleName`・`': ' ID`のいずれも
+        # 必須のため、どちらかが無ければ必ず第2代替（bare形）と判定できる。
+        # `ctx.partBodyElement()`は第1代替もbodyを持てるようになったため
+        # （2026-08-28、investigate_connectorend_coloncolonで発見）、もはや
+        # 判別材料として使えない（両代替でbodyがtruthyになりうる）。
+        if (
+            ctx.multiplicitySpec() is not None
+            or len(ctx.postKind) > 0
+            or ctx.simpleName() is None
+            or ctx.ID() is None
+        ):
             id_ctx = ctx.ID()
             redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
             return {
@@ -1416,7 +1435,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 "redefines": redefines,
                 "children": [self.visit(el) for el in ctx.partBodyElement()],
             }
-        ends = ctx.connectorEnd()
+        ends = ctx.connectorEndPath()
         interface_part = self._binary_part("binary_interface_part", ends[0], ends[1]) if len(ends) == 2 else None
         return {
             "type": "interface_usage",
@@ -1424,7 +1443,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "type_name": ctx.ID().getText(),
             "interface_part": interface_part,
             "isAbstract": ctx.isAbstract is not None,
-            "children": [],
+            # `interface X: Y connect a::b to c::d { ... }`（VehicleModel.sysml）
+            # のように本体を持つこともある（2026-08-28、
+            # investigate_connectorend_coloncolonで発見。以前は`;`終端のみ
+            # だった）。
+            "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 
     def visitExposeStmt(self, ctx: SysMLMinParser.ExposeStmtContext) -> Dict:
@@ -1526,7 +1549,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # `abstract allocation allocations: Allocation[0..*] nonunique :>
         # binaryConnections { ... }`のように、`allocate`節を伴わない
         # multiplicity・redefine節・bodyの形も持つ。
-        ends = ctx.connectorEnd()
+        ends = ctx.connectorEndPath()
         connector_part = self._binary_part("binary_connector_part", ends[0], ends[1]) if len(ends) == 2 else None
         name_ctx = ctx.simpleName()
         type_ctx = ctx.ID()
