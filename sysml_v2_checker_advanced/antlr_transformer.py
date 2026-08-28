@@ -811,7 +811,10 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "defaultValue": self.visit(ctx.defaultValue) if ctx.defaultValue is not None else None,
             # `in calc calculation { in x; }`のように、actionParameter自身が
             # body内にネストされることがあるため、ActionParameterContextも
-            # 子として拾う。
+            # 子として拾う。`in dt : TimeValue { @ToolVariable { name =
+            # "deltaT"; } }`のような`@Type { ... }`インラインメタデータ注釈
+            # （MetadataUsageKeywordContext/MetadataUsageShorthandContext、
+            # 2026-08-28、730件パース失敗の要因分析で発見）も同様に拾う。
             "children": [
                 self.visit(child)
                 for child in ctx.getChildren()
@@ -821,6 +824,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                         SysMLMinParser.DocumentationStmtContext,
                         SysMLMinParser.BareDocCommentContext,
                         SysMLMinParser.ActionParameterContext,
+                        SysMLMinParser.MetadataUsageKeywordContext,
+                        SysMLMinParser.MetadataUsageShorthandContext,
                     ),
                 )
             ],

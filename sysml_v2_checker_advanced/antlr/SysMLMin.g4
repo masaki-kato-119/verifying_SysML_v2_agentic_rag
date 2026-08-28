@@ -1721,7 +1721,11 @@ actionParameter
       // ある。直後のactionParameter自体のbody（同じく`{...}`）とは別物で、
       // resultExpressionMemberと同型（末尾`;`は省略可能）に扱う。
       ( 'default' ( '{' defaultValue=expression ';'? '}' | defaultValue=expression ) | '=' value=expression )?
-      ( '{' (documentationStmt | bareDocComment | actionParameter)* '}' | ';' )
+      // `in dt : TimeValue { @ToolVariable { name = "deltaT"; } }`
+      // （AnalysisAnnotation.sysml）のように、型節直後のbodyに
+      // `@Type { ... }`ショートハンド形のインラインメタデータ注釈が
+      // 続くことがある（2026-08-28、730件パース失敗の要因分析で発見）。
+      ( '{' (documentationStmt | bareDocComment | actionParameter | metadataUsage)* '}' | ';' )
     ;
 
 direction

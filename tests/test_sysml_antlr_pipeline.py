@@ -4803,3 +4803,59 @@ def test_antlr_perform_bare_reference_with_body():
     assert bare_node == {
         "type": "perform_action", "reference": "y", "redefines": [], "params": [], "children": [],
     }
+
+
+def test_antlr_action_parameter_inline_metadata_annotation():
+    """`in dt : TimeValue { @ToolVariable { name = "deltaT"; } }`
+    （AnalysisAnnotation.sysml、AnnotationTest.sysml）のように、action
+    usageのin/out/inoutパラメータ宣言の型節直後のbodyに、`@Type { ... }`
+    ショートハンド形のインラインメタデータ注釈が続くことがある。従来は
+    actionParameterのbody（`documentationStmt | bareDocComment |
+    actionParameter`）にmetadataUsageが含まれておらず未対応だった。
+    2026-08-28、730件パース失敗の要因分析で発見。既存のdoc本体・
+    ネストしたactionParameter（`in calc calculation { in x; }`）との
+    共存も確認する。"""
+    ast = parse_sysml_antlr(
+        'action def A { in dt : TimeValue { @ToolVariable { name = "deltaT"; } } }'
+    )
+    param = ast["children"][0]["params"][0]
+    assert param["name"] == "dt"
+    assert param["type_name"] == "TimeValue"
+    assert param["children"] == [
+        {
+            "type": "metadata_usage",
+            "name": "ToolVariable",
+            "shortName": None,
+            "inheritance": None,
+            "isAbstract": False,
+            "children": [
+                {
+                    "type": "feature_usage",
+                    "name": "name",
+                    "type_name": None,
+                    "multiplicity": None,
+                    "inheritance": None,
+                    "isAbstract": False,
+                    "isConstant": False,
+                    "isRef": False,
+                    "visibility": None,
+                    "redefines": [],
+                    "prefixMetadata": [],
+                    "value": {"type": "literal", "literal_type": "string", "value": "deltaT"},
+                    "defaultValue": None,
+                    "variability": None,
+                    "children": [],
+                },
+            ],
+        },
+    ]
+
+    # doc本体・ネストしたactionParameterとの共存確認。
+    doc_and_nested_ast = parse_sysml_antlr(
+        "action def A { in calc calculation { doc /* x */ in x; } }"
+    )
+    doc_and_nested_param = doc_and_nested_ast["children"][0]["params"][0]
+    assert doc_and_nested_param["name"] == "calculation"
+    assert len(doc_and_nested_param["children"]) == 2
+    assert doc_and_nested_param["children"][1]["type"] == "param"
+    assert doc_and_nested_param["children"][1]["name"] == "x"
