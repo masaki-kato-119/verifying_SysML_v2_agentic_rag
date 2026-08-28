@@ -158,6 +158,9 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "inheritance": self._inheritance_dict(ctx),
             "isAbstract": ctx.isAbstract is not None,
             "isIndividual": ctx.isIndividual is not None,
+            # `variation part def V { ... }`のようなVariability機能の先頭
+            # 修飾子（2026-08-28、730件パース失敗の要因分析で発見）。
+            "variability": ctx.variability.text if ctx.variability is not None else None,
             "children": children,
         }
 
@@ -345,6 +348,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "name": _simple_name_text(ctx.simpleName()),
             "inheritance": self._inheritance_dict(ctx),
             "isAbstract": ctx.isAbstract is not None,
+            "variability": ctx.variability.text if ctx.variability is not None else None,
             "children": children,
         }
 
@@ -406,6 +410,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             # `attribute x : T default expr;`という既定値節（`=`の固定値代入とは
             # 異なり、再定義や継承先で上書き可能な既定値という意味）。
             "defaultValue": self.visit(ctx.defaultValue) if ctx.defaultValue is not None else None,
+            "variability": ctx.variability.text if ctx.variability is not None else None,
             "children": children,
         }
 
@@ -512,6 +517,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             # `part subcomponents : MassedComponent [*] default null;`の
             # ような既定値節（2026-08-28、730件回帰チェックで発見）。
             "defaultValue": self.visit(ctx.defaultValue) if ctx.defaultValue is not None else None,
+            "variability": ctx.variability.text if ctx.variability is not None else None,
             "children": children,
         }
 
@@ -708,6 +714,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "inheritance": self._inheritance_dict(ctx),
             "isAbstract": ctx.isAbstract is not None,
             "isIndividual": ctx.isIndividual is not None,
+            "variability": ctx.variability.text if ctx.variability is not None else None,
             "params": params,
             "children": children,
         }
@@ -857,6 +864,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 "reference": _namespace_path_text(npath_ctx),
                 "redefines": redefines,
                 **({"isThen": True} if ctx.isThen is not None else {}),
+                **({"variability": ctx.variability.text} if ctx.variability is not None else {}),
             }
         # `perform action <名前> redefines <対象> { ... }`という、
         # actionUsageStmtと同型の名前付き・redefines付き・body付き形。
@@ -876,6 +884,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "params": params,
             "children": children,
             **({"isThen": True} if ctx.isThen is not None else {}),
+            **({"variability": ctx.variability.text} if ctx.variability is not None else {}),
         }
 
     def visitMessageStmt(self, ctx: SysMLMinParser.MessageStmtContext) -> Dict:
@@ -941,6 +950,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "params": params,
             "children": children,
             **({"isThen": True} if ctx.isThen is not None else {}),
+            **({"variability": ctx.variability.text} if ctx.variability is not None else {}),
         }
 
     # --- フェーズ2続き: calculation usage / constraint usage ------------------------
@@ -1001,6 +1011,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             if prefix_annotation_method is not None
             else []
         )
+        # `variation requirement r { ... }`/`variant requirement r1;`のような
+        # Variability機能の先頭修飾子は、このヘルパーを共有する規則の一部
+        # （requirement/case/analysis case/verification case/use case
+        # usage）にしかないため、getattrで安全に読む（prefixMetadataと
+        # 同じ方針。2026-08-28、730件パース失敗の要因分析で発見）。
+        variability_token = getattr(ctx, "variability", None)
         return {
             "type": node_type,
             "name": _optional_simple_name_text(ctx.simpleName()),
@@ -1013,6 +1029,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "redefines": redefines,
             "prefixMetadata": prefix_metadata,
             "children": [self.visit(el) for el in children_ctxs],
+            **({"variability": variability_token.text} if variability_token is not None else {}),
         }
 
     # --- フェーズ2続き: satisfy requirement usage ------------------------------------
@@ -1445,6 +1462,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "prefixMetadata": prefix_metadata,
             "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
             "redefines": redefines,
+            "variability": ctx.variability.text if ctx.variability is not None else None,
             "children": children,
         }
 
@@ -1487,6 +1505,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "prefixMetadata": prefix_metadata,
             "value": self.visit(ctx.value) if ctx.value is not None else None,
             "defaultValue": self.visit(ctx.defaultValue) if ctx.defaultValue is not None else None,
+            "variability": ctx.variability.text if ctx.variability is not None else None,
             "children": children,
         }
 

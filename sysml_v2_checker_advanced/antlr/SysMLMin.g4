@@ -384,8 +384,11 @@ caseDef
 // 一式（visibility・ref・名前省略・型節+多重度・pre/post redefine節）を
 // 持つ（`inheritanceClause?`ではなくpartUsageと同型の規則を使う）。`_def`側は
 // `inheritanceClause?`のままでよい。
+// `variation case ...`（VariabilityTest.sysml xpect版）のように、
+// Variability機能の先頭修飾子がここにも付く（2026-08-28、730件パース
+// 失敗の要因分析で発見）。
 caseUsage
-    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'case' simpleName?
+    : variability=('variation' | 'variant')? visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'case' simpleName?
       (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       (':' ID)?
       multiplicitySpec?
@@ -397,8 +400,11 @@ analysisCaseDef
     : isAbstract='abstract'? 'analysis' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
+// `variation analysis a1;`（VariabilityTest.sysml）のように、Variability
+// 機能の先頭修飾子がここにも付く（2026-08-28、730件パース失敗の要因分析
+// で発見）。
 analysisCaseUsage
-    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'analysis' simpleName?
+    : variability=('variation' | 'variant')? visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'analysis' simpleName?
       (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       (':' ID)?
       multiplicitySpec?
@@ -410,8 +416,11 @@ verificationCaseDef
     : isAbstract='abstract'? 'verification' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
+// `variation verification v1;`（VariabilityTest.sysml）のように、
+// Variability機能の先頭修飾子がここにも付く（2026-08-28、730件パース
+// 失敗の要因分析で発見）。
 verificationCaseUsage
-    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'verification' simpleName?
+    : variability=('variation' | 'variant')? visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'verification' simpleName?
       (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       (':' ID)?
       multiplicitySpec?
@@ -423,8 +432,11 @@ useCaseDef
     : isAbstract='abstract'? 'use' 'case' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
+// `variation use case uc1 { variant use case uc11; variant use case
+// uc12; }`（VariabilityTest.sysml）のように、Variability機能の先頭修飾子
+// がここにも付く（2026-08-28、730件パース失敗の要因分析で発見）。
 useCaseUsage
-    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'use' 'case' simpleName?
+    : variability=('variation' | 'variant')? visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'use' 'case' simpleName?
       (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       (':' ID)?
       multiplicitySpec?
@@ -851,8 +863,14 @@ inheritanceClause
 // `#system part bm1 : Batmobile { ... }`（DontPanic-SysMLv2-Batmobile.sysml）
 // のように、`#Type`プレフィックス注釈（P0-4でdependencyStmtのみ対応）は
 // part def/usage等にも付きうる（2026-08-28、730件回帰チェックで発見）。
+// `variation part def V :> P { variant part x : Q { ... } }`
+// （VariabilityTest.sysml）のように、Variability（可変性）ライブラリ機能の
+// `variation`（このdef/usage自体が可変ポイントであることを表す）/
+// `variant`（variation本体内で選択肢として使われることを表す）という
+// 先頭修飾子が、複数のdef/usage系規則に広く付きうる（2026-08-28、730件
+// パース失敗の要因分析で発見）。isIndividualと同じ設計で先頭に追加する。
 partDef
-    : prefixMetadataAnnotation* isIndividual='individual'? isAbstract='abstract'? 'part' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : variability=('variation' | 'variant')? prefixMetadataAnnotation* isIndividual='individual'? isAbstract='abstract'? 'part' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // 参照: SysML.xtext の `ItemDefinition`（`OccurrenceDefinitionPrefix
@@ -915,8 +933,11 @@ itemUsage
 // で87件）。
 // `#goal requirement deliverPayload { ... }`（RequirementMetadataExample.sysml）
 // のような`#Type`プレフィックス注釈（2026-08-28、730件回帰チェックで発見）。
+// `variation requirement r { variant requirement r1; }`
+// （VariabilityTest.sysml）のように、Variability機能の先頭修飾子がここにも
+// 付く（partDefと同じ理由、2026-08-28）。
 requirementUsage
-    : prefixMetadataAnnotation* visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'requirement' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
+    : variability=('variation' | 'variant')? prefixMetadataAnnotation* visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'requirement' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       // `typeRef`という専用ラベルを使う（無ラベルの`ID`のままだと、上のshortName
       // （ID|QUOTED_NAMEの代替）と合わせて`ctx.ID()`が2件のリストを返すように
@@ -1025,8 +1046,11 @@ enumLiteral
 // --- attribute definition (8.2.2.6) ---------------------------------------------
 // 参照: SysML.xtext の`AttributeDefinition`。PartDefinition/ItemDefinitionと同型
 // （bodyも同じDefinitionBodyフラグメント経由）なので、partBodyElementを流用する。
+// `variation attribute def DiameterChoices :> Diameter { ... }`
+// （Variation Definitions.sysml）のように、Variability機能の`variation`/
+// `variant`先頭修飾子がここにも付く（partDefと同じ理由、2026-08-28）。
 attributeDef
-    : prefixMetadataAnnotation* isAbstract='abstract'? 'attribute' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : variability=('variation' | 'variant')? prefixMetadataAnnotation* isAbstract='abstract'? 'attribute' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 partBodyElement
@@ -1204,8 +1228,13 @@ partBodyElement
 // （2026-08-28、発見）。`::>`はpreKind/postKindにも追加する
 // （`_redefine_dict`側でsubsets/redefinesとは別の"references"種別へ
 // 正規化する）。
+// `variant q;`/`variant manualTransmission;`/`variant '4cylEngine';`
+// （VariabilityTest.sysml/Variation Usages.sysml/Variation
+// Definitions.sysml）のように、型キーワードを伴わない裸のvariant参照
+// （既存のfeatureUsageの裸形をそのまま使う）にもVariability機能の先頭
+// 修飾子が付く（2026-08-28）。
 featureUsage
-    : visibilityIndicator? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
+    : variability=('variation' | 'variant')? visibilityIndicator? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
       prefixMetadataAnnotation*
       simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>') preTarget+=namespacePathList)*
@@ -1244,8 +1273,13 @@ featureUsage
 // （同ファイル）のように、値代入節の後に`default`節（既定値。
 // attributeUsageと同じ意味）も取りうる（2026-08-28、730件回帰チェックで
 // 発見）。
+// `variation part v : P { variant q { ... } }`（VariabilityTest.sysml）・
+// `variation part transmission : Transmission[1] { variant
+// manualTransmission; variant automaticTransmission; }`（Variation
+// Usages.sysml）のように、Variability機能の先頭修飾子がここにも付く
+// （partDefと同じ理由、2026-08-28）。
 partUsage
-    : prefixMetadataAnnotation* visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
+    : variability=('variation' | 'variant')? prefixMetadataAnnotation* visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
       'part' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       preMult=multiplicitySpec?
@@ -1304,8 +1338,11 @@ partUsage
 // `#mop attribute totalPower redefines totalPower = ...;`
 // （smart-home-complex2.sysml）のような`#Type`プレフィックス注釈も同時に
 // 発見（P0-4の継続）。
+// `variant attribute diameterSmall = 70[mm];`（Variation Definitions.sysml）
+// のように、Variability機能の先頭修飾子がここにも付く（partDefと同じ理由、
+// 2026-08-28）。
 attributeUsage
-    : prefixMetadataAnnotation* visibilityIndicator? isDerived='derived'? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
+    : variability=('variation' | 'variant')? prefixMetadataAnnotation* visibilityIndicator? isDerived='derived'? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
       'attribute' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       (':' (typeList=namespacePathList | typeQuoted=QUOTED_NAME))?
@@ -1510,8 +1547,11 @@ flowDef
 // `individual action def AP1 { ... }`（IndividualTest.sysml）のように、
 // `individual`はaction defのプレフィックス修飾子としても使われる
 // （2026-08-28、参照実装比較レポートP0-3で発見。occurrenceDef参照）。
+// `variation action def A { variant action a1; variant action a2; }`
+// （VariabilityTest.sysml）のように、Variability機能の先頭修飾子がここにも
+// 付く（partDefと同じ理由、2026-08-28）。
 actionDef
-    : isIndividual='individual'? isAbstract='abstract'? 'action' 'def' simpleName inheritanceClause? ( '{' actionBodyElement* '}' | ';' )
+    : variability=('variation' | 'variant')? isIndividual='individual'? isAbstract='abstract'? 'action' 'def' simpleName inheritanceClause? ( '{' actionBodyElement* '}' | ';' )
     ;
 
 // `abstract calc getNextState: GetNextState;`（StateSpaceRepresentation.
@@ -1681,10 +1721,14 @@ performActionStmt
     // を伴わない裸形にもredefine節を持ちうる（2026-08-28、730件回帰
     // チェックで発見。fix_portionusage_redefine_clause対応中に同ファイルで
     // 連鎖的に見つかった別のギャップ）。
-    : isThen='then'? 'perform' namespacePath
+    // `variation perform action doXorY { variant perform doX; variant
+    // perform doY; }`（7a1-Variant Configuration...-a.sysml）のように、
+    // Variability機能の先頭修飾子がここにも付く（2026-08-28、730件パース
+    // 失敗の要因分析で発見）。
+    : variability=('variation' | 'variant')? isThen='then'? 'perform' namespacePath
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ';'
-    | isThen='then'? 'perform' 'action' actionName=simpleName?
+    | variability=('variation' | 'variant')? isThen='then'? 'perform' 'action' actionName=simpleName?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' actionBodyElement* '}' | ';' )
     ;
@@ -1761,8 +1805,11 @@ defaultTargetSuccessionStmt
 // のように、名前の直後に多重度、その後に型節という順序もある
 // （partUsage/portUsageと同じpreMult/postMult設計、2026-08-28、
 // 730件回帰チェックで発見）。
+// `variant action a1; variant action a2;`（VariabilityTest.sysml）のように、
+// Variability機能の先頭修飾子がここにも付く（partDefと同じ理由、
+// 2026-08-28）。
 actionUsageStmt
-    : isThen='then'? visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? isRef='ref'? 'action' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
+    : variability=('variation' | 'variant')? isThen='then'? visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? isRef='ref'? 'action' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       preMult=multiplicitySpec?
       (':' typeRef=ID)?
@@ -2283,8 +2330,11 @@ portDef
 // `port xxx[xx] : xxxx;`のように、多重度が型節より先（名前の直後）に来る
 // 逆順もある（actionParameterのpreMult/postMultと同型の順序）ため、preMult/
 // postMultという別ラベルで両方の位置を曖昧性なく共存させる。
+// `variation port ...`/`variant port ...`（VehicleVariabilityModel.sysml/
+// Variability.sysml）のように、Variability機能の先頭修飾子がここにも付く
+// （2026-08-28、730件パース失敗の要因分析で発見）。
 portUsage
-    : prefixMetadataAnnotation* visibilityIndicator? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
+    : variability=('variation' | 'variant')? prefixMetadataAnnotation* visibilityIndicator? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
       'port' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       preMult=multiplicitySpec?

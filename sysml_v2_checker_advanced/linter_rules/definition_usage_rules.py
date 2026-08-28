@@ -258,7 +258,18 @@ class DefinitionUsageRulesMixin:
         （self.element_refs）としてのみ解決できるかを判定する
         （_find_element_in_symbolsと同じ末尾一致方式）。型解決を優先する
         既存の設計方針に合わせ、型/パッケージとして解決できる場合は
-        featureとはみなさない（同名衝突時に誤検出しないため）。"""
+        featureとはみなさない（同名衝突時に誤検出しないため）。
+        `transmission::manualTransmission`（Variation Usages.sysml、
+        `variation part transmission { variant manualTransmission; }`の
+        variant選択肢を`::`で参照する形）や`cylinder::diameter::
+        diameterSmall`（VehicleVariabilityModel.sysml、途中の`diameter`
+        自体が`variation attribute def`型のfeatureで、その先の
+        variant選択肢へ`::`で辿り着く多段チェーン）のように、`variability`
+        が"variant"のfeature、または"variation"のfeature（＝その先の
+        variant選択肢への`::`ナビゲーションの起点となる）への`::`参照は
+        Variability機能上正当な選択構文であり「feature chainにdot記法を
+        使うべき」という本ルールの対象外とする（2026-08-28、Variability
+        機能追加に伴う730件回帰チェックで発見した偽陽性）。"""
         if not name:
             return False
         if name in self.types:
@@ -266,10 +277,29 @@ class DefinitionUsageRulesMixin:
         for pkg_name in self.packages:
             if pkg_name.endswith(f"::{name}") or pkg_name == name:
                 return False
-        for sym_name in self.element_refs:
-            if sym_name.endswith(f"::{name}") or sym_name == name:
-                return True
-        return False
+        # 同名の要素が複数箇所（例: 元の`part '4cylEngine' : Engine {...}`と
+        # `EngineChoices`本体内の`variant '4cylEngine';`参照）に存在しうる。
+        # dict反復順（挿入順）で最初に見つかった1件だけで判定すると、たまたま
+        # 非variantの方が先に見つかった場合に偽陽性となる（2026-08-28、
+        # VehicleVariabilityModel.sysmlの730件回帰チェックで発見）。該当する
+        # 全件を確認し、1件でもvariant/variation由来と判断できれば除外する。
+        found = False
+        for sym_name, node in self.element_refs.items():
+            if not (sym_name.endswith(f"::{name}") or sym_name == name):
+                continue
+            found = True
+            if not isinstance(node, dict):
+                continue
+            if node.get("variability") in ("variant", "variation"):
+                return False
+            # `cylinder::diameter`の`diameter`自体は"variant"/"variation"を
+            # 持たない普通のfeatureだが、その型（`DiameterChoices`）が
+            # `variation attribute def`のため、そこから先のvariant選択肢への
+            # `::`ナビゲーションの起点になりうる。
+            type_node = self._resolve_type_node(node.get("type_name"))
+            if isinstance(type_node, dict) and type_node.get("variability") == "variation":
+                return False
+        return found
 
     def _check_accessible_feature_paths(self, ast: Dict) -> None:
         """
@@ -310,12 +340,22 @@ class DefinitionUsageRulesMixin:
         かつ型/パッケージとしては解決できない場合のみ判定する（型解決
         なしで安全に判定できる範囲に限定し、偽陽性リスクを抑えるため）。
         """
-        for candidate, ancestor_names in self._iter_reference_bearing_dicts(ast):
+        for candidate, ancestor_names, in_variability_scope in self._iter_reference_bearing_dicts(ast):
             segments = candidate.get("segments")
             if not isinstance(segments, list) or len(segments) < 2:
                 continue
             root_name = segments[0][0]
             if root_name in ancestor_names:
+                continue
+            # Variability機能（`variation`/`variant`）の本体内（またはその
+            # 子孫）にあるnamespacePath参照は判定対象外にする。
+            # `cylinder::diameter::diameterSmall`（VehicleVariabilityModel.
+            # sysml）のように、途中のセグメント（`diameter`）がローカルな
+            # redefineでvariation型に変わっている場合まで正確に型解決するのは
+            # 単体ファイルlintの範囲を超えるため、Variabilityスコープ全体を
+            # 安全側で対象外とする（2026-08-28、Variability機能追加に伴う
+            # 730件回帰チェックで発見した偽陽性）。
+            if in_variability_scope:
                 continue
             reference = candidate.get("reference")
             # `ISQ::torque`（EVSample.sysml）のように、ルートが標準ライブラリ
@@ -366,10 +406,11 @@ class DefinitionUsageRulesMixin:
 
     _SCOPE_CONTAINMENT_KEYS = ("children", "params", "attributes", "exposes")
 
-    def _iter_reference_bearing_dicts(self, node, ancestor_names: frozenset = frozenset()):
+    def _iter_reference_bearing_dicts(self, node, ancestor_names: frozenset = frozenset(), in_variability_scope: bool = False):
         """ASTを`children`等の決まったキーに限らず全フィールドにわたって
         再帰し、`"reference"`キーを持つ辞書（connector_end/name_ref等）を
-        `(辞書, 祖先スコープ名の集合)`のペアで列挙する。祖先スコープ名は
+        `(辞書, 祖先スコープ名の集合, variation/variantスコープ内かどうか)`
+        の3つ組で列挙する。祖先スコープ名は
         `_SCOPE_CONTAINMENT_KEYS`（`_check_rules`の再帰と同じキー集合）を
         辿って入れ子になった際に、その親ノード自身の`name`を積み上げた
         もの（自己参照の除外判定に使う）。`meta`式のbaseは通常の
@@ -377,13 +418,18 @@ class DefinitionUsageRulesMixin:
         その内側は列挙対象から除外する。"""
         if isinstance(node, dict):
             if "reference" in node:
-                yield node, ancestor_names
+                yield node, ancestor_names, in_variability_scope
             if node.get("type") == "meta_expr":
                 for key, value in node.items():
                     if key == "base":
                         continue
-                    yield from self._iter_reference_bearing_dicts(value, ancestor_names)
+                    yield from self._iter_reference_bearing_dicts(value, ancestor_names, in_variability_scope)
                 return
+            # `variation part v { ... }`/`variant part x { ... }`のように、
+            # このノード自身がVariability機能の先頭修飾子を持つ場合、その
+            # 子孫すべてをvariabilityスコープ内として扱う（一度入ったら
+            # 子孫全体で維持する。2026-08-28）。
+            child_in_variability_scope = in_variability_scope or bool(node.get("variability"))
             own_name = node.get("name")
             child_ancestor_names = (
                 ancestor_names | {own_name} if isinstance(own_name, str) and own_name else ancestor_names
@@ -407,10 +453,10 @@ class DefinitionUsageRulesMixin:
                 )
             for key, value in node.items():
                 next_ancestor_names = child_ancestor_names if key in self._SCOPE_CONTAINMENT_KEYS else ancestor_names
-                yield from self._iter_reference_bearing_dicts(value, next_ancestor_names)
+                yield from self._iter_reference_bearing_dicts(value, next_ancestor_names, child_in_variability_scope)
         elif isinstance(node, list):
             for item in node:
-                yield from self._iter_reference_bearing_dicts(item, ancestor_names)
+                yield from self._iter_reference_bearing_dicts(item, ancestor_names, in_variability_scope)
 
     def _check_action_def(self, node: Dict, namespace: str) -> None:
         """

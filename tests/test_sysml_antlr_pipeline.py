@@ -160,6 +160,7 @@ def test_antlr_single_non_package_element_still_wraps_in_root():
                 "inheritance": None,
                 "isAbstract": False,
                 "isIndividual": False,
+                "variability": None,
                 "children": [],
             }
         ],
@@ -234,6 +235,7 @@ def test_antlr_connection_def_uses_flat_children_not_old_lark_nesting():
                         "prefixMetadata": [],
                         "value": None,
                         "defaultValue": None,
+                        "variability": None,
                         "children": [],
                     }
                 ],
@@ -4137,3 +4139,135 @@ def test_antlr_action_def_nested_in_state_body():
     nested_action_defs = inner_state["children"]
     assert [c["type"] for c in nested_action_defs] == ["action_def", "action_def"]
     assert [c["name"] for c in nested_action_defs] == ["VehicleStartSignal", "VehicleOnSignal"]
+
+
+def test_antlr_variability_variation_and_variant_keywords():
+    """Variability（可変性）ライブラリ機能の`variation`/`variant`先頭修飾子
+    （`variation part def V { variant part x : Q { ... } }`等）が全く
+    未実装だった（2026-08-28、730件パース失敗の要因分析で発見。コーパス
+    全体で9件のパース失敗の直接原因）。VariabilityTest.sysml参照。
+    part/attribute/action def・part/attribute/action usage・bareな
+    featureUsage・use case/requirement usageの広い範囲に付きうる。"""
+    ast = parse_sysml_antlr(
+        "package VariabilityTest {\n"
+        "    part def P { attribute a; }\n"
+        "    part def Q :> P;\n"
+        "    attribute def B;\n"
+        "    variation part def V :> P {\n"
+        "        variant part x : Q {\n"
+        "            attribute b : B :>> a;\n"
+        "        }\n"
+        "    }\n"
+        "    part q : Q;\n"
+        "    variation part v : P {\n"
+        "        variant q;\n"
+        "    }\n"
+        "    variation action def A {\n"
+        "        variant action a1;\n"
+        "        variant action a2;\n"
+        "    }\n"
+        "    variation use case uc1 {\n"
+        "        variant use case uc11;\n"
+        "    }\n"
+        "    variation requirement r {\n"
+        "        variant requirement r1;\n"
+        "    }\n"
+        "}\n"
+    )
+    pkg_children = ast["children"]
+    by_name = {c.get("name"): c for c in pkg_children}
+
+    variation_part_def = by_name["V"]
+    assert variation_part_def["type"] == "part_def"
+    assert variation_part_def["variability"] == "variation"
+    variant_part = variation_part_def["children"][0]
+    assert variant_part["type"] == "part_instance"
+    assert variant_part["variability"] == "variant"
+
+    variation_part_usage = by_name["v"]
+    assert variation_part_usage["type"] == "part_instance"
+    assert variation_part_usage["variability"] == "variation"
+    # `variant q;`という型キーワードを伴わない裸のvariant参照。
+    bare_variant = variation_part_usage["children"][0]
+    assert bare_variant["type"] == "feature_usage"
+    assert bare_variant["name"] == "q"
+    assert bare_variant["variability"] == "variant"
+
+    variation_action_def = by_name["A"]
+    assert variation_action_def["type"] == "action_def"
+    assert variation_action_def["variability"] == "variation"
+    assert [c["variability"] for c in variation_action_def["children"]] == ["variant", "variant"]
+
+    variation_use_case = by_name["uc1"]
+    assert variation_use_case["type"] == "use_case_usage"
+    assert variation_use_case["variability"] == "variation"
+    assert variation_use_case["children"][0]["variability"] == "variant"
+
+    variation_requirement = by_name["r"]
+    assert variation_requirement["type"] == "requirement_usage"
+    assert variation_requirement["variability"] == "variation"
+    assert variation_requirement["children"][0]["variability"] == "variant"
+
+    # variability修飾子を持たない既存の宣言はNoneのままであることも確認する。
+    assert by_name["P"]["variability"] is None
+    assert by_name["q"]["variability"] is None
+
+
+def test_antlr_accessible_feature_path_exempts_variant_selection():
+    """`transmission::manualTransmission`（Variation Usages.sysml、`::`で
+    variant選択肢を参照する形）や`cylinder::diameter::diameterSmall`
+    （VehicleVariabilityModel.sysml、途中のfeatureがローカルにvariation型へ
+    redefineされている多段チェーン）が、`Must be an accessible feature`
+    ルールの偽陽性にならないことを確認する（2026-08-28、Variability機能
+    追加に伴う730件回帰チェックで発見）。"""
+    # variabilityスコープの外からvariantを`::`参照する形
+    # （_is_feature_only_nameのvariant/variation除外）。
+    outer_ref_text = (
+        "part def Transmission;\n"
+        "part def ManualTransmission :> Transmission;\n"
+        "part def AutomaticTransmission :> Transmission;\n"
+        "part manualTransmission : ManualTransmission;\n"
+        "part automaticTransmission : AutomaticTransmission;\n"
+        "part vehicleFamily {\n"
+        "    variation part transmission : Transmission[1] {\n"
+        "        variant manualTransmission;\n"
+        "        variant automaticTransmission;\n"
+        "    }\n"
+        "    assert constraint {\n"
+        "        transmission == transmission::manualTransmission\n"
+        "    }\n"
+        "}\n"
+    )
+    outer_ast = parse_sysml_antlr(outer_ref_text)
+    outer_issues = lint_ast(outer_ast)
+    assert not any("accessible feature" in i.message for i in outer_issues)
+
+    # variabilityスコープ内から、ローカルにredefineされた型経由でvariant
+    # 選択肢を`::`で多段参照する形（_iter_reference_bearing_dictsの
+    # variabilityスコープ祖先除外）。
+    nested_ref_text = (
+        "attribute def Diameter;\n"
+        "variation attribute def DiameterChoices :> Diameter {\n"
+        "    variant attribute diameterSmall;\n"
+        "    variant attribute diameterLarge;\n"
+        "}\n"
+        "part def Cylinder {\n"
+        "    attribute diameter : Diameter[1];\n"
+        "}\n"
+        "part def Engine {\n"
+        "    part cylinder : Cylinder[2..*];\n"
+        "}\n"
+        "variation part def EngineChoices :> Engine {\n"
+        "    variant '6cylEngine' {\n"
+        "        part :>> cylinder {\n"
+        "            attribute :>> diameter : DiameterChoices;\n"
+        "        }\n"
+        "        assert constraint {\n"
+        "            cylinder.diameter == cylinder::diameter::diameterSmall\n"
+        "        }\n"
+        "    }\n"
+        "}\n"
+    )
+    nested_ast = parse_sysml_antlr(nested_ref_text)
+    nested_issues = lint_ast(nested_ast)
+    assert not any("accessible feature" in i.message for i in nested_issues)
