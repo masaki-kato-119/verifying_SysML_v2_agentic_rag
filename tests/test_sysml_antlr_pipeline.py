@@ -4005,3 +4005,31 @@ def test_antlr_interface_usage_unnamed_typed_inline_connect():
         "from_end": {"reference_subsetting": {"referenced_feature": "a::p"}},
         "to_end": {"reference_subsetting": {"referenced_feature": "b::q"}},
     }
+
+
+def test_antlr_use_case_actor_usage():
+    """`actor driver : RoadUser;`（use case def本体内でのactor宣言）が
+    未実装だった（2026-08-28、730件パース失敗の要因分析で発見。コーパス
+    全体で11件のパース失敗の直接原因）。再現: elan8-sysml-examples/
+    intersection/TrafficLightIntersectionRequirements.sysml、
+    sysml-v2-pilot-implementation/sysml/src/training/35. Use Cases/
+    Use Case Definition Example.sysml。subjectUsageと同型の設計。"""
+    ast = parse_sysml_antlr(
+        "use case def UC {\n"
+        "    actor driver : Person;\n"
+        "    actor passengers : Person[0..4];\n"
+        "}\n"
+    )
+    driver, passengers = ast["children"][0]["children"]
+
+    assert driver["type"] == "actor_usage"
+    assert driver["name"] == "driver"
+    assert driver["type_name"] == "Person"
+    assert driver["multiplicity"] is None
+
+    assert passengers["type"] == "actor_usage"
+    assert passengers["name"] == "passengers"
+    assert passengers["type_name"] == "Person"
+    assert passengers["multiplicity"] == {
+        "size": {"min": 0, "max": 4}, "is_ordered": False, "is_unique": True
+    }

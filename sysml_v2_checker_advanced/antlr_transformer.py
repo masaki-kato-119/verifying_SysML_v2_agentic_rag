@@ -278,6 +278,14 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         node["defaultValue"] = self.visit(ctx.defaultValue) if ctx.defaultValue is not None else None
         return node
 
+    def visitActorUsage(self, ctx: SysMLMinParser.ActorUsageContext) -> Dict:
+        # `actor driver : RoadUser;`（use case def本体内のactor宣言）。
+        # subjectUsageと同型の設計。
+        node = self._usage_keyword_node("actor_usage", ctx, ctx.partBodyElement())
+        node["value"] = self.visit(ctx.value) if ctx.value is not None else None
+        node["defaultValue"] = self.visit(ctx.defaultValue) if ctx.defaultValue is not None else None
+        return node
+
     def visitEnumDef(self, ctx: SysMLMinParser.EnumDefContext) -> Dict:
         # `enum def X { ... }`。bodyは専用のenumBodyElement（enum-literal・doc）を持つ。
         children = [self.visit(el) for el in ctx.enumBodyElement()]

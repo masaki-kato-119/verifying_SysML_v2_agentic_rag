@@ -951,6 +951,22 @@ subjectUsage
       ( '{' partBodyElement* '}' | ';' )
     ;
 
+// `actor driver : RoadUser;`・`actor passengers : Person[0..4];`
+// （TrafficLightIntersectionRequirements.sysml/Use Case Definition
+// Example.sysml等）のように、`use case def`本体内で使われるactor宣言
+// （subjectUsageと同型の設計、2026-08-28、730件パース失敗の要因分析で
+// 発見）。
+actorUsage
+    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'actor' simpleName?
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (':' ID)?
+      multiplicitySpec?
+      ('=' value=expression)?
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      ('default' defaultValue=expression)?
+      ( '{' partBodyElement* '}' | ';' )
+    ;
+
 objectiveUsage
     : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'objective' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
@@ -1042,11 +1058,12 @@ partBodyElement
     | constraintDef
     | itemUsage
     | actionUsageStmt
-    // `subject`/`objective`は常に別のcase/analysis/requirement/objective
-    // 定義の本体内にネストして使われる（公式コーパスに例外なし）ため、
-    // partBodyElementのみに登録する。
+    // `subject`/`objective`/`actor`は常に別のcase/analysis/requirement/
+    // objective定義の本体内にネストして使われる（公式コーパスに例外
+    // なし）ため、partBodyElementのみに登録する。
     | subjectUsage
     | objectiveUsage
+    | actorUsage
     // `view def V { ref view :>> self : View; ... }`（Views.sysml）のように、
     // view/viewpoint/renderingの各定義本体内にネストして使われるため
     // partBodyElementにも登録する。

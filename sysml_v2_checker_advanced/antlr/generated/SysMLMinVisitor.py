@@ -339,6 +339,11 @@ class SysMLMinVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by SysMLMinParser#actorUsage.
+    def visitActorUsage(self, ctx:SysMLMinParser.ActorUsageContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by SysMLMinParser#objectiveUsage.
     def visitObjectiveUsage(self, ctx:SysMLMinParser.ObjectiveUsageContext):
         return self.visitChildren(ctx)
