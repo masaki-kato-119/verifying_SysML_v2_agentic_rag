@@ -4271,3 +4271,52 @@ def test_antlr_accessible_feature_path_exempts_variant_selection():
     nested_ast = parse_sysml_antlr(nested_ref_text)
     nested_issues = lint_ast(nested_ast)
     assert not any("accessible feature" in i.message for i in nested_issues)
+
+
+def test_antlr_satisfy_requirement_omitted_keyword_and_qualified_name():
+    """`satisfy 'flr-R001' by performLunarMission...;`のように、既存の
+    requirement usageを名前だけで参照する場合に`requirement`キーワードを
+    省略できる形（FunctionSpecificationPackage.sysml）と、`satisfy
+    Drone_StakeholderRequirements::longDistance by drone;`のように対象
+    参照名が`::`修飾を取る形（Drone_BaseArchitecture.sysml）の両方が
+    未対応だった（2026-08-28、730件パース失敗の要因分析で発見。コーパス
+    全体で7件のパース失敗の直接原因）。"""
+    omitted_ast = parse_sysml_antlr(
+        "part def System {\n"
+        "    requirement 'flr-R001' : Something;\n"
+        "    action performLunarMission;\n"
+        "    satisfy 'flr-R001' by performLunarMission;\n"
+        "}\n"
+        "requirement def Something;\n"
+    )
+    satisfy_node = omitted_ast["children"][0]["children"][-1]
+    assert satisfy_node["type"] == "satisfy_requirement_usage"
+    assert satisfy_node["name"] == "flr-R001"
+    assert satisfy_node["by"] == "performLunarMission"
+
+    qualified_ast = parse_sysml_antlr(
+        "package Q {\n"
+        "    requirement def Drone_StakeholderRequirements {\n"
+        "        requirement longDistance;\n"
+        "    }\n"
+        "    part drone;\n"
+        "    satisfy Drone_StakeholderRequirements::longDistance by drone;\n"
+        "}\n"
+    )
+    qualified_satisfy_node = qualified_ast["children"][-1]
+    assert qualified_satisfy_node["type"] == "satisfy_requirement_usage"
+    assert qualified_satisfy_node["name"] == "Drone_StakeholderRequirements::longDistance"
+    assert qualified_satisfy_node["by"] == "drone"
+
+    # 既存の`requirement`キーワード付き形も壊れていないことを確認する。
+    with_keyword_ast = parse_sysml_antlr(
+        "part def System {\n"
+        "    requirement 'flr-R001' : Something;\n"
+        "    action performLunarMission;\n"
+        "    satisfy requirement 'flr-R001' by performLunarMission;\n"
+        "}\n"
+        "requirement def Something;\n"
+    )
+    with_keyword_node = with_keyword_ast["children"][0]["children"][-1]
+    assert with_keyword_node["type"] == "satisfy_requirement_usage"
+    assert with_keyword_node["name"] == "flr-R001"

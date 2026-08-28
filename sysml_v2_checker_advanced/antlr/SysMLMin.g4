@@ -677,9 +677,17 @@ constraintUsage
 // viewpointSatisfactions { ... } }`（Views.sysml）のように、`satisfy
 // requirement <名前> by <参照> { ... }`というbodyありの形も、既存の
 // セミコロン終端形（`assert ... satisfiedBy ...;`）とは別の代替として持つ。
+// `satisfy 'flr-R001' by performLunarMission.outbound.prep.load;`
+// （FunctionSpecificationPackage.sysml）のように、既存のrequirement usageを
+// 名前だけで参照する場合、`requirement`キーワードを省略できる
+// （2026-08-28、730件パース失敗の要因分析で発見）。
+// `satisfy Drone_StakeholderRequirements::longDistance by drone;`
+// （Drone_BaseArchitecture.sysml）のように、`satisfy`対象の参照名も`::`
+// 修飾を取りうる（simpleNameではなくnamespacePathを使う。2026-08-28、
+// 730件パース失敗の要因分析で発見）。
 satisfyRequirementUsage
     : 'assert' ('not')? 'satisfiedBy' ( 'requirement' simpleName ':' ID | simpleName ) ';'
-    | 'satisfy' 'requirement' simpleName 'by' by=namespacePath ( '{' partBodyElement* '}' | ';' )
+    | 'satisfy' 'requirement'? nameRef=namespacePath 'by' by=namespacePath ( '{' partBodyElement* '}' | ';' )
     ;
 
 // `require viewpointSatisfactions { ref :>> ownedPerformances::this,

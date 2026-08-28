@@ -1041,10 +1041,14 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         is_negated = any(child.getText() == "not" for child in ctx.getChildren())
         by_ctx = getattr(ctx, "by", None)
         if by_ctx is not None:
+            # `satisfy Drone_StakeholderRequirements::longDistance by drone;`
+            # のように、対象参照名が`::`修飾を取りうるため、この代替では
+            # simpleNameではなく`nameRef=namespacePath`ラベルを使う
+            # （2026-08-28、730件パース失敗の要因分析で発見）。
             return {
                 "type": "satisfy_requirement_usage",
                 "is_negated": is_negated,
-                "name": _simple_name_text(ctx.simpleName()),
+                "name": _namespace_path_text(ctx.nameRef),
                 "type_name": None,
                 "by": _namespace_path_text(by_ctx),
                 "children": [self.visit(el) for el in ctx.partBodyElement()],
