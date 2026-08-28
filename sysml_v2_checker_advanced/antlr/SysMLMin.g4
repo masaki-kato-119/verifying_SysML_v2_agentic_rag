@@ -2337,12 +2337,17 @@ transitionEffect
     | ('action')? effect=namespacePath
     ;
 
+// `then launch { doc /* ... */ }`（MissionPackage.sysml）のように、
+// 遷移先（target）に`;`終端だけでなく`{ doc ... }`という本体も付く
+// ことがある（lambdaParamと同型のdocのみ本体。2026-08-29、235件パース
+// 失敗の要因分析で発見）。
 transitionStmt
     : 'transition' simpleName? 'first' source=namespacePath
       ( 'accept' transitionTrigger )?
       ( 'if' guard=expression )?
       ( 'do' transitionEffect )?
-      'then' target=namespacePath ';'
+      'then' target=namespacePath
+      ( '{' (documentationStmt | bareDocComment)* '}' | ';' )
     ;
 
 // `accept s : Sig do action D then S2;`・`accept Exit then done;`

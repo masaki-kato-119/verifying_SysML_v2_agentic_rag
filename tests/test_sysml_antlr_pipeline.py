@@ -5318,3 +5318,30 @@ def test_antlr_part_kind_calc_and_action_parameter():
     plain_param = plain_ast["children"][0]["children"][0]
     assert plain_param["type"] == "calc_parameter"
     assert plain_param["kind"] is None
+
+
+def test_antlr_transitionstmt_target_with_doc_body():
+    """`transition first preparation accept PreparationPhaseCompletedNotification
+    then launch { doc /* ... */ }`（MissionPackage.sysml）のように、
+    transitionStmtの遷移先（target）に`;`終端の代わりにdocのみのbody
+    （lambdaParamと同型）が付くことがある（従来`;`終端のみ）。2026-08-29、
+    235件パース失敗の要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "state def S { transition first preparation accept X then launch "
+        "{ doc /* hello */ } }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "transition"
+    assert node["source"] == "preparation"
+    assert node["target"] == "launch"
+    assert len(node["children"]) == 1
+    assert node["children"][0]["type"] == "documentation"
+
+    # 既存の`;`終端形が引き続き機能することを確認する。
+    semi_ast = parse_sysml_antlr(
+        "state def S { transition first a then b; }"
+    )
+    semi_node = semi_ast["children"][0]["children"][0]
+    assert semi_node["type"] == "transition"
+    assert semi_node["target"] == "b"
+    assert semi_node["children"] == []

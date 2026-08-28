@@ -1533,6 +1533,17 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
 
     def visitTransitionStmt(self, ctx: SysMLMinParser.TransitionStmtContext) -> Dict:
         trigger, guard, effect = self._transition_trigger_guard_effect(ctx)
+        # `then launch { doc /* ... */ }`（MissionPackage.sysml）のように、
+        # targetに`;`終端の代わりにdocのみのbodyが付くことがある
+        # （2026-08-29、235件パース失敗の要因分析で発見）。
+        children = [
+            self.visit(child)
+            for child in ctx.getChildren()
+            if isinstance(
+                child,
+                (SysMLMinParser.DocumentationStmtContext, SysMLMinParser.BareDocCommentContext),
+            )
+        ]
         return {
             "type": "transition",
             "name": _simple_name_text(ctx.simpleName()) if ctx.simpleName() is not None else None,
@@ -1541,7 +1552,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "trigger": trigger,
             "guard": guard,
             "effect": effect,
-            "children": [],
+            "children": children,
         }
 
     def visitImplicitTransitionStmt(self, ctx: SysMLMinParser.ImplicitTransitionStmtContext) -> Dict:
