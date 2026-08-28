@@ -1441,7 +1441,11 @@ attributeUsage
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       (':' (typeList=namespacePathList | typeQuoted=QUOTED_NAME))?
       postMult=multiplicitySpec?
-      ('=' value=expression)?
+      // `attribute i : ScalarValues::Integer := 0;`（StructuredControlTest.sysml、
+      // AssignmentTest.sysml）のように、`=`（再定義できない束縛値）とは別に
+      // `:=`（初期値、下流で変更可能）という代入演算子も使われる
+      // （2026-08-28、730件パース失敗の要因分析で発見）。
+      (('=' | ':=') value=expression)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ('default' defaultValue=expression)?
       ( '{' partBodyElement* '}' | ';' )
@@ -1720,7 +1724,11 @@ actionParameter
       // のように、`default`値が波括弧で囲まれた式（`{true}`）を取ることが
       // ある。直後のactionParameter自体のbody（同じく`{...}`）とは別物で、
       // resultExpressionMemberと同型（末尾`;`は省略可能）に扱う。
-      ( 'default' ( '{' defaultValue=expression ';'? '}' | defaultValue=expression ) | '=' value=expression )?
+      // `out attribute positions :> ISQ::length[*] := ( );`
+      // （Assignment Example.sysml）のように、`=`とは別に`:=`という
+      // 代入演算子も使われる（2026-08-28、730件パース失敗の要因分析で
+      // 発見）。
+      ( 'default' ( '{' defaultValue=expression ';'? '}' | defaultValue=expression ) | ('=' | ':=') value=expression )?
       // `in dt : TimeValue { @ToolVariable { name = "deltaT"; } }`
       // （AnalysisAnnotation.sysml）のように、型節直後のbodyに
       // `@Type { ... }`ショートハンド形のインラインメタデータ注釈が

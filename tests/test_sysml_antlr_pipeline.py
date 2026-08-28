@@ -4859,3 +4859,41 @@ def test_antlr_action_parameter_inline_metadata_annotation():
     assert len(doc_and_nested_param["children"]) == 2
     assert doc_and_nested_param["children"][1]["type"] == "param"
     assert doc_and_nested_param["children"][1]["name"] == "x"
+
+
+def test_antlr_assignment_operator_colon_equals():
+    """`attribute i : ScalarValues::Integer := 0;`（StructuredControlTest.sysml、
+    AssignmentTest.sysml）・`out attribute positions :> ISQ::length[*] :=
+    ( );`（Assignment Example.sysml）のように、attributeUsage・
+    actionParameterの初期値代入節が`=`しか受理せず、別形式の`:=`代入演算子
+    （KerMLのFeatureValue、下流で再定義可能な初期値）を受理できなかった。
+    2026-08-28、730件パース失敗の要因分析で発見。`:=`は`=`と全く同じAST
+    形状（valueフィールドのみ）を生成する（assignmentStmtとは異なり演算子
+    自体は区別しない）。既存の`=`との共存も確認する。"""
+    attr_ast = parse_sysml_antlr(
+        "attribute def Integer; part def P { attribute count : Integer := 0; }"
+    )
+    attr_node = attr_ast["children"][-1]["children"][0]
+    assert attr_node["type"] == "attribute_usage"
+    assert attr_node["name"] == "count"
+    assert attr_node["value"] == {"type": "literal", "literal_type": "int", "value": 0}
+
+    attr_eq_ast = parse_sysml_antlr(
+        "attribute def Integer; part def P { attribute count : Integer = 0; }"
+    )
+    attr_eq_node = attr_eq_ast["children"][-1]["children"][0]
+    assert attr_eq_node["value"] == {"type": "literal", "literal_type": "int", "value": 0}
+
+    # 型節無しの裸形（`private attribute position := initialPosition;`）。
+    attr_no_type_ast = parse_sysml_antlr("part def P { private attribute position := x; }")
+    attr_no_type_node = attr_no_type_ast["children"][-1]["children"][0]
+    assert attr_no_type_node["name"] == "position"
+    assert attr_no_type_node["value"] == {"type": "name_ref", "reference": "x"}
+
+    param_ast = parse_sysml_antlr(
+        "action def A { out attribute positions :> ISQ::length[*] := (); } "
+    )
+    param_node = param_ast["children"][0]["params"][0]
+    assert param_node["type"] == "param"
+    assert param_node["name"] == "positions"
+    assert param_node["value"] == {"type": "sequence", "elements": [], "children": []}
