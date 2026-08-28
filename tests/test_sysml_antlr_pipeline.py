@@ -4080,3 +4080,39 @@ def test_antlr_then_control_node_keywords():
     assert then_event["type"] == "event_occurrence_usage"
     assert then_event["name"] == "sensedSpeedReceived"
     assert then_event["isThen"] is True
+
+
+def test_antlr_item_and_subject_usage_qualified_type_clause():
+    """itemUsage/subjectUsageの型節が`::`修飾型名（namespacePath形）を
+    受理せず単一`ID`のままだった（2026-08-28、730件パース失敗の要因分析で
+    発見。コーパス全体で10件のパース失敗の直接原因）。再現:
+    DontPanic-SysMLv2-Batmobile.sysml `item boundingBox : ShapeItems::Box
+    [1] :> boundingShapes { ... }`、MiningCorporationRequirementsDecl.sysml
+    `subject miningcorporation : Domain::MiningCorporation;`。"""
+    item_ast = parse_sysml_antlr(
+        "part def Wheel {\n"
+        "    part boundingShapes;\n"
+        "    item boundingBox : ShapeItems::Box [1] :> boundingShapes;\n"
+        "}\n"
+    )
+    item_node = item_ast["children"][0]["children"][1]
+    assert item_node["type"] == "item_usage"
+    assert item_node["name"] == "boundingBox"
+    assert item_node["type_name"] == "ShapeItems::Box"
+
+    subject_ast = parse_sysml_antlr(
+        "requirement def R {\n"
+        "    subject miningcorporation : Domain::MiningCorporation;\n"
+        "}\n"
+    )
+    subject_node = subject_ast["children"][0]["children"][0]
+    assert subject_node["type"] == "subject_usage"
+    assert subject_node["name"] == "miningcorporation"
+    assert subject_node["type_name"] == "Domain::MiningCorporation"
+
+    # 既存の単一ID型名の形も壊れていないことを確認する。
+    plain_item_ast = parse_sysml_antlr("part def Wheel { item boundingBox : Box [1]; }")
+    assert plain_item_ast["children"][0]["children"][0]["type_name"] == "Box"
+
+    plain_subject_ast = parse_sysml_antlr("requirement def R { subject s : Vehicle; }")
+    assert plain_subject_ast["children"][0]["children"][0]["type_name"] == "Vehicle"

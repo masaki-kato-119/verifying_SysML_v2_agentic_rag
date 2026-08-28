@@ -889,7 +889,12 @@ itemDef
 itemUsage
     : visibilityIndicator? isRefPre='ref'? isIndividual='individual'? isDerived='derived'? isAbstract='abstract'? isRef='ref'? 'item' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
-      (':' ID)?
+      // `item boundingBox : ShapeItems::Box [1] :> boundingShapes { ... }`
+      // （DontPanic-SysMLv2-Batmobile.sysml）のように、型節が`::`修飾型名を
+      // 取ることがある（単一`ID`のままでは受理できない。2026-08-28、730件
+      // パース失敗の要因分析で発見）。`typeRef`という専用ラベルを使う
+      // （_usage_keyword_nodeが自動で読む）。
+      (':' typeRef=namespacePath)?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( 'default' defaultValue=expression | '=' value=expression )?
@@ -947,7 +952,11 @@ concernUsage
 subjectUsage
     : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'subject' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
-      (':' ID)?
+      // `subject miningcorporation : Domain::MiningCorporation;`
+      // （MiningCorporationRequirementsDecl.sysml等）のように、型節が`::`
+      // 修飾型名を取ることがある（itemUsageと同じ理由で追加。2026-08-28、
+      // 730件パース失敗の要因分析で発見）。
+      (':' typeRef=namespacePath)?
       multiplicitySpec?
       ('=' value=expression)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*

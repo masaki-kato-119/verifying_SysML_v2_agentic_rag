@@ -977,10 +977,19 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # requirementUsage）にしか無いため、getattrで安全に読む（無い規則は
         # ctx.shortName属性自体が無い。_named_simple_nodeと同じ方針）。
         short_name_token = getattr(ctx, "shortName", None)
-        # `typeRef`ラベル経由の場合は生のToken（`.text`）、無ラベル`ctx.ID()`
-        # 経由の場合はTerminalNode（`.getText()`）と型が異なるため、両対応する。
+        # `typeRef`ラベルは規則によって`ID`単体（生のToken、`.text`で読む）と
+        # `namespacePath`（`::`修飾型名を許可するルールコンテキスト、
+        # `_namespace_path_text`でQUOTED_NAMEの引用符除去・区切り文字正規化
+        # まで行う必要がある）の両方があり得る（itemUsage/subjectUsageが
+        # `::`型名を必要としたため2026-08-28に追加。無ラベル`ctx.ID()`
+        # 経由の場合は単なるTerminalNode、`.getText()`で読む）。
         if id_ctx is not None:
-            type_name = id_ctx.getText() if hasattr(id_ctx, "getText") else id_ctx.text
+            if isinstance(id_ctx, SysMLMinParser.NamespacePathContext):
+                type_name = _namespace_path_text(id_ctx)
+            elif hasattr(id_ctx, "getText"):
+                type_name = id_ctx.getText()
+            else:
+                type_name = id_ctx.text
         else:
             type_name = None
         # `#goal requirement deliverPayload { ... }`のような`#Type`プレフィックス
