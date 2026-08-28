@@ -1064,6 +1064,11 @@ attributeDef
 partBodyElement
     : attributeUsage
     | attributeDef
+    // `part def Camera { private import PictureTaking::*; ... }`
+    // （camera.sysml）のように、`import`文は型定義スコープに閉じた形でも
+    // 使われる（従来はpackage直下限定だった。2026-08-28、730件パース
+    // 失敗の要因分析で発見）。
+    | importStmt
     | partUsage
     | flowUsage
     | connectUsage

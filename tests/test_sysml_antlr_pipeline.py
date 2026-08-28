@@ -4320,3 +4320,25 @@ def test_antlr_satisfy_requirement_omitted_keyword_and_qualified_name():
     with_keyword_node = with_keyword_ast["children"][0]["children"][-1]
     assert with_keyword_node["type"] == "satisfy_requirement_usage"
     assert with_keyword_node["name"] == "flr-R001"
+
+
+def test_antlr_import_statement_inside_typedef_body():
+    """`part def Camera { private import PictureTaking::*; ... }`
+    （camera.sysml）のように、import文が型定義スコープに閉じた形で使われる
+    構文が未対応だった（従来はpackage直下限定。2026-08-28、730件パース
+    失敗の要因分析で発見。コーパス全体で7件のパース失敗の直接原因）。"""
+    ast = parse_sysml_antlr(
+        "package PictureTaking { part def X; }\n"
+        "part def Camera {\n"
+        "    private import PictureTaking::*;\n"
+        "    perform action takePicture;\n"
+        "}\n"
+    )
+    camera_def = ast["children"][-1]
+    assert camera_def["type"] == "part_def"
+    assert camera_def["name"] == "Camera"
+    import_node = camera_def["children"][0]
+    assert import_node["type"] == "import"
+    assert import_node["name"] == "PictureTaking"
+    assert import_node["wildcard"] is True
+    assert import_node["visibility"] == "private"
