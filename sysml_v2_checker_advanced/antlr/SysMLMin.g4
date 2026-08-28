@@ -606,10 +606,17 @@ assertConstraintUsage
 // （StateSpaceRepresentation.sysml、名前省略形）のように、partUsage等と
 // 同型のredefinition機能一式（visibility・ref・名前省略・pre/post
 // redefine節）を持つ。
+// `calc <ln> naturalLogarithm { ... }`（CoSMAQuantitiesAndUnitsPackage.sysml）
+// のようなShortName注釈（P1-1でpartUsage/requirementUsage等には追加済み
+// だったが、calculationUsageへの追加を見落としていた。2026-08-28、
+// 730件回帰チェックで発見）。`typeRef`という専用ラベルを使う（無ラベルの
+// `ID`のままだとshortNameのID代替と合わせて`ctx.ID()`がリストを返す
+// ようになり、`_usage_keyword_node`の単純な`ctx.ID()`呼び出しと衝突する
+// ため。requirementUsage対応時と同じ理由）。
 calculationUsage
-    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'calc' simpleName?
+    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'calc' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
-      (':' ID)?
+      (':' typeRef=ID)?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' calcBodyElement* '}' | ';' )

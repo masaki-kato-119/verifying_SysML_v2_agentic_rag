@@ -535,6 +535,21 @@ def test_antlr_calculation_usage_and_constraint_usage():
     assert lint_ast(ast) == []
 
 
+def test_antlr_calculation_usage_short_name():
+    """`calc <ln> naturalLogarithm { ... }`
+    （CoSMAQuantitiesAndUnitsPackage.sysml）のように、calculationUsageにも
+    他のusage系規則（partUsage/requirementUsage等）と同じShortName注釈
+    （山括弧の短縮名）が付きうる（2026-08-28、730件回帰チェックで発見。
+    P1-1でcalculationUsageへの追加を見落としていた）。"""
+    ast = parse_sysml_antlr("calc def Calc; calc <ln> naturalLogarithm : Calc;")
+    node = ast["children"][-1]
+    assert node["type"] == "calculation_usage"
+    assert node["shortName"] == "ln"
+    assert node["type_name"] == "Calc"
+    assert node["name"] == "naturalLogarithm"
+    assert lint_ast(ast) == []
+
+
 def test_antlr_satisfy_requirement_usage_bare_and_typed():
     bare = parse_sysml_antlr("assert satisfiedBy x;")
     assert bare["children"][0] == {
