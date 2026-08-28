@@ -1090,6 +1090,22 @@ def test_antlr_requirement_def_short_name():
     assert plain_node["shortName"] is None
 
 
+def test_antlr_nested_part_def_in_part_body():
+    """`part def Building { part def Floor { ... } }`
+    （smart-home-complex.sysml）のように、partDef自体がstateDefと同様に
+    partBodyElement内にネストして書ける（2026-08-28、730件回帰
+    チェックで発見。partBodyElementのリストにpartDef自体が
+    登録されていなかった）。"""
+    ast = parse_sysml_antlr("part def Building { part def Floor { part x : X; } }")
+    outer = ast["children"][-1]
+    assert outer["type"] == "part_def"
+    assert outer["name"] == "Building"
+    inner = outer["children"][-1]
+    assert inner["type"] == "part_def"
+    assert inner["name"] == "Floor"
+    assert inner["children"][-1]["type"] == "part_instance"
+
+
 def test_antlr_state_body_element_doc_and_assert_constraint():
     """d57_state_body_element_documentation_stmt_missing: States.sysmlの
     `state def StateAction { doc /* ... */ ... assert constraint {...} }`

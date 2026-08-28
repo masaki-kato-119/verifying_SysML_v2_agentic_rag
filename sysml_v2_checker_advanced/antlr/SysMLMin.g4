@@ -1046,6 +1046,11 @@ partBodyElement
     // packageBodyElementだけでなくpartBodyElement内にも書ける
     // （2026-08-28、参照実装比較レポートP1-5で発見）。
     | commentStmt
+    // `part def Building { part def Floor { ... } }`
+    // （smart-home-complex.sysml）のように、partDef自体もstateDef同様
+    // partBodyElement内にネストして書ける（2026-08-28、730件回帰
+    // チェックで発見）。
+    | partDef
     ;
 
 // 公式コーパスには`ref self: Part :>> Item::self;`や`ref stateSpace:
