@@ -704,9 +704,13 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
     def visitPerformActionStmt(self, ctx: SysMLMinParser.PerformActionStmtContext) -> Dict:
         npath_ctx = ctx.namespacePath()
         if npath_ctx is not None:
+            # `perform X :>> Y;`というredefine節（2026-08-28、730件回帰
+            # チェックで発見）。
+            redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
             return {
                 "type": "perform_action",
                 "reference": _namespace_path_text(npath_ctx),
+                "redefines": redefines,
                 **({"isThen": True} if ctx.isThen is not None else {}),
             }
         # `perform action <名前> redefines <対象> { ... }`という、
@@ -2035,6 +2039,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         }
 
     def visitPortionUsageStmt(self, ctx: SysMLMinParser.PortionUsageStmtContext) -> Dict:
+        redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
         return {
             "type": "portion_usage",
             "kind": ctx.kind.text,
@@ -2042,6 +2047,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "isThen": ctx.isThen is not None,
             "value": self.visit(ctx.value) if ctx.value is not None else None,
             "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
+            # `snapshot X :> Y { ... }`というredefine節、
+            # `snapshot X :> Y : Type { ... }`という型節
+            # （2026-08-28、730件回帰チェックで発見。P0-2対応時の見落とし）。
+            "redefines": redefines,
+            "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 

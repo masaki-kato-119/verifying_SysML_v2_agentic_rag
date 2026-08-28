@@ -184,6 +184,15 @@ exhibitStateUsageStmt
 portionUsageStmt
     : isThen='then'? kind=('snapshot' | 'timeslice') simpleName?
       multiplicitySpec?
+      // `snapshot missionSystemAtIngress :> apollo11MissionSystem { ... }`
+      // （Apollo11MissionExecutionPackage.sysml）のように、occurrenceUsage
+      // と同様のredefine節（`:>`/`:>>`/subsets/redefines）を持ちうる。
+      // P0-2対応時に本体・多重度・値代入・then連鎖は追加したがこの節を
+      // 見落としていた（2026-08-28、730件回帰チェックで発見）。
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      // `snapshot groundSystemAtIngress :> context : Apollo11MissionContext
+      // { ... }`のように、redefine節の後に型節も持ちうる。
+      (':' typeRef=namespacePath)?
       ('=' value=expression)?
       ( '{' partBodyElement* '}' | ';' )
     ;
@@ -1482,7 +1491,14 @@ acceptActionStmt
 // 11件）のように、裸参照対象が`::`区切り（他パッケージ参照）を伴う
 // 場合もあるため（dependencyStmtと同じ考え方）、`namespacePath`を使う。
 performActionStmt
-    : isThen='then'? 'perform' namespacePath ';'
+    // `perform GroundSupportSystem::performCrewIngress :>> performCrewIngress;`
+    // （Apollo11MissionExecutionPackage.sysml）のように、`action`キーワード
+    // を伴わない裸形にもredefine節を持ちうる（2026-08-28、730件回帰
+    // チェックで発見。fix_portionusage_redefine_clause対応中に同ファイルで
+    // 連鎖的に見つかった別のギャップ）。
+    : isThen='then'? 'perform' namespacePath
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      ';'
     | isThen='then'? 'perform' 'action' actionName=simpleName?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' actionBodyElement* '}' | ';' )

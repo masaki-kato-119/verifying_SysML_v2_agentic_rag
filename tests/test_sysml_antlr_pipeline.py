@@ -862,7 +862,9 @@ def test_antlr_named_accept_action_bare_body():
 
 def test_antlr_perform_action():
     ast = parse_sysml_antlr("action def Act { perform logFailure; }")
-    assert ast["children"][0]["children"][0] == {"type": "perform_action", "reference": "logFailure"}
+    assert ast["children"][0]["children"][0] == {
+        "type": "perform_action", "reference": "logFailure", "redefines": [],
+    }
 
 
 def test_antlr_message_stmt():
@@ -894,7 +896,7 @@ def test_antlr_if_else_with_full_action_body():
     assert if_stmt["then"] == [
         {"type": "assignment_stmt", "name": "y", "operator": "=", "value": {"type": "literal", "literal_type": "int", "value": 1}}
     ]
-    assert if_stmt["else"] == [{"type": "perform_action", "reference": "logFailure"}]
+    assert if_stmt["else"] == [{"type": "perform_action", "reference": "logFailure", "redefines": []}]
 
 
 def test_antlr_if_without_else_has_none_else():
@@ -1481,7 +1483,7 @@ def test_antlr_perform_action_named_redefine_body():
 
     bare_ast = parse_sysml_antlr("part def P { perform y; }")
     bare_node = bare_ast["children"][0]["children"][-1]
-    assert bare_node == {"type": "perform_action", "reference": "y"}
+    assert bare_node == {"type": "perform_action", "reference": "y", "redefines": []}
 
 
 def test_antlr_double_colon_qualified_reference_targets():
@@ -1498,7 +1500,7 @@ def test_antlr_double_colon_qualified_reference_targets():
     共存も確認する。"""
     perform_ast = parse_sysml_antlr("part def P { perform FCW::'外界の映像を撮る'; }")
     perform_node = perform_ast["children"][0]["children"][-1]
-    assert perform_node == {"type": "perform_action", "reference": "FCW::外界の映像を撮る"}
+    assert perform_node == {"type": "perform_action", "reference": "FCW::外界の映像を撮る", "redefines": []}
 
     dep_ast = parse_sysml_antlr(
         "package LDW { requirement '事故の予防' { requirement "
@@ -1521,7 +1523,7 @@ def test_antlr_double_colon_qualified_reference_targets():
 
     plain_perform = parse_sysml_antlr("action def Act { perform logFailure; }")
     assert plain_perform["children"][0]["children"][0] == {
-        "type": "perform_action", "reference": "logFailure",
+        "type": "perform_action", "reference": "logFailure", "redefines": [],
     }
 
     plain_dep = parse_sysml_antlr("part def A; part def B; dependency A to B;")
@@ -1836,7 +1838,7 @@ def test_antlr_assign_then_perform_while_action_syntax():
             "children": [],
         },
     }
-    assert inner[1] == {"type": "perform_action", "reference": "body", "isThen": True}
+    assert inner[1] == {"type": "perform_action", "reference": "body", "redefines": [], "isThen": True}
     assert inner[2]["type"] == "assignment_stmt"
     assert inner[2]["isThen"] is True
 
@@ -1848,7 +1850,7 @@ def test_antlr_assign_then_perform_while_action_syntax():
         "operator": ":=",
         "value": {"type": "literal", "literal_type": "int", "value": 1},
     }
-    assert bare_children[1] == {"type": "perform_action", "reference": "y"}
+    assert bare_children[1] == {"type": "perform_action", "reference": "y", "redefines": []}
 
 
 def test_antlr_action_parameter_reversed_type_order():
@@ -2406,7 +2408,14 @@ def test_antlr_portion_usage_snapshot_and_timeslice():
     チェック関数も無い（構文的完全性のみ）。"""
     snapshot = parse_sysml_antlr("snapshot A;")
     timeslice = parse_sysml_antlr("timeslice A;")
-    base = {"isThen": False, "value": None, "multiplicity": None, "children": []}
+    base = {
+        "isThen": False,
+        "value": None,
+        "multiplicity": None,
+        "redefines": [],
+        "type_name": None,
+        "children": [],
+    }
     assert snapshot["children"][0] == {"type": "portion_usage", "kind": "snapshot", "name": "A", **base}
     assert timeslice["children"][0] == {"type": "portion_usage", "kind": "timeslice", "name": "A", **base}
 
@@ -2438,6 +2447,39 @@ def test_antlr_portion_usage_body_multiplicity_then_and_value():
     assert inner["name"] == "sale"
     assert inner["value"] is not None
     lint_ast(ast)
+
+
+def test_antlr_portion_usage_redefine_clause_and_type():
+    """`snapshot groundSystemAtIngress :> context : Apollo11MissionContext
+    { ... }`（Apollo11MissionExecutionPackage.sysml）のように、portion usage
+    はredefine節（`:>`/`:>>`/subsets/redefines）と型節を持ちうる
+    （2026-08-28、730件回帰チェックで発見。P0-2対応時の見落とし）。"""
+    ast = parse_sysml_antlr(
+        "part def P { snapshot groundSystemAtIngress :> context : "
+        "Apollo11MissionContext { } }"
+    )
+    node = ast["children"][0]["children"][-1]
+    assert node["type"] == "portion_usage"
+    assert node["name"] == "groundSystemAtIngress"
+    assert node["redefines"] == [{"kind": "subsets", "target": "context"}]
+    assert node["type_name"] == "Apollo11MissionContext"
+
+
+def test_antlr_perform_action_bare_with_redefine():
+    """`perform GroundSupportSystem::performCrewIngress :>> performCrewIngress;`
+    （Apollo11MissionExecutionPackage.sysml）のように、`action`キーワードを
+    伴わない裸のperform文もredefine節を持ちうる（2026-08-28、730件回帰
+    チェックで発見）。"""
+    ast = parse_sysml_antlr(
+        "part def P { perform GroundSupportSystem::performCrewIngress "
+        ":>> performCrewIngress; } "
+    )
+    node = ast["children"][0]["children"][-1]
+    assert node == {
+        "type": "perform_action",
+        "reference": "GroundSupportSystem::performCrewIngress",
+        "redefines": [{"kind": "redefines", "target": "performCrewIngress"}],
+    }
 
 
 # --- occurrence def/usage・individual def/usage (8.2.2.9) -----------------------
