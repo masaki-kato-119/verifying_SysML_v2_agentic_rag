@@ -5104,3 +5104,41 @@ def test_antlr_enum_literal_bare_redefine_shorthand():
             "children": [],
         },
     ]
+
+
+def test_antlr_xpect_multiline_block_comment():
+    """`//* XPECT errors --- "..." at "..." --- */`（公式xpectテスト
+    フィクスチャの複数行アノテーション規約、Connector_Invalid.sysml等）の
+    ように、`//`直後に`*`が続く場合、従来はLINE_COMMENT（`~[\\r\\n]*`で
+    その行末までしか消費できない）としてしか扱われず、続く行のアノテー
+    ション本文（引用文字列等）がトークンとして漏れ出し、`--- */`直後の
+    実コードへのパースエラーを引き起こしていた。2026-08-28、730件パース
+    失敗の要因分析で発見（以前から既知の問題）。対応する`*/`までを1つの
+    複数行コメントとして読み飛ばす専用字句規則で解消する。"""
+    ast = parse_sysml_antlr(
+        "package P {\n"
+        "    part def A { part x; }\n"
+        "    part def B {\n"
+        "        part y { part z; }\n"
+        "        //* XPECT errors ---\n"
+        "            \"Must be an accessible feature\" at \"A::x\"\n"
+        "        --- */\n"
+        "        part w;\n"
+        "    }\n"
+        "}\n"
+    )
+    part_def_b = ast["children"][1]
+    assert part_def_b["type"] == "part_def"
+    assert part_def_b["name"] == "B"
+    child_names = [c["name"] for c in part_def_b["children"]]
+    assert child_names == ["y", "w"]
+
+    # 単一行の`// XPECT errors --> "..." at "..."`（既存挙動）が引き続き
+    # 機能することも確認する。
+    single_line_ast = parse_sysml_antlr(
+        "part def A {\n"
+        "    // XPECT errors --> \"some message\" at \"x\"\n"
+        "    part x;\n"
+        "}\n"
+    )
+    assert single_line_ast["children"][0]["children"][0]["name"] == "x"

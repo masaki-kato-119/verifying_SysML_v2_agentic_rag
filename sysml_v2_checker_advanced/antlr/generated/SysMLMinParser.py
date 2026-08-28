@@ -10,7 +10,7 @@ else:
 
 def serializedATN():
     return [
-        4,1,167,4240,2,0,7,0,2,1,7,1,2,2,7,2,2,3,7,3,2,4,7,4,2,5,7,5,2,6,
+        4,1,168,4240,2,0,7,0,2,1,7,1,2,2,7,2,2,3,7,3,2,4,7,4,2,5,7,5,2,6,
         7,6,2,7,7,7,2,8,7,8,2,9,7,9,2,10,7,10,2,11,7,11,2,12,7,12,2,13,7,
         13,2,14,7,14,2,15,7,15,2,16,7,16,2,17,7,17,2,18,7,18,2,19,7,19,2,
         20,7,20,2,21,7,21,2,22,7,22,2,23,7,23,2,24,7,24,2,25,7,25,2,26,7,
@@ -1992,7 +1992,8 @@ class SysMLMinParser ( Parser ):
                       "<INVALID>", "<INVALID>", "<INVALID>", "<INVALID>", 
                       "<INVALID>", "<INVALID>", "<INVALID>", "<INVALID>", 
                       "ID", "QUOTED_NAME", "REAL_LITERAL", "INT_LITERAL", 
-                      "STRING_LITERAL", "DOC_COMMENT", "WS", "LINE_COMMENT" ]
+                      "STRING_LITERAL", "DOC_COMMENT", "WS", "XPECT_BLOCK_COMMENT", 
+                      "LINE_COMMENT" ]
 
     RULE_model = 0
     RULE_topLevelElement = 1
@@ -2343,7 +2344,8 @@ class SysMLMinParser ( Parser ):
     STRING_LITERAL=164
     DOC_COMMENT=165
     WS=166
-    LINE_COMMENT=167
+    XPECT_BLOCK_COMMENT=167
+    LINE_COMMENT=168
 
     def __init__(self, input:TokenStream, output:TextIO = sys.stdout):
         super().__init__(input, output)
