@@ -1639,6 +1639,17 @@ connectionUsage
       (':' ID)?
       postMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      // `connection link : DataLink connect tx.txPort to rx.rxPort;`
+      // （dfa-coverage-advanced.sysml）のように、名前と型節の両方を持つ
+      // connectionUsageにもインライン（本体`{}`なし）の`connect...to...`が
+      // 続きうる（interfaceUsageの第2代替と同型の拡張。2026-08-29、235件
+      // パース失敗の要因分析で発見）。
+      ( 'connect'
+        ( firstMult=multiplicitySpec? firstEnd=connectorEnd
+          'to' thenMult=multiplicitySpec? thenEnd=connectorEnd
+        | '(' naryEnds+=connectorEndPath (',' naryEnds+=connectorEndPath)+ ')'
+        )
+      )?
       ( '{' partBodyElement* '}' | ';' )
     ;
 

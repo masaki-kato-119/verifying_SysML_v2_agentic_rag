@@ -5195,3 +5195,43 @@ def test_antlr_nested_requirement_def_in_requirement_body():
     assert nested["name"] == "A"
     assert len(nested["children"]) == 1
     assert nested["children"][0]["type"] == "documentation"
+
+
+def test_antlr_connectionusage_named_typed_inline_connect():
+    """`connection link : DataLink connect tx.txPort to rx.rxPort;`
+    （dfa-coverage-advanced.sysml）のように、名前と型節の両方を持つ
+    connectionUsageにインライン（本体`{}`なし）の`connect...to...`が
+    続く形が未対応だった（interfaceUsageの同型ギャップは対応済みで
+    非対称だった）。2026-08-29、235件パース失敗の要因分析で発見。既存の
+    `connect`無し形・型無しキーワード形が引き続き機能することも確認する。"""
+    ast = parse_sysml_antlr(
+        "part def CommSystem { part tx; part rx; "
+        "connection link : DataLink connect tx.txPort to rx.rxPort; }"
+    )
+    node = ast["children"][0]["children"][2]
+    assert node["type"] == "connection_usage"
+    assert node["name"] == "link"
+    assert node["type_name"] == "DataLink"
+    assert node["firstEnd"] == {
+        "type": "connector_end",
+        "declared_name": None,
+        "reference": "tx.txPort",
+    }
+    assert node["thenEnd"] == {
+        "type": "connector_end",
+        "declared_name": None,
+        "reference": "rx.rxPort",
+    }
+    assert node["ends"] is None
+
+    # 既存の`connect`無し裸形（名前・型のみ）が引き続き機能することを確認する。
+    bare_ast = parse_sysml_antlr(
+        "abstract connection connections: Connection[0..*];"
+    )
+    bare_node = bare_ast["children"][0]
+    assert bare_node["type"] == "connection_usage"
+    assert bare_node["name"] == "connections"
+    assert bare_node["type_name"] == "Connection"
+    assert bare_node["firstEnd"] is None
+    assert bare_node["thenEnd"] is None
+    assert bare_node["ends"] is None

@@ -627,14 +627,29 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # （itemUsage/partUsage等と同型）。
         id_ctx = ctx.ID()
         redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
-        mult_list = ctx.multiplicitySpec()
+        # `preMult`/`postMult`のどちらか一方にのみ多重度が現れる（両方同時に
+        # 現れる実例は無い）。`connect`節自体のfirstMult/thenMultとは別の
+        # ラベルのため、生の`ctx.multiplicitySpec()`（両方合算したリストに
+        # なる）ではなくラベル付きアクセサを使う（2026-08-29、
+        # connect節追加に伴い区別が必要になったため修正）。
+        redefine_mult = ctx.preMult if ctx.preMult is not None else ctx.postMult
+        # `connection link : DataLink connect tx.txPort to rx.rxPort;`
+        # （dfa-coverage-advanced.sysml）のように、名前+型節形にもインライン
+        # `connect`節が続きうる（2026-08-29、235件パース失敗の要因分析で
+        # 発見）。
+        nary_ends = ctx.naryEnds
         return {
             "type": "connection_usage",
             "name": _optional_simple_name_text(ctx.simpleName()),
             "type_name": id_ctx.getText() if id_ctx is not None else None,
-            "multiplicity": self._multiplicity_dict(mult_list[0] if mult_list else None),
+            "multiplicity": self._multiplicity_dict(redefine_mult),
             "isAbstract": ctx.isAbstract is not None,
             "redefines": redefines,
+            "firstMultiplicity": self._multiplicity_dict(ctx.firstMult) if not nary_ends else None,
+            "firstEnd": self.visit(ctx.firstEnd) if ctx.firstEnd is not None else None,
+            "thenMultiplicity": self._multiplicity_dict(ctx.thenMult) if not nary_ends else None,
+            "thenEnd": self.visit(ctx.thenEnd) if ctx.thenEnd is not None else None,
+            "ends": [self.visit(e) for e in nary_ends] if nary_ends else None,
             "prefixMetadata": prefix_metadata,
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
