@@ -216,6 +216,7 @@ def test_antlr_connection_def_uses_flat_children_not_old_lark_nesting():
                 "name": "C",
                 "inheritance": None,
                 "isAbstract": False,
+                "prefixMetadata": [],
                 "children": [
                     {
                         "type": "attribute_usage",
@@ -227,8 +228,10 @@ def test_antlr_connection_def_uses_flat_children_not_old_lark_nesting():
                         "isAbstract": False,
                         "isConstant": False,
                         "isDerived": False,
+                        "isRef": False,
                         "visibility": None,
                         "redefines": [],
+                        "prefixMetadata": [],
                         "value": None,
                         "defaultValue": None,
                         "children": [],
@@ -526,6 +529,7 @@ def test_antlr_calculation_usage_and_constraint_usage():
         "isRef": False,
         "visibility": None,
         "redefines": [],
+        "prefixMetadata": [],
         "children": [],
     }
     assert lint_ast(ast) == []
@@ -1190,6 +1194,106 @@ def test_antlr_istype_hastype_classification_expression():
     assert hastype_expr["type_name"] == "Quoted Type"
 
 
+def test_antlr_hash_prefix_metadata_annotation_extended():
+    """`#Type`プレフィックス注釈（PrefixMetadataMember）はdependencyStmt
+    にしか実装されておらず、part/attribute/connect/connection/port/
+    requirement/enum/metadataにも付きうる（2026-08-28、730件回帰チェックで
+    発見。P0-4の継続）。"""
+    part_ast = parse_sysml_antlr(
+        "part def Batmobile; part def P { #system part bm1 : Batmobile; }"
+    )
+    part_node = part_ast["children"][-1]["children"][-1]
+    assert part_node["prefixMetadata"] == ["system"]
+
+    attr_ast = parse_sysml_antlr("part def P { #mop attribute totalPower = 1; }")
+    attr_node = attr_ast["children"][-1]["children"][-1]
+    assert attr_node["prefixMetadata"] == ["mop"]
+
+    connect_ast = parse_sysml_antlr("part def P { #multicausation connect a to b; }")
+    connect_node = connect_ast["children"][-1]["children"][-1]
+    assert connect_node["prefixMetadata"] == ["multicausation"]
+
+    connection_bare_ast = parse_sysml_antlr("part def P { #derivation connection { } }")
+    connection_bare_node = connection_bare_ast["children"][-1]["children"][-1]
+    assert connection_bare_node["prefixMetadata"] == ["derivation"]
+
+    connection_def_ast = parse_sysml_antlr("#multicausation connection def MultiCauseEffect;")
+    connection_def_node = connection_def_ast["children"][-1]
+    assert connection_def_node["prefixMetadata"] == ["multicausation"]
+
+    port_def_ast = parse_sysml_antlr("#service port def ServiceDiscovery;")
+    port_def_node = port_def_ast["children"][-1]
+    assert port_def_node["prefixMetadata"] == ["service"]
+
+    requirement_usage_ast = parse_sysml_antlr("#goal requirement deliverPayload;")
+    requirement_usage_node = requirement_usage_ast["children"][-1]
+    assert requirement_usage_node["prefixMetadata"] == ["goal"]
+
+    enum_def_ast = parse_sysml_antlr("#Security enum def ClassificationLevel;")
+    enum_def_node = enum_def_ast["children"][-1]
+    assert enum_def_node["prefixMetadata"] == ["Security"]
+
+    metadata_def_ast = parse_sysml_antlr(
+        "metadata def Classified; metadata def Security; "
+        "part def P { ref z { #Security #Classified metadata Classified; } }"
+    )
+    metadata_usage_node = metadata_def_ast["children"][-1]["children"][-1]["children"][-1]
+    assert metadata_usage_node["prefixMetadata"] == ["Security", "Classified"]
+
+
+def test_antlr_bare_feature_usage_at_package_and_state_level():
+    """`ref annotatedRef { metadata Important { ... } }`
+    （comprehensive_data_loss.sysml）のように、型キーワード（part/item等）を
+    伴わない裸のfeatureUsageはpackage直下にも書ける。`ref vehicle :
+    Vehicle;`（VehicleModel.sysml）のように、state def本体内にも書ける
+    （2026-08-28、730件回帰チェックで発見。以前はpartBodyElement内にしか
+    登録されておらず、どちらの位置でも構文エラーになっていた）。"""
+    package_ast = parse_sysml_antlr(
+        "metadata def Important; ref annotatedRef { metadata Important; }"
+    )
+    package_node = package_ast["children"][-1]
+    assert package_node["type"] == "feature_usage" or package_node.get("name") == "annotatedRef"
+
+    state_ast = parse_sysml_antlr("part def Vehicle; state def S { ref vehicle : Vehicle; }")
+    state_node = state_ast["children"][-1]["children"][-1]
+    assert state_node["name"] == "vehicle"
+    assert state_node["type_name"] == "Vehicle"
+
+
+def test_antlr_attribute_usage_ref_modifier():
+    """`derived constant ref attribute y :> x;`（PartTest.sysml）のように、
+    attributeUsageにも他のusage系規則と同じ`ref`修飾子が付きうる
+    （2026-08-28、730件回帰チェックで発見。それまでisRefが未実装だった）。"""
+    ast = parse_sysml_antlr(
+        "part def P { attribute x; derived constant ref attribute y :> x; }"
+    )
+    node = ast["children"][-1]["children"][-1]
+    assert node["isRef"] is True
+    assert node["isDerived"] is True
+    assert node["isConstant"] is True
+
+
+def test_antlr_item_usage_ref_before_individual_order():
+    """`ref individual item :>> operator : Alice;`（Boeing.sysml、Individuals
+    and Time Slices.sysml）のように、`ref`が`individual`より前に来る語順も
+    実在する（既存の`individual ... ref`という語順とは逆、2026-08-28、
+    730件回帰チェックで発見）。"""
+    ast = parse_sysml_antlr(
+        "part def Alice; part def P { ref individual item :>> operator : Alice; }"
+    )
+    node = ast["children"][-1]["children"][-1]
+    assert node["type"] == "item_usage"
+    assert node["isRef"] is True
+    assert node["isIndividual"] is True
+
+    reversed_ast = parse_sysml_antlr(
+        "part def Alice; part def P { individual ref item :>> operator : Alice; }"
+    )
+    reversed_node = reversed_ast["children"][-1]["children"][-1]
+    assert reversed_node["isRef"] is True
+    assert reversed_node["isIndividual"] is True
+
+
 def test_antlr_state_body_element_doc_and_assert_constraint():
     """d57_state_body_element_documentation_stmt_missing: States.sysmlの
     `state def StateAction { doc /* ... */ ... assert constraint {...} }`
@@ -1550,6 +1654,7 @@ def test_antlr_flow_connect_endpoint_double_colon_mixed():
         "type": "connect_usage",
         "from_end": {"type": "connector_end", "declared_name": None, "reference": "A::B::C"},
         "to_end": {"type": "connector_end", "declared_name": None, "reference": "D::E"},
+        "prefixMetadata": [],
         "children": [],
     }
 
@@ -1559,6 +1664,7 @@ def test_antlr_flow_connect_endpoint_double_colon_mixed():
         "type": "connect_usage",
         "from_end": {"type": "connector_end", "declared_name": "end1", "reference": "a::b"},
         "to_end": {"type": "connector_end", "declared_name": None, "reference": "c::d"},
+        "prefixMetadata": [],
         "children": [],
     }
 

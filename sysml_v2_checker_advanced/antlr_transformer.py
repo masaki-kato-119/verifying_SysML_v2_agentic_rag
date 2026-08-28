@@ -198,6 +198,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # `individual item ii : II1;`のようなプレフィックス修飾子（2026-08-28、
         # 参照実装比較レポートP0-3で発見）。
         node["isIndividual"] = ctx.isIndividual is not None
+        # `ref individual item :>> operator : Alice;`（Boeing.sysml）のように
+        # `ref`が`individual`より前に来る語順もある（2026-08-28、730件回帰
+        # チェックで発見）。`_usage_keyword_node`が読む`isRef`（ref最後尾）に
+        # 加えてこちらも真であれば`isRef`とみなす。
+        node["isRef"] = node["isRef"] or ctx.isRefPre is not None
         return node
 
     def visitRequirementUsage(self, ctx: SysMLMinParser.RequirementUsageContext) -> Dict:
@@ -250,10 +255,14 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
     def visitEnumDef(self, ctx: SysMLMinParser.EnumDefContext) -> Dict:
         # `enum def X { ... }`。bodyは専用のenumBodyElement（enum-literal・doc）を持つ。
         children = [self.visit(el) for el in ctx.enumBodyElement()]
+        prefix_metadata = [
+            _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
+        ]
         return {
             "type": "enum_def",
             "name": _simple_name_text(ctx.simpleName()),
             "inheritance": self._inheritance_dict(ctx),
+            "prefixMetadata": prefix_metadata,
             "children": children,
         }
 
@@ -317,6 +326,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # を使う（partBodyElementはvalueBindingStmtも含むため、この統一で
         # 表現力は失われない）。
         children = [self.visit(el) for el in ctx.partBodyElement()]
+        # `#mop attribute totalPower ...;`のような`#Type`プレフィックス注釈
+        # （2026-08-28、730件回帰チェックで発見。dependencyStmtと同じ形）。
+        prefix_metadata = [
+            _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
+        ]
         return {
             "type": "attribute_usage",
             "name": _optional_simple_name_text(ctx.simpleName()),
@@ -332,8 +346,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             # `derived attribute isReference : Boolean[1] ...`のように
             # `derived`修飾キーワードも持つ（SysML.sysml）。
             "isDerived": ctx.isDerived is not None,
+            # `derived constant ref attribute y :> x;`（PartTest.sysml）
+            # のような`ref`修飾子（2026-08-28、730件回帰チェックで発見）。
+            "isRef": ctx.isRef is not None,
             "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
             "redefines": redefines,
+            "prefixMetadata": prefix_metadata,
             # `attribute x : T = expr;`というインライン値代入
             # （body内のvalueBindingStmtとは別）。
             "value": self.visit(ctx.value) if ctx.value is not None else None,
@@ -407,6 +425,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # `ref part this : Part :>> Action::this, ownedPerformances::this =
         # that as Part { ... }`（Parts.sysml）という`=`値代入も持つ。既存の
         # `expression`プレースホルダーフィールドをそのまま使う。
+        # `#system part bm1 : Batmobile { ... }`のような`#Type`プレフィックス
+        # 注釈（2026-08-28、730件回帰チェックで発見）。
+        prefix_metadata = [
+            _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
+        ]
         return {
             "type": "part_instance",
             "name": _optional_simple_name_text(ctx.simpleName()),
@@ -429,6 +452,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "isIndividual": ctx.isIndividual is not None,
             "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
             "redefines": redefines,
+            "prefixMetadata": prefix_metadata,
             "expression": self.visit(ctx.value) if ctx.value is not None else None,
             # `part subcomponents : MassedComponent [*] default null;`の
             # ような既定値節（2026-08-28、730件回帰チェックで発見）。
@@ -440,14 +464,25 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
 
     def visitConnectUsage(self, ctx: SysMLMinParser.ConnectUsageContext) -> Dict:
         ends = ctx.connectorEndPath()
+        # `#multicausation connect a to b;`のような`#Type`プレフィックス注釈
+        # （2026-08-28、730件回帰チェックで発見）。
+        prefix_metadata = [
+            _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
+        ]
         return {
             "type": "connect_usage",
             "from_end": self.visit(ends[0]),
             "to_end": self.visit(ends[1]),
+            "prefixMetadata": prefix_metadata,
             "children": [],
         }
 
     def visitConnectionUsage(self, ctx: SysMLMinParser.ConnectionUsageContext) -> Dict:
+        # `#derivation connection { ... }`のような`#Type`プレフィックス注釈
+        # （2026-08-28、730件回帰チェックで発見。両方の代替形で共通）。
+        prefix_metadata = [
+            _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
+        ]
         # `connection :MatesWith connect [1] be to [1] be;`（ShapeItems.sysml）
         # のように、`connectUsage`（キーワード無し型）とは別の、`connection`
         # キーワード+型節+connectorEnd側multiplicityを伴う形。
@@ -459,6 +494,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 "firstEnd": self.visit(ctx.firstEnd),
                 "thenMultiplicity": self._multiplicity_dict(ctx.thenMult),
                 "thenEnd": self.visit(ctx.thenEnd),
+                "prefixMetadata": prefix_metadata,
                 "children": [self.visit(el) for el in ctx.partBodyElement()],
             }
         # `abstract connection connections: Connection[0..*] nonunique :>
@@ -474,6 +510,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "multiplicity": self._multiplicity_dict(mult_list[0] if mult_list else None),
             "isAbstract": ctx.isAbstract is not None,
             "redefines": redefines,
+            "prefixMetadata": prefix_metadata,
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 
@@ -845,6 +882,15 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             type_name = id_ctx.getText() if hasattr(id_ctx, "getText") else id_ctx.text
         else:
             type_name = None
+        # `#goal requirement deliverPayload { ... }`のような`#Type`プレフィックス
+        # 注釈はこのヘルパーを共有する規則の一部（今のところrequirementUsageの
+        # み）にしか無いため、getattrで安全に読む（shortNameと同じ方針）。
+        prefix_annotation_method = getattr(ctx, "prefixMetadataAnnotation", None)
+        prefix_metadata = (
+            [_namespace_path_text(a.namespacePath()) for a in prefix_annotation_method()]
+            if prefix_annotation_method is not None
+            else []
+        )
         return {
             "type": node_type,
             "name": _optional_simple_name_text(ctx.simpleName()),
@@ -855,6 +901,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "isRef": ctx.isRef is not None,
             "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
             "redefines": redefines,
+            "prefixMetadata": prefix_metadata,
             "children": [self.visit(el) for el in children_ctxs],
         }
 
@@ -899,6 +946,9 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
 
     def visitRequirementDef(self, ctx: SysMLMinParser.RequirementDefContext) -> Dict:
         children = [self.visit(el) for el in ctx.requirementBodyElement()]
+        prefix_metadata = [
+            _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
+        ]
         return {
             "type": "requirement_def",
             "name": _simple_name_text(ctx.simpleName()),
@@ -906,6 +956,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "shortName": ctx.shortName.text if ctx.shortName is not None else None,
             "inheritance": self._inheritance_dict(ctx),
             "isAbstract": ctx.isAbstract is not None,
+            "prefixMetadata": prefix_metadata,
             "children": children,
         }
 
@@ -1181,11 +1232,15 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
 
     def visitPortDef(self, ctx: SysMLMinParser.PortDefContext) -> Dict:
         children = [self.visit(el) for el in ctx.partBodyElement()]
+        prefix_metadata = [
+            _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
+        ]
         return {
             "type": "port_def",
             "name": _simple_name_text(ctx.simpleName()),
             "inheritance": self._inheritance_dict(ctx),
             "isAbstract": ctx.isAbstract is not None,
+            "prefixMetadata": prefix_metadata,
             "children": children,
         }
 
@@ -1205,6 +1260,9 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         )
         visibility_ctx = ctx.visibilityIndicator()
         children = [self.visit(el) for el in ctx.partBodyElement()]
+        prefix_metadata = [
+            _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
+        ]
         return {
             "type": "port_usage",
             "name": _optional_simple_name_text(ctx.simpleName()),
@@ -1217,6 +1275,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "isAbstract": ctx.isAbstract is not None,
             "isConstant": ctx.isConstant is not None,
             "isRef": ctx.isRef is not None,
+            "prefixMetadata": prefix_metadata,
             "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
             "redefines": redefines,
             "children": children,
@@ -1330,11 +1389,15 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
 
     def visitConnectionDef(self, ctx: SysMLMinParser.ConnectionDefContext) -> Dict:
         children = [self.visit(el) for el in ctx.connectionBodyElement()]
+        prefix_metadata = [
+            _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
+        ]
         return {
             "type": "connection_def",
             "name": _simple_name_text(ctx.simpleName()),
             "inheritance": self._inheritance_dict(ctx),
             "isAbstract": ctx.isAbstract is not None,
+            "prefixMetadata": prefix_metadata,
             "children": children,
         }
 
@@ -1792,12 +1855,23 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # ヘルパーを使う残り15規則)が混在するため、`getattr`で安全に読む
         # （無い規則はctx.shortName属性自体が無い）。
         short_name_token = getattr(ctx, "shortName", None)
+        # `#Security #Classified metadata Classified { ... }`のような
+        # `#Type`プレフィックス注釈は、このヘルパーを共有する規則の一部
+        # （今のところmetadataUsageKeywordのみ）にしか無いため、shortNameと
+        # 同じくgetattrで安全に読む。
+        prefix_annotation_method = getattr(ctx, "prefixMetadataAnnotation", None)
+        prefix_metadata = (
+            [_namespace_path_text(a.namespacePath()) for a in prefix_annotation_method()]
+            if prefix_annotation_method is not None
+            else []
+        )
         return {
             "type": node_type,
             "name": _simple_name_text(ctx.simpleName()),
             "shortName": short_name_token.text if short_name_token is not None else None,
             "inheritance": self._inheritance_dict(ctx),
             "isAbstract": ctx.isAbstract is not None,
+            "prefixMetadata": prefix_metadata,
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 

@@ -117,6 +117,12 @@ packageBodyElement
     | interactionDef
     | bareDocComment
     | aliasStmt
+    // `ref annotatedRef { metadata Important { ... } }`（comprehensive_data_loss.sysml、
+    // MetadataTest.sysml）のように、型キーワード（part/item等）を伴わない
+    // 裸のfeatureUsage（`ref NAME { ... }`）もpackage直下に書ける
+    // （2026-08-28、730件回帰チェックで発見。これまでpartBodyElement内にしか
+    // 登録されておらず、package直下では構文エラーになっていた）。
+    | featureUsage
     ;
 
 // --- dependency (8.2.2.3) ------------------------------------------------------
@@ -487,8 +493,11 @@ metadataDef
 // P0-4で発見）。`@`はこれまでlexerのどの規則にも登場しないトークンで、
 // 遭遇すると`token recognition error`（構文エラーより重症、エラー回復
 // すら効かない）になっていた。
+// `#Security #Classified metadata Classified { ... }`（MetadataTest.sysml）
+// のような`#Type`プレフィックス注釈（2026-08-28、730件回帰チェックで発見。
+// `@`ショートハンド形での実例は未確認のため据え置き）。
 metadataUsage
-    : isAbstract='abstract'? 'metadata' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )  # metadataUsageKeyword
+    : prefixMetadataAnnotation* isAbstract='abstract'? 'metadata' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )  # metadataUsageKeyword
     | '@' typeRef=namespacePath ( '{' partBodyElement* '}' | ';' )                                        # metadataUsageShorthand
     ;
 
@@ -686,8 +695,11 @@ allocationUsage
 // 同じフラットなchildrenリストで表す（特殊な入れ子構造は使わない）。
 // `_check_connection_def`（linter.py:528）は`from`/`to`フィールドを読むが、
 // body形式ではどちらも設定されない。
+// `#multicausation connection def MultiCauseEffect { ... }`
+// （CauseAndEffectExample.sysml）のような`#Type`プレフィックス注釈
+// （2026-08-28、730件回帰チェックで発見）。
 connectionDef
-    : isAbstract='abstract'? 'connection' 'def' simpleName inheritanceClause? ( '{' connectionBodyElement* '}' | ';' )
+    : prefixMetadataAnnotation* isAbstract='abstract'? 'connection' 'def' simpleName inheritanceClause? ( '{' connectionBodyElement* '}' | ';' )
     ;
 
 connectionBodyElement
@@ -779,8 +791,11 @@ inheritanceClause
 // `individual part def IP1 { ... }`（IndividualTest.sysml）のように、
 // `individual`はpart defのプレフィックス修飾子としても使われる
 // （2026-08-28、参照実装比較レポートP0-3で発見。occurrenceDef参照）。
+// `#system part bm1 : Batmobile { ... }`（DontPanic-SysMLv2-Batmobile.sysml）
+// のように、`#Type`プレフィックス注釈（P0-4でdependencyStmtのみ対応）は
+// part def/usage等にも付きうる（2026-08-28、730件回帰チェックで発見）。
 partDef
-    : isIndividual='individual'? isAbstract='abstract'? 'part' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : prefixMetadataAnnotation* isIndividual='individual'? isAbstract='abstract'? 'part' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // 参照: SysML.xtext の `ItemDefinition`（`OccurrenceDefinitionPrefix
@@ -810,8 +825,12 @@ itemDef
 // `individual item ii : II1;`/`individual item :>> i : II2;`
 // （IndividualTest.sysml）のように、`individual`はusage側にも付く
 // プレフィックス修飾子（2026-08-28、参照実装比較レポートP0-3で発見）。
+// `ref individual item :>> operator : Alice;`（Boeing.sysml）のように、
+// `ref`が`individual`より前に来る語順も実在する（既存の`individual ...
+// ref`という語順とは逆）。`isRefPre`という別スロットをisIndividualの前に
+// 追加して両語順を受理する（2026-08-28、730件回帰チェックで発見）。
 itemUsage
-    : visibilityIndicator? isIndividual='individual'? isDerived='derived'? isAbstract='abstract'? isRef='ref'? 'item' simpleName?
+    : visibilityIndicator? isRefPre='ref'? isIndividual='individual'? isDerived='derived'? isAbstract='abstract'? isRef='ref'? 'item' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       (':' ID)?
       multiplicitySpec?
@@ -832,8 +851,10 @@ itemUsage
 // { ... }`（EVSample.sysml）のように、ShortName注釈（山括弧の短縮名）を
 // 持つことがある（2026-08-28、参照実装比較レポートP1-1で発見。公式コーパス
 // で87件）。
+// `#goal requirement deliverPayload { ... }`（RequirementMetadataExample.sysml）
+// のような`#Type`プレフィックス注釈（2026-08-28、730件回帰チェックで発見）。
 requirementUsage
-    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'requirement' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
+    : prefixMetadataAnnotation* visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'requirement' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       // `typeRef`という専用ラベルを使う（無ラベルの`ID`のままだと、上のshortName
       // （ID|QUOTED_NAMEの代替）と合わせて`ctx.ID()`が2件のリストを返すように
@@ -893,8 +914,10 @@ objectiveUsage
 // 同じくinheritanceClause?を許すが（`enum def LevelEnum :> Level { ... }`)、
 // bodyは`partBodyElement`ではなく専用のenum-literal（3種類の形状が
 // 混在）を持つ。
+// `#Security enum def ClassificationLevel { ... }`（MetadataTest.sysml）
+// のような`#Type`プレフィックス注釈（2026-08-28、730件回帰チェックで発見）。
 enumDef
-    : 'enum' 'def' simpleName inheritanceClause? ( '{' enumBodyElement* '}' | ';' )
+    : prefixMetadataAnnotation* 'enum' 'def' simpleName inheritanceClause? ( '{' enumBodyElement* '}' | ';' )
     ;
 
 enumBodyElement
@@ -914,7 +937,7 @@ enumLiteral
 // 参照: SysML.xtext の`AttributeDefinition`。PartDefinition/ItemDefinitionと同型
 // （bodyも同じDefinitionBodyフラグメント経由）なので、partBodyElementを流用する。
 attributeDef
-    : isAbstract='abstract'? 'attribute' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : prefixMetadataAnnotation* isAbstract='abstract'? 'attribute' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 partBodyElement
@@ -1121,7 +1144,7 @@ featureUsage
 // attributeUsageと同じ意味）も取りうる（2026-08-28、730件回帰チェックで
 // 発見）。
 partUsage
-    : visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
+    : prefixMetadataAnnotation* visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
       'part' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       preMult=multiplicitySpec?
@@ -1174,8 +1197,14 @@ partUsage
 // `derived attribute isReference : Boolean[1] ...`（SysML.sysml）のように、
 // attributeUsageにも`derived`修飾キーワードが付く実例がある（itemUsageと
 // 同じ位置）。
+// `derived constant ref attribute y :> x;`（PartTest.sysml）のように、
+// attributeUsageにも他のusage系規則と同じ`ref`修飾子が付きうる
+// （2026-08-28、730件回帰チェックで発見。それまでisRefが未実装だった）。
+// `#mop attribute totalPower redefines totalPower = ...;`
+// （smart-home-complex2.sysml）のような`#Type`プレフィックス注釈も同時に
+// 発見（P0-4の継続）。
 attributeUsage
-    : visibilityIndicator? isDerived='derived'? isAbstract='abstract'? isConstant='constant'?
+    : prefixMetadataAnnotation* visibilityIndicator? isDerived='derived'? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
       'attribute' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       (':' (typeList=namespacePathList | typeQuoted=QUOTED_NAME))?
@@ -1259,8 +1288,10 @@ multiplicityBound
 // successionStmt/successionUsage等でも使われ`qualifiedName`前提の既存
 // 出力に依存するため変更しない）とは別に、`connectUsage`専用の
 // `::`/`.`両対応版`connectorEndPath`を使う。
+// `#multicausation connect ( ... );`（CauseAndEffectExample.sysml）のような
+// `#Type`プレフィックス注釈（2026-08-28、730件回帰チェックで発見）。
 connectUsage
-    : 'connect' connectorEndPath 'to' connectorEndPath ';'
+    : prefixMetadataAnnotation* 'connect' connectorEndPath 'to' connectorEndPath ';'
     ;
 
 // `connection :MatesWith connect [1] be to [1] be;`（ShapeItems.sysml、
@@ -1275,12 +1306,14 @@ connectUsage
 // 持つ。既存の`connect`形とは語順が異なる（`connection`の直後が`:`
 // `typeRef`か`simpleName`かでANTLRの通常の先読みにより曖昧性なく解決
 // される）。
+// `#derivation connection { ... }`（Drone_BaseArchitecture.sysml）のような
+// `#Type`プレフィックス注釈（2026-08-28、730件回帰チェックで発見）。
 connectionUsage
-    : 'connection' ':' typeRef=namespacePath 'connect'
+    : prefixMetadataAnnotation* 'connection' ':' typeRef=namespacePath 'connect'
       firstMult=multiplicitySpec? firstEnd=connectorEnd
       'to' thenMult=multiplicitySpec? thenEnd=connectorEnd
       ( '{' partBodyElement* '}' | ';' )
-    | isAbstract='abstract'? 'connection' simpleName?
+    | prefixMetadataAnnotation* isAbstract='abstract'? 'connection' simpleName?
       (':' ID)?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
@@ -1618,7 +1651,7 @@ actionUsageStmt
 // requirementUsageへは既にP1-1で追加済みだったが、requirementDefへの
 // 追加を見落としていた）。
 requirementDef
-    : isAbstract='abstract'? 'requirement' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' requirementBodyElement* '}' | ';' )
+    : prefixMetadataAnnotation* isAbstract='abstract'? 'requirement' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' requirementBodyElement* '}' | ';' )
     ;
 
 // 公式コーパスの`requirement def RequirementCheck { ... }`
@@ -1680,6 +1713,10 @@ stateBodyElement
     // （entry/do/exit ActionMemberは'entry'/'do'/'exit'から始まるため
     // 語彙的な衝突はない）。
     | actionUsageStmt
+    // `ref vehicle : Vehicle;`（VehicleModel.sysml、5-State-based
+    // Behavior-1.sysml）のように、型キーワードを伴わない裸のfeatureUsage
+    // もstate def本体内に書ける（2026-08-28、730件回帰チェックで発見）。
+    | featureUsage
     ;
 
 // bodyにstateBodyElementの反復を許可し、`state On { entry action ...;
@@ -2055,8 +2092,10 @@ newArgument
 // どちらも body の形は part def/usage と同じ（`Definition`/`Usage`フラグメント
 // 経由で `DefinitionBody`/`UsageBody` に帰着する）。
 // ConjugatedPortDefinitionMember（暗黙の共役ポート）は未対応。
+// `#service port def ServiceDiscovery { ... }`（AHFCoreLib.sysml）のような
+// `#Type`プレフィックス注釈（2026-08-28、730件回帰チェックで発見）。
 portDef
-    : isAbstract='abstract'? 'port' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : prefixMetadataAnnotation* isAbstract='abstract'? 'port' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // partUsageと同じredefinition機能一式（visibility・ref・名前省略・型節
@@ -2071,7 +2110,7 @@ portDef
 // 逆順もある（actionParameterのpreMult/postMultと同型の順序）ため、preMult/
 // postMultという別ラベルで両方の位置を曖昧性なく共存させる。
 portUsage
-    : visibilityIndicator? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
+    : prefixMetadataAnnotation* visibilityIndicator? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
       'port' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       preMult=multiplicitySpec?
