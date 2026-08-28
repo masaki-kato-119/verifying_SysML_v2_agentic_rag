@@ -664,6 +664,72 @@ def test_antlr_transition_do_inline_send_effect():
     assert lint_ast(ast) == []
 
 
+def test_antlr_implicit_transition_first_omitted():
+    """`accept s : Sig do action D then S2;`・`accept Exit then done;`
+    （StateTest.sysml、公式xpectテスト、noErrors指定）のように、`transition
+    ... first`を伴わない暗黙遷移形がある。囲むstate自体が暗黙のsourceと
+    なるため、initialTransitionMember（`then X;`のみの形）と同じく
+    source=Noneになる（2026-08-28、730件回帰チェックで発見）。"""
+    ast = parse_sysml_antlr(
+        "attribute def Sig; action D; "
+        "state def S { state S1; accept s : Sig do action D then S2; state S2; }"
+    )
+    transition = ast["children"][-1]["children"][1]
+    assert transition["type"] == "transition"
+    assert transition["source"] is None
+    assert transition["target"] == "S2"
+    assert transition["trigger"] == {"kind": "trigger", "reference": "s", "type_name": "Sig"}
+    assert transition["effect"] == {"kind": "effect", "action_reference": "D"}
+    assert lint_ast(ast) is not None
+
+    accept_then_ast = parse_sysml_antlr("state def S { accept Exit then S1; state S1; }")
+    accept_then_transition = accept_then_ast["children"][-1]["children"][0]
+    assert accept_then_transition["source"] is None
+    assert accept_then_transition["target"] == "S1"
+    assert accept_then_transition["trigger"] == {"kind": "trigger", "reference": "Exit"}
+    assert accept_then_transition["effect"] is None
+
+    if_then_ast = parse_sysml_antlr("state def S { if true then S1; state S1; }")
+    if_then_transition = if_then_ast["children"][-1]["children"][0]
+    assert if_then_transition["trigger"] is None
+    assert if_then_transition["guard"]["kind"] == "guard"
+
+    do_then_ast = parse_sysml_antlr("action D; state def S { do action D then S1; state S1; }")
+    do_then_transition = do_then_ast["children"][-1]["children"][0]
+    assert do_then_transition["trigger"] is None
+    assert do_then_transition["guard"] is None
+    assert do_then_transition["effect"] == {"kind": "effect", "action_reference": "D"}
+
+    # 既存の`then X;`のみの暗黙初期遷移（initialTransitionMember）とは
+    # 曖昧にならず、両立して使える。
+    bare_then_ast = parse_sysml_antlr("state def S { entry; then S1; state S1; }")
+    bare_then_transition = bare_then_ast["children"][-1]["children"][1]
+    assert bare_then_transition["type"] == "transition"
+    assert bare_then_transition["source"] is None
+    assert bare_then_transition["target"] == "S1"
+
+
+def test_antlr_do_action_member_inline_send():
+    """`do send new Sig(T.s.x) to p;`（StateTest.sysml）のように、`do`節が
+    transitionを伴わず単独のdo-actionメンバーとしてインラインsendアクション
+    を持てる（2026-08-28、730件回帰チェックで発見。実コーパスで10件超）。"""
+    ast = parse_sysml_antlr(
+        "attribute def Sig; part p; state def S { do send new Sig() to p; }"
+    )
+    do_action = ast["children"][-1]["children"][0]
+    assert do_action["type"] == "do_action"
+    assert do_action["action_reference"] is None
+    assert do_action["send"]["to"] == "p"
+    assert do_action["send"]["via"] is None
+    assert do_action["send"]["payload"]["type"] == "new_instance"
+
+    # 既存の`do action X;`（既存アクション参照）形は変わらず動作する。
+    plain_ast = parse_sysml_antlr("action D; state def S { do action D; }")
+    plain_do_action = plain_ast["children"][-1]["children"][0]
+    assert plain_do_action["action_reference"] == "D"
+    assert plain_do_action["send"] is None
+
+
 def test_antlr_transition_undefined_source_state_is_detected():
     """transitionのsource/targetは_find_state_in_symbolsでstate_defとして
     登録された名前しか見つけられない（bare `state X;` usageは未対応）。"""
@@ -1484,7 +1550,7 @@ def test_antlr_entry_do_exit_action_member_type_and_redefine():
     }
     assert do == {
         "type": "do_action", "kind": "do", "action_reference": "doAction",
-        "type_name": "Action", "redefines": [{"kind": "redefines", "target": "do"}], "children": [],
+        "type_name": "Action", "redefines": [{"kind": "redefines", "target": "do"}], "send": None, "children": [],
     }
     assert exit_ == {
         "type": "exit_action", "kind": "exit", "action_reference": "exitAction",

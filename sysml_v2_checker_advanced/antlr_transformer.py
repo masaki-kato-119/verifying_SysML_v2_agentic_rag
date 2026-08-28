@@ -1128,6 +1128,22 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
     # 参照先アクション名はどちらも省略可。
 
     def visitDoActionMember(self, ctx: SysMLMinParser.DoActionMemberContext) -> Dict:
+        # `do send new Sig(...) to p;`というインラインsendアクション
+        # （transitionStmtのdo節と同型、2026-08-28、730件回帰チェックで発見）。
+        if ctx.payload is not None:
+            return {
+                "type": "do_action",
+                "kind": "do",
+                "action_reference": None,
+                "type_name": None,
+                "redefines": [],
+                "send": {
+                    "payload": self.visit(ctx.payload),
+                    "to": _namespace_path_text(ctx.sendTarget) if ctx.sendTarget is not None else None,
+                    "via": _namespace_path_text(ctx.sendVia) if ctx.sendVia is not None else None,
+                },
+                "children": [],
+            }
         id_ctx = ctx.ID()
         return {
             "type": "do_action",
@@ -1135,6 +1151,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "action_reference": _optional_qualified_name_text(ctx.qualifiedName()),
             "type_name": id_ctx.getText() if id_ctx is not None else None,
             "redefines": self._redefine_list_namespace(ctx.postKind, ctx.postTarget),
+            "send": None,
             "children": [],
         }
 
@@ -1155,7 +1172,9 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
     # `_check_transition_advanced_structure`（linter.py:1694,3577）は
     # trigger/guard/effectそれぞれに正しい`kind`タグを要求するため付与する。
 
-    def visitTransitionStmt(self, ctx: SysMLMinParser.TransitionStmtContext) -> Dict:
+    def _transition_trigger_guard_effect(self, ctx):
+        """transitionStmt/implicitTransitionStmtが共有する
+        accept-trigger/if-guard/do-effect抽出ロジック。"""
         trigger = None
         trigger_ctx = ctx.transitionTrigger()
         if trigger_ctx is not None:
@@ -1202,10 +1221,32 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             elif effect_ctx.effect is not None:
                 effect = {"kind": "effect", "action_reference": _namespace_path_text(effect_ctx.effect)}
 
+        return trigger, guard, effect
+
+    def visitTransitionStmt(self, ctx: SysMLMinParser.TransitionStmtContext) -> Dict:
+        trigger, guard, effect = self._transition_trigger_guard_effect(ctx)
         return {
             "type": "transition",
             "name": _simple_name_text(ctx.simpleName()) if ctx.simpleName() is not None else None,
             "source": _namespace_path_text(ctx.source),
+            "target": _namespace_path_text(ctx.target),
+            "trigger": trigger,
+            "guard": guard,
+            "effect": effect,
+            "children": [],
+        }
+
+    def visitImplicitTransitionStmt(self, ctx: SysMLMinParser.ImplicitTransitionStmtContext) -> Dict:
+        # `accept s : Sig do action D then S2;`のような、`transition ...
+        # first`を伴わない暗黙遷移形（StateTest.sysml、公式xpectテスト）。
+        # 囲むstate自体が暗黙のsourceのため、initialTransitionMemberと同じく
+        # source=None（_check_transitionはsource=Noneならチェックをスキップ
+        # する既存の仕様、2026-08-28、730件回帰チェックで発見）。
+        trigger, guard, effect = self._transition_trigger_guard_effect(ctx)
+        return {
+            "type": "transition",
+            "name": None,
+            "source": None,
             "target": _namespace_path_text(ctx.target),
             "trigger": trigger,
             "guard": guard,

@@ -1717,6 +1717,9 @@ stateBodyElement
     // Behavior-1.sysml）のように、型キーワードを伴わない裸のfeatureUsage
     // もstate def本体内に書ける（2026-08-28、730件回帰チェックで発見）。
     | featureUsage
+    // `accept s : Sig do action D then S2;`のような、`transition ...
+    // first`を伴わない暗黙遷移形（2026-08-28、730件回帰チェックで発見）。
+    | implicitTransitionStmt
     ;
 
 // bodyにstateBodyElementの反復を許可し、`state On { entry action ...;
@@ -1843,10 +1846,15 @@ entryActionMember
       ';'
     ;
 
+// `do send new Sig(T.s.x) to p;`（StateTest.sysml、公式xpectテスト）のように、
+// transitionStmt/implicitTransitionStmtの`do`節と同じインラインsend
+// アクションを、単独のdo-actionメンバーとしても書ける（2026-08-28、
+// 730件回帰チェックで発見。実コーパスでも10件超）。
 doActionMember
     : 'do' ('action')? qualifiedName? (':' ID)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ';'
+    | 'do' 'send' payload=expression ( 'to' sendTarget=namespacePath | 'via' sendVia=namespacePath )? ';'
     ;
 
 exitActionMember
@@ -1900,6 +1908,20 @@ transitionStmt
       ( 'if' guard=expression )?
       ( 'do' transitionEffect )?
       'then' target=namespacePath ';'
+    ;
+
+// `accept s : Sig do action D then S2;`・`accept Exit then done;`
+// （StateTest.sysml、公式xpectテスト、noErrors指定）のように、`transition
+// ... first`を伴わない暗黙遷移形がある。囲むstate自体が暗黙のsourceとなる
+// （transformer側でsource=Noneにし、_check_transitionがNoneならスキップする
+// 既存の仕様、initialTransitionMemberと同じ扱いにする）。accept/if/doの
+// いずれか最低1つが無いと、`then target;`のみの`initialTransitionMember`
+// と完全に同形になり曖昧になるため、3つの代替（accept起点/if起点/do起点）
+// でそれぞれ最低1つの存在を強制する（2026-08-28、730件回帰チェックで発見）。
+implicitTransitionStmt
+    : 'accept' transitionTrigger ( 'if' guard=expression )? ( 'do' transitionEffect )? 'then' target=namespacePath ';'
+    | 'if' guard=expression ( 'do' transitionEffect )? 'then' target=namespacePath ';'
+    | 'do' transitionEffect 'then' target=namespacePath ';'
     ;
 
 // --- 式 (KerMLExpressions.xtext) -----------------------------------------------
