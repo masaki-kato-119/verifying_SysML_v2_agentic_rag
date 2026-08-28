@@ -1648,7 +1648,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "name": _optional_simple_name_text(ctx.simpleName()),
             "type_name": type_name,
             **({"type_names": type_names} if len(type_names) > 1 else {}),
-            "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
+            # `ref presidentOfCountry[0..1] : Person ...;`のように、型節の
+            # 前(`preMult`)・後(`postMult`)のどちらか一方にのみ多重度が現れる
+            # （両方同時に現れる実例は無い。2026-08-28、730件パース失敗の
+            # 要因分析で発見）。
+            "multiplicity": self._multiplicity_dict(ctx.preMult if ctx.preMult is not None else ctx.postMult),
             "inheritance": None,
             "isAbstract": ctx.isAbstract is not None,
             "isConstant": ctx.isConstant is not None,
@@ -2573,10 +2577,18 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return {
             "type": "portion_usage",
             "kind": ctx.kind.text,
+            # `timeslice item X[*] : Type { ... }`のような、`snapshot`/
+            # `timeslice`直後のusage種別キーワード（2026-08-28、730件パース
+            # 失敗の要因分析で発見）。
+            "subKind": ctx.subKind.text if ctx.subKind is not None else None,
             "name": _optional_simple_name_text(ctx.simpleName()),
             "isThen": ctx.isThen is not None,
             "value": self.visit(ctx.value) if ctx.value is not None else None,
-            "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
+            # `timeslice asPresident : Person [0..*] { ... }`のように、型節の
+            # 前(`preMult`)・後(`postMult`)のどちらか一方にのみ多重度が現れる
+            # （両方同時に現れる実例は無い。2026-08-28、730件パース失敗の
+            # 要因分析で発見）。
+            "multiplicity": self._multiplicity_dict(ctx.preMult if ctx.preMult is not None else ctx.postMult),
             # `snapshot X :> Y { ... }`というredefine節、
             # `snapshot X :> Y : Type { ... }`という型節
             # （2026-08-28、730件回帰チェックで発見。P0-2対応時の見落とし）。

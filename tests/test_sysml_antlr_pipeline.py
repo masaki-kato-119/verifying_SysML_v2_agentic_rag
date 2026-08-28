@@ -3050,6 +3050,7 @@ def test_antlr_portion_usage_snapshot_and_timeslice():
         "redefines": [],
         "type_name": None,
         "children": [],
+        "subKind": None,
     }
     assert snapshot["children"][0] == {"type": "portion_usage", "kind": "snapshot", "name": "A", **base}
     assert timeslice["children"][0] == {"type": "portion_usage", "kind": "timeslice", "name": "A", **base}
@@ -5011,4 +5012,66 @@ def test_antlr_view_expose_and_filter():
                 "children": [],
             },
         ],
+    }
+
+
+def test_antlr_bracket_multiplicity_after_type_clause():
+    """`timeslice asPresident : Person [0..*] { ... }`（型節の後に多重度）・
+    `timeslice item UnitedStatesWhenJohnIsPresident[*] : UnitedStates
+    { ... }`（`timeslice`直後にusage種別キーワード`item`）・`ref
+    presidentOfCountry[0..1] : Person :> presidentOfCountry.asPresident;`
+    （featureUsageの型節の前に多重度）（いずれもJohnIndividualExample.sysml）
+    のように、`[`による多重度指定がportionUsageStmt/featureUsageの一部の
+    位置で受理されなかった。2026-08-28、730件パース失敗の要因分析で発見。
+    portionUsageStmt/actionUsageStmt等と同型のpreMult/postMult順序を適用
+    する。"""
+    postmult_ast = parse_sysml_antlr(
+        "item def Person; part def P { timeslice asPresident : Person [0..*] { } }"
+    )
+    postmult_node = postmult_ast["children"][-1]["children"][0]
+    assert postmult_node["type"] == "portion_usage"
+    assert postmult_node["kind"] == "timeslice"
+    assert postmult_node["subKind"] is None
+    assert postmult_node["type_name"] == "Person"
+    assert postmult_node["multiplicity"] == {
+        "size": {"min": 0, "max": "*"},
+        "is_ordered": False,
+        "is_unique": True,
+    }
+
+    subkind_ast = parse_sysml_antlr(
+        "item def UnitedStates; individual UnitedStatesWithJohnAsPresident : UnitedStates "
+        "{ timeslice item UnitedStatesWhenJohnIsPresident[*] : UnitedStates { } }"
+    )
+    subkind_node = subkind_ast["children"][-1]["children"][0]
+    assert subkind_node["subKind"] == "item"
+    assert subkind_node["name"] == "UnitedStatesWhenJohnIsPresident"
+    assert subkind_node["type_name"] == "UnitedStates"
+
+    feature_ast = parse_sysml_antlr(
+        "item def Person; item def Country { ref presidentOfCountry[0..1] : Person "
+        ":> presidentOfCountry.asPresident; }"
+    )
+    feature_node = feature_ast["children"][-1]["children"][0]
+    assert feature_node["type"] == "feature_usage"
+    assert feature_node["name"] == "presidentOfCountry"
+    assert feature_node["type_name"] == "Person"
+    assert feature_node["multiplicity"] == {
+        "size": {"min": 0, "max": 1},
+        "is_ordered": False,
+        "is_unique": True,
+    }
+    assert feature_node["redefines"] == [
+        {"kind": "subsets", "target": "presidentOfCountry::asPresident"}
+    ]
+
+    # 既存の型節後の多重度形（featureUsage）が引き続き機能することも確認する。
+    feature_postmult_ast = parse_sysml_antlr(
+        "item def Person; item def Country { ref presidents : Person [0..1]; }"
+    )
+    feature_postmult_node = feature_postmult_ast["children"][-1]["children"][0]
+    assert feature_postmult_node["multiplicity"] == {
+        "size": {"min": 0, "max": 1},
+        "is_ordered": False,
+        "is_unique": True,
     }

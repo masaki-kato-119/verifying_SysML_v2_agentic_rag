@@ -206,8 +206,12 @@ exhibitStateUsageStmt
 // portionUsageStmt自身が持つ。`ordered`/`nonunique`はmultiplicitySpec
 // （8.2.2.6.6）が既に対応済みのため追加の規則は不要。
 portionUsageStmt
-    : isThen='then'? kind=('snapshot' | 'timeslice') simpleName?
-      multiplicitySpec?
+    // `timeslice item UnitedStatesWhenJohnIsPresident[*] : UnitedStates
+    // { ... }`（JohnIndividualExample.sysml）のように、`snapshot`/
+    // `timeslice`キーワードの直後に`item`等のusage種別キーワードが続く
+    // ことがある（2026-08-28、730件パース失敗の要因分析で発見）。
+    : isThen='then'? kind=('snapshot' | 'timeslice') subKind=('item' | 'part' | 'action' | 'attribute' | 'state')? simpleName?
+      preMult=multiplicitySpec?
       // `snapshot missionSystemAtIngress :> apollo11MissionSystem { ... }`
       // （Apollo11MissionExecutionPackage.sysml）のように、occurrenceUsage
       // と同様のredefine節（`:>`/`:>>`/subsets/redefines）を持ちうる。
@@ -217,6 +221,11 @@ portionUsageStmt
       // `snapshot groundSystemAtIngress :> context : Apollo11MissionContext
       // { ... }`のように、redefine節の後に型節も持ちうる。
       (':' typeRef=namespacePath)?
+      // `timeslice asPresident : Person [0..*] { ... }`
+      // （JohnIndividualExample.sysml）のように、型節の後にも多重度が
+      // 付きうる（partUsage/actionUsageStmtと同型のpreMult/postMult順序、
+      // 2026-08-28、730件パース失敗の要因分析で発見）。
+      postMult=multiplicitySpec?
       ('=' value=expression)?
       ( '{' partBodyElement* '}' | ';' )
     ;
@@ -1355,8 +1364,13 @@ featureUsage
       prefixMetadataAnnotation*
       simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>') preTarget+=namespacePathList)*
+      // `ref presidentOfCountry[0..1] : Person :> presidentOfCountry.asPresident;`
+      // （JohnIndividualExample.sysml）のように、型節の前にも多重度が付く
+      // ことがある（partUsage/actionUsageStmtと同型のpreMult/postMult順序、
+      // 2026-08-28、730件パース失敗の要因分析で発見）。
+      preMult=multiplicitySpec?
       (':' typeList=namespacePathList)?
-      multiplicitySpec?
+      postMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>') postTarget+=namespacePathList)*
       ('=' value=expression)?
       ('default' defaultValue=expression)?
