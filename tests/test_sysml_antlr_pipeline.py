@@ -2947,3 +2947,83 @@ def test_antlr_meta_expression():
         "type_name": "SysML::Usage",
         "children": [],
     }
+
+
+# --- 意味検証ルール: 参照実装比較レポートP0-4の§4.1で発見した偽陰性 -------------
+# （2026-08-28、eval/SYSML_LINTER_REFERENCE_COMPARISON_REPORT.md参照）
+
+
+def test_lint_state_entry_do_exit_action_duplicates_are_rejected():
+    """StateSubactions_invalid.sysml参照。entry/do/exitアクションはそれぞれ
+    最大1つまで。state_def/state_usageの両方に適用する。"""
+    text = (
+        "state def S {\n"
+        "    entry action a;\n"
+        "    do action b;\n"
+        "    exit action c;\n"
+        "    exit action c1;\n"
+        "    entry action a1;\n"
+        "    do action b1;\n"
+        "}\n"
+    )
+    ast = parse_sysml_antlr(text)
+    issues = lint_ast(ast)
+    messages = [i.message for i in issues if i.severity == "error"]
+    assert sum("exit" in m and "複数定義" in m for m in messages) == 1
+    assert sum("entry" in m and "複数定義" in m for m in messages) == 1
+    assert sum("do" in m and "複数定義" in m for m in messages) == 1
+
+
+def test_lint_state_single_actions_pass():
+    """1つずつのentry/do/exitアクションは誤検出されない。"""
+    text = "state def S {\n    entry action a;\n    do action b;\n    exit action c;\n}\n"
+    ast = parse_sysml_antlr(text)
+    issues = lint_ast(ast)
+    assert not any("複数定義" in i.message for i in issues if i.severity == "error")
+
+
+def test_lint_calculation_return_parameter_count():
+    """CalculationUsage_Invalid2.sysml参照。return parameterは1つまで。
+    calculation_def/calculation_usageの両方に適用する。"""
+    invalid_def = parse_sysml_antlr(
+        "attribute def T; calc def C1 { return r1 : T; return r2 : T; }"
+    )
+    issues = lint_ast(invalid_def)
+    assert sum("return parameter" in i.message for i in issues if i.severity == "error") == 1
+
+    valid_def = parse_sysml_antlr("attribute def T; calc def C { return T; }")
+    issues_valid = lint_ast(valid_def)
+    assert not any("return parameter" in i.message for i in issues_valid if i.severity == "error")
+
+
+def test_lint_requirement_subject_count_and_position():
+    """RequirementSubject_Invalid.sysml参照。subjectは1つまで、かつ
+    param/subject_usageの中で最初でなければならない。requirement_def/
+    requirement_usageの両方に適用する。"""
+    two_subjects = parse_sysml_antlr("requirement def R { subject s1; subject s2; }")
+    issues = lint_ast(two_subjects)
+    assert sum("複数定義" in i.message for i in issues if i.severity == "error" and "8.2.2.21" in i.message) == 1
+
+    subject_not_first = parse_sysml_antlr("requirement def R1 { in x; subject s5; }")
+    issues2 = lint_ast(subject_not_first)
+    assert sum(
+        "最初のパラメータ" in i.message for i in issues2 if i.severity == "error" and "8.2.2.21" in i.message
+    ) == 1
+
+
+def test_lint_requirement_subject_after_doc_and_self_redefine_is_not_flagged():
+    """2026-08-28の730件回帰チェックで発見: 公式標準ライブラリの
+    RequirementCheck等（`doc`の後に`ref requirement :>> self: ...;`という
+    非パラメータ宣言を経てから`subject`が続く）を、`children[0]`基準の
+    素朴な「先頭」判定だと誤検出していた。パラメータ相当の要素
+    （param/subject_usage）だけで判定するよう修正済み。"""
+    text = (
+        "requirement def RequirementCheck {\n"
+        "    doc /* ... */\n"
+        "    ref requirement :>> self: RequirementCheck;\n"
+        "    subject subj : Anything[1];\n"
+        "}\n"
+    )
+    ast = parse_sysml_antlr(text)
+    issues = lint_ast(ast)
+    assert not any("8.2.2.21" in i.message for i in issues if i.severity == "error")

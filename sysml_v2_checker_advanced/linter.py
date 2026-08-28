@@ -331,6 +331,7 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
             "attribute_usage": self._check_attribute_def,
             "connection_def": self._check_connection_def,
             "requirement_def": self._check_requirement_def,
+            "requirement_usage": self._check_requirement_usage,
             "port_def": self._check_port_def,
             "port_usage": self._check_port_usage,
             "state_def": self._check_state_def,

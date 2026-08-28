@@ -109,7 +109,9 @@ class StateMachineRulesMixin:
             if sym_node.get("type") == "state_def":
                 self._check_state_def_body_structure(sym_node, sym_name)
                 self._check_state_actions(sym_node, sym_name)
-        
+            if sym_node.get("type") in ("state_def", "state_usage"):
+                self._check_state_action_duplicates(sym_node, sym_name)
+
         # 遷移の詳細チェック
         for transition in self.transitions:
             self._check_transition_advanced_structure(transition)
@@ -184,6 +186,34 @@ class StateMachineRulesMixin:
                             f"[8.2.2.18] ExitAction で kind = '{kind}' が設定されていますが、'exit' である必要があります",
                             child
                         ))
+    def _check_state_action_duplicates(self, state_node: Dict, state_name: str) -> None:
+        """
+        Entry/Do/Exit Actions はそれぞれ最大1つまで (8.2.2.18)
+
+        参照実装（OMG SysML v2 Pilot Implementation）との比較評価
+        （2026-08-28、eval/SYSML_LINTER_REFERENCE_COMPARISON_REPORT.md §4.1）で
+        発見した偽陰性。state_def/state_usageの両方に適用する
+        （StateSubactions_invalid.sysmlが両方でテストしているため）。
+
+        Args:
+            state_node: ステートノード（state_defまたはstate_usage）
+            state_name: ステート名
+        """
+        labels = {"entry_action": "entry", "do_action": "do", "exit_action": "exit"}
+        counts: Dict[str, int] = {}
+        for child in state_node.get("children", []):
+            if not isinstance(child, dict):
+                continue
+            child_type = child.get("type")
+            if child_type not in labels:
+                continue
+            counts[child_type] = counts.get(child_type, 0) + 1
+            if counts[child_type] > 1:
+                self.issues.append(LintIssue(
+                    SEVERITY_ERROR,
+                    f"[8.2.2.18] ステート '{state_name}' に{labels[child_type]}アクションが複数定義されています(1つのみ許可)",
+                    child
+                ))
     def _check_transition_advanced_structure(self, transition: Dict) -> None:
         """
         Transition の複雑な構造チェック (8.2.2.18)

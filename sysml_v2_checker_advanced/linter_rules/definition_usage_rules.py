@@ -231,6 +231,47 @@ class DefinitionUsageRulesMixin:
         satisfy_requirement_usage ノード（_check_satisfy_requirement_usage）で
         行われている。
         """
+        self._check_requirement_subject(node, namespace)
+
+    def _check_requirement_usage(self, node: Dict, namespace: str) -> None:
+        """要件使用のチェック (8.2.2.19)。subject制約のみ（型検証は無し）。"""
+        self._check_requirement_subject(node, namespace)
+
+    def _check_requirement_subject(self, node: Dict, namespace: str) -> None:
+        """
+        subject usage は1つまで、かつ最初の子要素でなければならない (8.2.2.21)
+
+        参照実装（OMG SysML v2 Pilot Implementation）との比較評価
+        （2026-08-28、eval/SYSML_LINTER_REFERENCE_COMPARISON_REPORT.md §4.1）で
+        発見した偽陰性（RequirementSubject_Invalid.sysml参照）。requirement_def/
+        requirement_usageの両方から呼ばれる。
+
+        「最初のパラメータ」は`doc`やredefinition専用の`ref requirement :>>
+        self: ...;`（requirement_usage）等の非パラメータ宣言を無視した、
+        パラメータ相当の要素（`param`/`subject_usage`）だけの並びの先頭を指す。
+        全子要素の先頭で判定すると、公式標準ライブラリのRequirementCheck等
+        （`doc`の後に`ref requirement :>> self: ...;`を経てから`subject`が
+        続く）を誤検出する（2026-08-28の730件回帰チェックで発見・修正）。
+        """
+        name = node.get("name", namespace)
+        children = node.get("children", [])
+        param_like = [
+            c for c in children
+            if isinstance(c, dict) and c.get("type") in ("param", "subject_usage")
+        ]
+        subjects = [c for c in param_like if c.get("type") == "subject_usage"]
+        for extra in subjects[1:]:
+            self.issues.append(LintIssue(
+                SEVERITY_ERROR,
+                f"[8.2.2.21] '{name}' にsubjectが複数定義されています(1つのみ許可)",
+                extra
+            ))
+        if len(subjects) == 1 and param_like and param_like[0] is not subjects[0]:
+            self.issues.append(LintIssue(
+                SEVERITY_ERROR,
+                f"[8.2.2.21] '{name}' のsubjectは最初のパラメータでなければなりません",
+                subjects[0]
+            ))
     def _check_interface_def(self, node: Dict, namespace: str) -> None:
         """
         インターフェース定義のチェック (8.2.2.14)
@@ -420,10 +461,34 @@ class DefinitionUsageRulesMixin:
                             f"[8.2.2.19] Calculation '{name}' の return parameter が存在しない型 '{type_name}' を参照しています",
                             child
                         ))
+        self._check_return_parameter_count(node, name)
+
+    def _check_return_parameter_count(self, node: Dict, name: str) -> None:
+        """
+        return parameter は1つまで (8.2.2.19)
+
+        参照実装（OMG SysML v2 Pilot Implementation）との比較評価
+        （2026-08-28、eval/SYSML_LINTER_REFERENCE_COMPARISON_REPORT.md §4.1）で
+        発見した偽陰性。`return X;`/`return r1: X;`は`calc_parameter`ノード
+        （direction="return"）として現れる（`return_parameter_member`という
+        別のノード型は現行パーサーが生成しない旧想定のもので、この関数とは
+        独立）。calculation_def/calculation_usageの両方から呼ばれる。
+        """
+        return_params = [
+            c for c in node.get("children", [])
+            if isinstance(c, dict) and c.get("type") == "calc_parameter" and c.get("direction") == "return"
+        ]
+        for extra in return_params[1:]:
+            self.issues.append(LintIssue(
+                SEVERITY_ERROR,
+                f"[8.2.2.19] Calculation '{name}' にreturn parameterが複数定義されています(1つのみ許可)",
+                extra
+            ))
+
     def _check_calculation_usage(self, node: Dict, namespace: str) -> None:
         """
         計算使用のチェック (8.2.2.19)
-        
+
         Args:
             node: calculation_usageノード
             namespace: 現在の名前空間
@@ -438,6 +503,7 @@ class DefinitionUsageRulesMixin:
                 f"[8.2.2.19] Calculation usage '{node.get('name', 'unknown')}' が存在しない計算 '{type_name}' を参照しています",
                 node
             ))
+        self._check_return_parameter_count(node, node.get("name", "unknown"))
     def _check_constraint_def(self, node: Dict, namespace: str) -> None:
         """
         制約定義のチェック (8.2.2.20)
