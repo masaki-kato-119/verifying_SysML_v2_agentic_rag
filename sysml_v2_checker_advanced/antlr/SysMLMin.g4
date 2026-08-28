@@ -287,16 +287,28 @@ operandBlock
 // requirementBodyElement 内の名前無しdocMember（`doc` DOC_COMMENT）とは
 // 同じAST形状（type:"documentation", identification/body）に統一しており、
 // docMemberの出力も同じ _check_documentation_stmt でチェックできる。
+// `comment cmt_cmt about cmt /* ... */`・`comment about C /* ... */`
+// （Comments.sysml/CommentTest.sysml）のように、コメント対象を明示する
+// `about`節を持つことがある。`locale`節（下記）も同時に持てる
+// （`comment about CommentTest locale "en_US" /* ... */`）
+// （2026-08-28、参照実装比較レポートP1-5で発見）。
 commentStmt
-    : 'comment' simpleName? DOC_COMMENT
+    : 'comment' simpleName? ('about' about=namespacePath)? ('locale' locale=STRING_LITERAL)? DOC_COMMENT
     ;
 
+// `doc locale "en_US" /* ... */`（CommentTest.sysml）のように、ロケール
+// 注釈`locale`節を持つことがある（2026-08-28、参照実装比較レポートP1-5で
+// 発見）。
 documentationStmt
-    : 'doc' simpleName? DOC_COMMENT
+    : 'doc' simpleName? ('locale' locale=STRING_LITERAL)? DOC_COMMENT
     ;
 
 textualRepresentationStmt
-    : ('rep' simpleName)? 'language' STRING_LITERAL DOC_COMMENT
+    // `language`に専用ラベルを使う（無ラベルの`STRING_LITERAL`のままだと、
+    // 新設した`locale=STRING_LITERAL`と合わせて`ctx.STRING_LITERAL()`が
+    // リストを返すようになり、既存の`ctx.STRING_LITERAL().getText()`呼び
+    // 出しと衝突するため。requirementUsageのshortName追加時と同じ問題）。
+    : ('rep' simpleName)? 'language' language=STRING_LITERAL ('locale' locale=STRING_LITERAL)? DOC_COMMENT
     ;
 
 // 公式コーパスは`doc`/`comment`キーワードを一切伴わない裸の`/* ... */`
@@ -308,8 +320,11 @@ textualRepresentationStmt
 // の代替として明示的に扱う必要がある。documentationStmtの名前無し形
 // （`doc /* ... */`）と同じAST形状（type:"documentation",
 // identification:None）で出力する。
+// `locale "en_US" /* ... */`（`doc`/`comment`キーワード無し、CommentTest.sysml
+// 冒頭）のように、裸の`/* ... */`もlocale節を持てる（2026-08-28、参照実装
+// 比較レポートP1-5で発見）。
 bareDocComment
-    : DOC_COMMENT
+    : ('locale' locale=STRING_LITERAL)? DOC_COMMENT
     ;
 
 // KerMLの`alias`文（別名宣言）。公式コーパスでは`alias Box for
@@ -1017,6 +1032,11 @@ partBodyElement
     // packageBodyElementだけでなくpartBodyElement内にも書ける
     // （2026-08-28、参照実装比較レポートP1-2で発見）。
     | exhibitStateUsageStmt
+    // `part def C { comment /* ... */ comment about CommentTest locale
+    // "en_US" /* ... */ }`（CommentTest.sysml）のように、commentStmtも
+    // packageBodyElementだけでなくpartBodyElement内にも書ける
+    // （2026-08-28、参照実装比較レポートP1-5で発見）。
+    | commentStmt
     ;
 
 // 公式コーパスには`ref self: Part :>> Item::self;`や`ref stateSpace:

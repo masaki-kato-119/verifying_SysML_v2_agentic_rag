@@ -249,6 +249,8 @@ def test_antlr_comment_with_identification():
     assert ast["children"][0] == {
         "type": "comment",
         "identification": {"type": "identification", "name": "MyComment"},
+        "about": None,
+        "locale": None,
         "body": "a note",
         "children": [],
     }
@@ -269,6 +271,7 @@ def test_antlr_documentation_stmt_with_name_passes_lint():
     assert node == {
         "type": "documentation",
         "identification": {"type": "identification", "name": "D"},
+        "locale": None,
         "body": "documentation text",
         "children": [],
     }
@@ -286,6 +289,7 @@ def test_antlr_documentation_stmt_without_name_passes_lint():
     assert node == {
         "type": "documentation",
         "identification": None,
+        "locale": None,
         "body": "documentation text",
         "children": [],
     }
@@ -309,9 +313,50 @@ def test_antlr_textual_representation_stmt():
         "type": "textual_representation",
         "identification": None,
         "language": "Markdown",
+        "locale": None,
         "body": "some spec text",
         "children": [],
     }
+
+
+def test_antlr_comment_about_and_locale():
+    """`comment about C /* ... */`・`comment cmt_cmt about cmt /* ... */`
+    （Comments.sysml/CommentTest.sysml）のように、コメント対象を明示する
+    `about`節と、ロケール注釈`locale`節を持つことがある（2026-08-28、
+    参照実装比較レポートP1-5で発見）。`about`はpartBodyElement内にも
+    書ける。"""
+    ast = parse_sysml_antlr("part def C; comment about C /* about a def */")
+    node = ast["children"][-1]
+    assert node["about"] == "C"
+    assert node["locale"] is None
+
+    named_ast = parse_sysml_antlr(
+        'part def C { comment about C locale "en_US" /* ... */ }'
+    )
+    named_node = named_ast["children"][0]["children"][0]
+    assert named_node["about"] == "C"
+    assert named_node["locale"] == "en_US"
+
+
+def test_antlr_documentation_and_textual_representation_locale():
+    """`doc locale "en_US" /* ... */`（CommentTest.sysml）のようなロケール
+    注釈（2026-08-28、参照実装比較レポートP1-5で発見）。裸の
+    `locale "en_US" /* ... */`（キーワード無し）も同様。"""
+    doc_ast = parse_sysml_antlr('doc locale "en_US" /* text */')
+    assert doc_ast["children"][0]["locale"] == "en_US"
+
+    bare_ast = parse_sysml_antlr('locale "en_US" /* text */')
+    assert bare_ast["children"][0] == {
+        "type": "documentation",
+        "identification": None,
+        "locale": "en_US",
+        "body": "text",
+        "children": [],
+    }
+
+    rep_ast = parse_sysml_antlr('language "OCL" locale "en_US" /* text */')
+    assert rep_ast["children"][0]["locale"] == "en_US"
+    assert rep_ast["children"][0]["language"] == "OCL"
 
 
 # --- multiplicity (8.2.2.6.6) -----------------------------------------------------
@@ -1685,7 +1730,7 @@ def test_antlr_braced_default_expression():
     assert braced_node["name"] == "whileTest"
     assert braced_node["defaultValue"] == {"type": "literal", "literal_type": "boolean", "value": True}
     assert braced_node["children"] == [
-        {"type": "documentation", "identification": None, "body": "c", "children": []},
+        {"type": "documentation", "identification": None, "locale": None, "body": "c", "children": []},
     ]
 
     bare_ast = parse_sysml_antlr(

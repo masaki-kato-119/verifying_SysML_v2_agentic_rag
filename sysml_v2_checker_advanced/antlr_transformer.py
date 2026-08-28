@@ -1849,6 +1849,10 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return {
             "type": "comment",
             "identification": self._identification(ctx.simpleName()),
+            # `comment about C /* ... */`のようなコメント対象の明示
+            # （2026-08-28、参照実装比較レポートP1-5で発見）。
+            "about": _namespace_path_text(ctx.about) if ctx.about is not None else None,
+            "locale": ctx.locale.text[1:-1] if ctx.locale is not None else None,
             "body": self._doc_comment_body_text(ctx.DOC_COMMENT()),
             "children": [],
         }
@@ -1857,6 +1861,9 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return {
             "type": "documentation",
             "identification": self._identification(ctx.simpleName()),
+            # `doc locale "en_US" /* ... */`のようなロケール注釈
+            # （2026-08-28、参照実装比較レポートP1-5で発見）。
+            "locale": ctx.locale.text[1:-1] if ctx.locale is not None else None,
             "body": self._doc_comment_body_text(ctx.DOC_COMMENT()),
             "children": [],
         }
@@ -1868,6 +1875,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return {
             "type": "documentation",
             "identification": None,
+            "locale": ctx.locale.text[1:-1] if ctx.locale is not None else None,
             "body": self._doc_comment_body_text(ctx.DOC_COMMENT()),
             "children": [],
         }
@@ -1885,11 +1893,14 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         }
 
     def visitTextualRepresentationStmt(self, ctx: SysMLMinParser.TextualRepresentationStmtContext) -> Dict:
-        language_raw = ctx.STRING_LITERAL().getText()
+        language_raw = ctx.language.text
         return {
             "type": "textual_representation",
             "identification": self._identification(ctx.simpleName()),
             "language": language_raw[1:-1],
+            # `language "OCL" locale "en_US" /* ... */`のようなロケール注釈
+            # （2026-08-28、参照実装比較レポートP1-5で発見）。
+            "locale": ctx.locale.text[1:-1] if ctx.locale is not None else None,
             "body": self._doc_comment_body_text(ctx.DOC_COMMENT()),
             "children": [],
         }
