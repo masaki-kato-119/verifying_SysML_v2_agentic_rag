@@ -2056,7 +2056,7 @@ def test_antlr_perform_action_named_redefine_body():
     unnamed_ast = parse_sysml_antlr("part def P { perform action { } }")
     unnamed_node = unnamed_ast["children"][0]["children"][-1]
     assert unnamed_node == {
-        "type": "perform_action", "name": None, "redefines": [], "params": [], "children": [],
+        "type": "perform_action", "name": None, "type_name": None, "redefines": [], "params": [], "children": [],
     }
 
     bare_ast = parse_sysml_antlr("part def P { perform y; }")
@@ -4460,3 +4460,111 @@ def test_antlr_mult_before_type_extended_to_more_usage_kinds():
     assert ok_concerns["multiplicity"]["size"] == {"min": "*", "max": "*"}
     assert ok_occurs["multiplicity"]["size"] == {"min": 0, "max": 1}
     assert ok_capability["multiplicity"]["size"] == {"min": "*", "max": "*"}
+
+
+def test_antlr_comma_separated_multi_type_declaration():
+    """usage型節がカンマ区切りの複数型を取れなかった（部分的なdef/usage系
+    規則にしか対応していなかった。2026-08-28、730件パース失敗の要因分析で
+    発見。コーパス全体で8件のパース失敗の直接原因。calc/case/constraint/
+    individual/occurrence/port/requirement/part usageに拡張した）。
+    再現: MissionPackage.sysml `part crew[1..*] : Astronaut,
+    LogicalComponentsPackage::Crew :>> crew;`、公式xpectテストの各
+    *Usage_Invalid.sysml（参照実装は構文上は受理しつつ「1つの型のみ許可」
+    という別の意味検証エラーを出す）。"""
+    part_ast = parse_sysml_antlr(
+        "part def Astronaut;\n"
+        "package LogicalComponentsPackage { part def Crew; }\n"
+        "part def P {\n"
+        "    part crew;\n"
+        "    part crew2[1..*] : Astronaut, LogicalComponentsPackage::Crew :>> crew;\n"
+        "}\n"
+    )
+    crew2 = part_ast["children"][-1]["children"][-1]
+    assert crew2["type_name"] == "Astronaut"
+    assert crew2["type_names"] == ["Astronaut", "LogicalComponentsPackage::Crew"]
+
+    calc_ast = parse_sysml_antlr("calc def F1;\ncalc def F2;\ncalc f1 : F1, F2;\n")
+    calc_node = calc_ast["children"][-1]
+    assert calc_node["type_name"] == "F1"
+    assert calc_node["type_names"] == ["F1", "F2"]
+
+    case_ast = parse_sysml_antlr("case def C1;\ncase def C2;\ncase c1: C1, C2;\n")
+    case_node = case_ast["children"][-1]
+    assert case_node["type_name"] == "C1"
+    assert case_node["type_names"] == ["C1", "C2"]
+
+    constraint_ast = parse_sysml_antlr(
+        "constraint def AConstraint;\nconstraint def ABlock;\n"
+        "assert constraint two_types : AConstraint, ABlock;\n"
+    )
+    constraint_node = constraint_ast["children"][-1]["children"][0]
+    assert constraint_node["type_name"] == "AConstraint"
+    assert constraint_node["type_names"] == ["AConstraint", "ABlock"]
+
+    individual_ast = parse_sysml_antlr(
+        "part def A_1;\npart def B_1;\nindividual two_types : A_1, B_1;\n"
+    )
+    individual_node = individual_ast["children"][-1]
+    assert individual_node["type_name"] == "A_1"
+    assert individual_node["type_names"] == ["A_1", "B_1"]
+
+    occurrence_ast = parse_sysml_antlr(
+        "part def PartDef;\noccurrence twoTypes: PartDef, Real;\n"
+    )
+    occurrence_node = occurrence_ast["children"][-1]
+    assert occurrence_node["type_name"] == "PartDef"
+    assert occurrence_node["type_names"] == ["PartDef", "Real"]
+
+    port_ast = parse_sysml_antlr(
+        "port def pd1;\nport def pd2;\npart def P { port two_port_def_types: pd1, pd2; }\n"
+    )
+    port_node = port_ast["children"][-1]["children"][-1]
+    assert port_node["type_name"] == "pd1"
+    assert port_node["type_names"] == ["pd1", "pd2"]
+
+    requirement_ast = parse_sysml_antlr(
+        "requirement def R1def;\nrequirement def R2def;\n"
+        "requirement r12 : R1def, R2def;\n"
+    )
+    requirement_node = requirement_ast["children"][-1]
+    assert requirement_node["type_name"] == "R1def"
+    assert requirement_node["type_names"] == ["R1def", "R2def"]
+
+    # 単一型の既存の形も壊れていないことを確認する（type_namesキーは
+    # 2件以上のときのみ現れる）。
+    single_ast = parse_sysml_antlr("part def A;\npart p : A;\n")
+    single_node = single_ast["children"][-1]
+    assert single_node["type_name"] == "A"
+    assert "type_names" not in single_node
+
+
+def test_antlr_perform_action_with_type_clause():
+    """`perform action performLunarMission : PerformLunarMission;`
+    （MissionPackage.sysml）のように、`action`キーワード付きperform action
+    文にも型節が付くことがある（従来は型節を全く持たなかった。2026-08-28、
+    730件パース失敗の要因分析で発見）。型節追加により裸参照形
+    （`perform X;`）との判別が壊れていないことも確認する（`typeRef`と
+    無ラベルの裸参照が同じnamespacePathルールを共有するため、
+    `hasActionKeyword`という専用ラベルで判別している）。"""
+    typed_ast = parse_sysml_antlr(
+        "action def PerformLunarMission;\n"
+        "part def P { perform action performLunarMission : PerformLunarMission; }\n"
+    )
+    typed_node = typed_ast["children"][-1]["children"][-1]
+    assert typed_node["type"] == "perform_action"
+    assert typed_node["name"] == "performLunarMission"
+    assert typed_node["type_name"] == "PerformLunarMission"
+
+    bare_ref_ast = parse_sysml_antlr(
+        "action def SomeAction;\n"
+        "part def P { perform SomeAction; }\n"
+    )
+    bare_ref_node = bare_ref_ast["children"][-1]["children"][-1]
+    assert bare_ref_node["type"] == "perform_action"
+    assert bare_ref_node["reference"] == "SomeAction"
+    assert "name" not in bare_ref_node
+
+    unnamed_untyped_ast = parse_sysml_antlr("part def P { perform action { } }")
+    unnamed_untyped_node = unnamed_untyped_ast["children"][-1]["children"][-1]
+    assert unnamed_untyped_node["name"] is None
+    assert unnamed_untyped_node["type_name"] is None

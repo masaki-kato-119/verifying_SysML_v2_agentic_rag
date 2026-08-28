@@ -251,9 +251,12 @@ occurrenceDef
 // occurrenceUsageは型節`: Type`を全く持っていなかった（2026-08-28、730件
 // パース失敗の要因分析で発見）。itemUsageと同じ`typeRef=namespacePath`
 // パターンを追加する。
+// `occurrence twoTypes: PartDef, Real;`（OccurrenceUsage_invalid.sysml）の
+// ように、型節がカンマ区切りの複数型を取ることがある（calculationUsageと
+// 同じ理由。2026-08-28、730件パース失敗の要因分析で発見）。
 occurrenceUsage
     : direction? isAbstract='abstract'? isConstant='constant'? isRef='ref'? 'occurrence' simpleName?
-      (':' typeRef=namespacePath)?
+      (':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ('=' value=expression)?
@@ -274,8 +277,11 @@ individualDef
     : isAbstract='abstract'? 'individual' 'def' simpleName inheritanceClause? (emptyMult='[' ']')? ( '{' partBodyElement* '}' | ';' )
     ;
 
+// `individual two_types : A_1, B_1;`（IndividualUsage_Invalid.sysml）の
+// ように、型節がカンマ区切りの複数型を取ることがある（calculationUsageと
+// 同じ理由。2026-08-28、730件パース失敗の要因分析で発見）。
 individualUsage
-    : isAbstract='abstract'? 'individual' simpleName ( ':' ID )? ';'
+    : isAbstract='abstract'? 'individual' simpleName ( ':' ID (',' extraTypeRefs+=ID)* )? ';'
     ;
 
 // --- interaction / sequence diagram notation ---------------------------------
@@ -398,10 +404,13 @@ caseDef
 // `variation case ...`（VariabilityTest.sysml xpect版）のように、
 // Variability機能の先頭修飾子がここにも付く（2026-08-28、730件パース
 // 失敗の要因分析で発見）。
+// `case c1: C1, C2;`（CaseUsage_Invalid.sysml）のように、型節がカンマ区切り
+// の複数型を取ることがある（calculationUsageと同じ理由。2026-08-28、
+// 730件パース失敗の要因分析で発見）。
 caseUsage
     : variability=('variation' | 'variant')? visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'case' simpleName?
       (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
-      (':' ID)?
+      (':' ID (',' extraTypeRefs+=ID)*)?
       multiplicitySpec?
       (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )
@@ -632,9 +641,13 @@ calcParameter
 // （RequirementMetadataExample.sysml）のような`#Type`プレフィックス注釈
 // も持つ（2026-08-28、730件回帰チェックで発見。以前は`assume`キーワード
 // 自体・redefine節・prefixMetadataAnnotationのいずれも未対応だった）。
+// `assert constraint two_types : AConstraint, ABlock;`
+// （ConstraintUsage_Invalid.sysml）のように、型節がカンマ区切りの複数型を
+// 取ることがある（constraintUsageと同じ理由。2026-08-28、730件パース
+// 失敗の要因分析で発見）。
 assertConstraintUsage
     : visibilityIndicator? assertKind=('assert' | 'require' | 'assume') prefixMetadataAnnotation* ('not')? 'constraint' simpleName?
-      ( ':' typeRef=namespacePath )?
+      ( ':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)* )?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' documentationStmt* resultExpr=expression '}' | '{' calcBodyElement* '}' | ';' )
     ;
@@ -654,10 +667,15 @@ assertConstraintUsage
 // `ID`のままだとshortNameのID代替と合わせて`ctx.ID()`がリストを返す
 // ようになり、`_usage_keyword_node`の単純な`ctx.ID()`呼び出しと衝突する
 // ため。requirementUsage対応時と同じ理由）。
+// `calc f1 : F1, F2;`（CalculationUsage_Invalid1.sysml、参照実装は構文上は
+// 受理しつつ「1つの型のみ許可」という別の意味検証エラーを出す）のように、
+// 型節がカンマ区切りの複数型を取ることがある（他の多くのusage系規則にも
+// 共通する一般的なKerMLのFeatureTyping機構。2026-08-28、730件パース失敗の
+// 要因分析で発見）。
 calculationUsage
     : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'calc' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
-      (':' typeRef=ID)?
+      (':' typeRef=ID (',' extraTypeRefs+=ID)*)?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' calcBodyElement* '}' | ';' )
@@ -668,10 +686,14 @@ calculationUsage
 // が、括弧内に単一の真偽式のみを持つ形（セミコロン無し）を取ることが
 // ある。`assertConstraintUsage`が持つ`resultExpr=expression`代替と同型の
 // 代替を持つ。
+// `assert constraint two_types : AConstraint, ABlock;`
+// （ConstraintUsage_Invalid.sysml）のように、型節がカンマ区切りの複数型を
+// 取ることがある（calculationUsageと同じ理由。2026-08-28、730件パース
+// 失敗の要因分析で発見）。
 constraintUsage
     : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'constraint' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
-      (':' ID)?
+      (':' ID (',' extraTypeRefs+=ID)*)?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' resultExpr=expression '}' | '{' calcBodyElement* '}' | ';' )
@@ -969,7 +991,11 @@ requirementUsage
       // `typeRef`という専用ラベルを使う（無ラベルの`ID`のままだと、上のshortName
       // （ID|QUOTED_NAMEの代替）と合わせて`ctx.ID()`が2件のリストを返すように
       // なり、`_usage_keyword_node`側の単純な`ctx.ID()`呼び出しと衝突するため）。
-      (':' typeRef=ID)?
+      // `requirement <'1.0'> r10 : R1def, R11def;`（RequirementUsage_Invalid.
+      // sysml）のように、型節がカンマ区切りの複数型を取ることがある
+      // （calculationUsageと同じ理由。2026-08-28、730件パース失敗の要因
+      // 分析で発見）。
+      (':' typeRef=ID (',' extraTypeRefs+=ID)*)?
       postMult=multiplicitySpec?
       // `ref requirement requirementVerifications : RequirementCheck[0..*]
       // = obj.requirementVerifications { ... }`（VerificationCases.sysml）
@@ -1315,7 +1341,11 @@ partUsage
       'part' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       preMult=multiplicitySpec?
-      (':' typeRef=namespacePath)?
+      // `part crew[1..*] : Astronaut, LogicalComponentsPackage::Crew :>>
+      // crew;`（MissionPackage.sysml）のように、型節がカンマ区切りの複数型を
+      // 取ることがある（calculationUsageと同じ理由。2026-08-28、730件
+      // パース失敗の要因分析で発見）。
+      (':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
       postMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ('=' value=expression)?
@@ -1769,7 +1799,16 @@ performActionStmt
     : variability=('variation' | 'variant')? isThen='then'? 'perform' namespacePath
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ';'
-    | variability=('variation' | 'variant')? isThen='then'? 'perform' 'action' actionName=simpleName?
+    // `perform action performLunarMission : PerformLunarMission;`
+    // （MissionPackage.sysml）のように、`action`キーワード付き形にも型節が
+    // 付くことがある（2026-08-28、730件パース失敗の要因分析で発見）。
+    // `hasActionKeyword`という専用ラベルを`action`トークンに付ける
+    // （typeRefの追加により、無ラベルの`ctx.namespacePath()`が両代替の
+    // occurrenceを合算したリストを返すようになり、第1代替（裸参照）との
+    // 判別に使えなくなったため。トランスフォーマー側はこのラベルの有無で
+    // 代替を判別する）。
+    | variability=('variation' | 'variant')? isThen='then'? 'perform' hasActionKeyword='action' actionName=simpleName?
+      (':' typeRef=namespacePath)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' actionBodyElement* '}' | ';' )
     ;
@@ -2374,12 +2413,15 @@ portDef
 // `variation port ...`/`variant port ...`（VehicleVariabilityModel.sysml/
 // Variability.sysml）のように、Variability機能の先頭修飾子がここにも付く
 // （2026-08-28、730件パース失敗の要因分析で発見）。
+// `port two_port_def_types: pd1, pd2 { ... }`（PortUsage_Invalid.sysml）の
+// ように、型節がカンマ区切りの複数型を取ることがある（calculationUsageと
+// 同じ理由。2026-08-28、730件パース失敗の要因分析で発見）。
 portUsage
     : variability=('variation' | 'variant')? prefixMetadataAnnotation* visibilityIndicator? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
       'port' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       preMult=multiplicitySpec?
-      (':' conjugated='~'? ID)?
+      (':' conjugated='~'? ID (',' extraTypeRefs+=ID)*)?
       postMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )

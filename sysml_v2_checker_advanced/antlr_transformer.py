@@ -495,13 +495,20 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         prefix_metadata = [
             _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
         ]
+        # `part crew[1..*] : Astronaut, LogicalComponentsPackage::Crew :>>
+        # crew;`のように型節がカンマ区切りの複数型を取ることがある
+        # （2026-08-28、730件パース失敗の要因分析で発見）。
+        part_type_names = ([_namespace_path_text(ctx.typeRef)] if ctx.typeRef is not None else []) + [
+            _namespace_path_text(p) for p in ctx.extraTypeRefs
+        ]
         return {
             "type": "part_instance",
             "name": _optional_simple_name_text(ctx.simpleName()),
             # `part <'1'> b: B;`のようなShortName注釈（2026-08-28、
             # 参照実装比較レポートP1-1で発見）。
             "shortName": ctx.shortName.text if ctx.shortName is not None else None,
-            "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
+            "type_name": part_type_names[0] if part_type_names else None,
+            **({"type_names": part_type_names} if len(part_type_names) > 1 else {}),
             "role": None,
             # `part missions[1..*] : Mission;`（多重度が型節より先）・
             # `part subcomponents : MassedComponent [*] ...;`（通常順）の
@@ -859,8 +866,14 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         }
 
     def visitPerformActionStmt(self, ctx: SysMLMinParser.PerformActionStmtContext) -> Dict:
-        npath_ctx = ctx.namespacePath()
-        if npath_ctx is not None:
+        # 第2代替に`typeRef=namespacePath`（型節）を追加したことで、無ラベルの
+        # `ctx.namespacePath()`（第1代替の裸参照）が両代替のoccurrenceを
+        # 合算したリストを返すようになり、単なる有無では代替を判別できなく
+        # なった。`hasActionKeyword`（`action`トークン専用ラベル、第2代替に
+        # のみ存在）の有無で判別する（2026-08-28、730件パース失敗の要因
+        # 分析で発見）。
+        if ctx.hasActionKeyword is None:
+            npath_ctx = ctx.namespacePath()
             # `perform X :>> Y;`というredefine節（2026-08-28、730件回帰
             # チェックで発見）。
             redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
@@ -873,6 +886,9 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             }
         # `perform action <名前> redefines <対象> { ... }`という、
         # actionUsageStmtと同型の名前付き・redefines付き・body付き形。
+        # `perform action performLunarMission : PerformLunarMission;`の
+        # ような型節も持ちうる（2026-08-28、730件パース失敗の要因分析で
+        # 発見）。
         params = []
         children = []
         for el in ctx.actionBodyElement():
@@ -885,6 +901,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return {
             "type": "perform_action",
             "name": _optional_simple_name_text(ctx.actionName),
+            "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
             "redefines": redefines,
             "params": params,
             "children": children,
@@ -984,6 +1001,13 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             id_ctx = ctx.typeRef
         else:
             id_ctx = ctx.ID()
+            # `case c1: C1, C2;`のような、無ラベルの最初の型に`extraTypeRefs`
+            # （2件目以降の型）が続く規則（caseUsage/constraintUsage）では、
+            # `ctx.ID()`は両方合わせたリストを返す。最初の1件だけを単一の
+            # 型として扱う（残りは下のextra_type_refsで別途読む）。
+            # 2026-08-28、730件パース失敗の要因分析で発見。
+            if isinstance(id_ctx, list):
+                id_ctx = id_ctx[0] if id_ctx else None
         redefines = self._redefine_list_namespace(ctx.preKind, ctx.preTarget) + self._redefine_list_namespace(
             ctx.postKind, ctx.postTarget
         )
@@ -1031,11 +1055,19 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             multiplicity_ctx = ctx.preMult if ctx.preMult is not None else ctx.postMult
         else:
             multiplicity_ctx = ctx.multiplicitySpec()
+        # `calc f1 : F1, F2;`のように型節がカンマ区切りの複数型を取る規則
+        # （calculation/case/constraint/requirement usage）にしか
+        # `extraTypeRefs`ラベルが無いため、getattrで安全に読む
+        # （attributeUsageのtype_namesと同じ方針。2026-08-28、730件パース
+        # 失敗の要因分析で発見）。
+        extra_type_refs = getattr(ctx, "extraTypeRefs", None) or []
+        type_names = ([type_name] if type_name is not None else []) + [t.text for t in extra_type_refs]
         return {
             "type": node_type,
             "name": _optional_simple_name_text(ctx.simpleName()),
             "shortName": short_name_token.text if short_name_token is not None else None,
             "type_name": type_name,
+            **({"type_names": type_names} if len(type_names) > 1 else {}),
             "multiplicity": self._multiplicity_dict(multiplicity_ctx),
             "isAbstract": ctx.isAbstract is not None,
             "isRef": ctx.isRef is not None,
@@ -1449,13 +1481,21 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
     def visitPortUsage(self, ctx: SysMLMinParser.PortUsageContext) -> Dict:
         # partUsageと同様のredefinition機能一式（visibility・ref・名前省略・
         # redefine節）とbodyを持つ。
-        id_ctx = ctx.ID()
+        # `port two_port_def_types: pd1, pd2 { ... }`のように型節がカンマ
+        # 区切りの複数型を取ることがある（`ctx.ID()`は無ラベル分+
+        # `extraTypeRefs`分合わせたリストを返す。2026-08-28、730件パース
+        # 失敗の要因分析で発見）。
+        id_ctxs = ctx.ID()
         # `port xxx : ~xxxx;`という共役ポート参照。linter.py
         # （_check_conjugated_port_typing）はtype_nameが`~`始まりであることを
-        # 前提に意味チェックするため、ここで`~`を先頭に合成する。
-        type_name = None
-        if id_ctx is not None:
-            type_name = ("~" + id_ctx.getText()) if ctx.conjugated is not None else id_ctx.getText()
+        # 前提に意味チェックするため、ここで`~`を先頭に合成する
+        # （最初の型のみ、複数型時の2件目以降には適用しない）。
+        type_names = []
+        if id_ctxs:
+            type_names = [
+                ("~" + id_ctxs[0].getText()) if ctx.conjugated is not None else id_ctxs[0].getText()
+            ] + [t.getText() for t in id_ctxs[1:]]
+        type_name = type_names[0] if type_names else None
         # redefinesは常にリスト（0件含む）。
         redefines = self._redefine_list_namespace(ctx.preKind, ctx.preTarget) + self._redefine_list_namespace(
             ctx.postKind, ctx.postTarget
@@ -1469,6 +1509,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "type": "port_usage",
             "name": _optional_simple_name_text(ctx.simpleName()),
             "type_name": type_name,
+            **({"type_names": type_names} if len(type_names) > 1 else {}),
             # `port xxx[xx] : xxxx;`（多重度が型節より先）・`port xxx : xxxx[xx];`
             # （通常順）の両方があるため、preMult/postMultという別ラベルの
             # どちらか一方（両方同時に現れる実例は無い）を読む。
@@ -2090,12 +2131,19 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         prefix_metadata = [
             _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
         ]
+        # `assert constraint two_types : AConstraint, ABlock;`のように型節が
+        # カンマ区切りの複数型を取ることがある（2026-08-28、730件パース
+        # 失敗の要因分析で発見）。
+        assert_type_names = ([_namespace_path_text(ctx.typeRef)] if ctx.typeRef is not None else []) + [
+            _namespace_path_text(p) for p in ctx.extraTypeRefs
+        ]
         inner = {
             "type": "assert_constraint_usage",
             "kind": ctx.assertKind.text,
             "is_negated": is_negated,
             "name": _optional_simple_name_text(ctx.simpleName()),
-            "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else "",
+            "type_name": assert_type_names[0] if assert_type_names else "",
+            **({"type_names": assert_type_names} if len(assert_type_names) > 1 else {}),
             "result_expression": result_expression,
             "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
             "redefines": redefines,
@@ -2441,6 +2489,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         children = [self.visit(el) for el in ctx.partBodyElement()]
         direction_ctx = ctx.direction()
         redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
+        # `occurrence twoTypes: PartDef, Real;`のように型節がカンマ区切りの
+        # 複数型を取ることがある（2026-08-28、730件パース失敗の要因分析で
+        # 発見）。
+        type_names = ([_namespace_path_text(ctx.typeRef)] if ctx.typeRef is not None else []) + [
+            _namespace_path_text(p) for p in ctx.extraTypeRefs
+        ]
         return {
             "type": "occurrence_usage",
             "name": _optional_simple_name_text(ctx.simpleName()),
@@ -2454,7 +2508,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "value": self.visit(ctx.value) if ctx.value is not None else None,
             "defaultValue": self.visit(ctx.defaultValue) if ctx.defaultValue is not None else None,
             "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
-            "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
+            "type_name": type_names[0] if type_names else None,
+            **({"type_names": type_names} if len(type_names) > 1 else {}),
             "children": children,
         }
 
@@ -2476,11 +2531,16 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         }
 
     def visitIndividualUsage(self, ctx: SysMLMinParser.IndividualUsageContext) -> Dict:
-        type_ctx = ctx.ID()
+        # `individual two_types : A_1, B_1;`のように型節がカンマ区切りの
+        # 複数型を取ることがある（`ctx.ID()`は無ラベル分+`extraTypeRefs`分
+        # 合わせたリストを返す。2026-08-28、730件パース失敗の要因分析で発見）。
+        type_ctxs = ctx.ID()
+        type_names = [t.getText() for t in type_ctxs] if type_ctxs else []
         return {
             "type": "individual_usage",
             "name": _simple_name_text(ctx.simpleName()),
-            "type_name": type_ctx.getText() if type_ctx is not None else None,
+            "type_name": type_names[0] if type_names else None,
+            **({"type_names": type_names} if len(type_names) > 1 else {}),
             "isAbstract": ctx.isAbstract is not None,
             "children": [],
         }
