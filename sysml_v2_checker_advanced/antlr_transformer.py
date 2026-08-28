@@ -1980,7 +1980,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         if spec_ctx is None:
             return None
         bracket_ctx = spec_ctx.multiplicityBracket()
-        if bracket_ctx.bound is not None:
+        if bracket_ctx is None:
+            # `nonunique`/`ordered`が`[...]`を伴わない裸の形（2026-08-28、
+            # 730件回帰チェックで発見）。上下限の情報が無いのでsizeはNone。
+            size = None
+        elif bracket_ctx.bound is not None:
             value = self._multiplicity_bound_value(bracket_ctx.bound)
             size = {"min": value, "max": value}
         else:

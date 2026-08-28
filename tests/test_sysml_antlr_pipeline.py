@@ -1141,6 +1141,28 @@ def test_antlr_action_usage_multiplicity_before_type():
     assert node["redefines"] == [{"kind": "redefines", "target": "subactions"}]
 
 
+def test_antlr_bare_nonunique_ordered_modifier():
+    """`attribute ratio : RatioValue nonunique :> Quantities::scalarQuantities;`
+    （CoSMAQuantitiesAndUnitsPackage.sysml）のように、`nonunique`/`ordered`
+    修飾子は明示的な多重度ブラケット`[...]`を伴わない裸の形でも使える
+    （2026-08-28、730件回帰チェックで発見。以前はmultiplicitySpecが
+    必ず`[...]`ブラケットを要求していた）。"""
+    ast = parse_sysml_antlr(
+        "attribute def RatioValue; attribute def A { attribute ratio : RatioValue nonunique; }"
+    )
+    node = ast["children"][-1]["children"][-1]
+    assert node["multiplicity"]["size"] is None
+    assert node["multiplicity"]["is_unique"] is False
+    assert node["multiplicity"]["is_ordered"] is False
+
+    bracket_ast = parse_sysml_antlr(
+        "attribute def RatioValue; attribute def A { attribute ratio : RatioValue[1..*] ordered; }"
+    )
+    bracket_node = bracket_ast["children"][-1]["children"][-1]
+    assert bracket_node["multiplicity"]["size"] == {"min": 1, "max": "*"}
+    assert bracket_node["multiplicity"]["is_ordered"] is True
+
+
 def test_antlr_state_body_element_doc_and_assert_constraint():
     """d57_state_body_element_documentation_stmt_missing: States.sysmlの
     `state def StateAction { doc /* ... */ ... assert constraint {...} }`

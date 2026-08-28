@@ -1204,8 +1204,13 @@ valueBindingStmt
 // 読まないため、検証されない装飾的フィールドにとどまる）。
 // `multiplicity_part`という別フィールド・別の深い入れ子構造
 // （`_check_multiplicity_part`が読む形）は使用実績が無いため実装しない。
+// `attribute ratio : RatioValue nonunique :> Quantities::scalarQuantities;`
+// （CoSMAQuantitiesAndUnitsPackage.sysml）のように、`ordered`/`nonunique`
+// 修飾子は明示的な多重度ブラケット`[...]`を伴わない裸の形でも使える
+// （2026-08-28、730件回帰チェックで発見）。
 multiplicitySpec
     : multiplicityBracket multiplicityModifiers?
+    | multiplicityModifiers
     ;
 
 multiplicityModifiers
