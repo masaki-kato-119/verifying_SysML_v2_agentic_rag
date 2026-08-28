@@ -5142,3 +5142,56 @@ def test_antlr_xpect_multiline_block_comment():
         "}\n"
     )
     assert single_line_ast["children"][0]["children"][0]["name"] == "x"
+
+
+def test_antlr_nested_occurrence_def_in_partbody():
+    """`part AHFN_LocalCloudDD_Seqs = ... { occurrence def
+    APIS_transfer_lifetime { ... } }`（AHFSequences.sysml）のように、
+    `occurrence def`自体もpartDef/stateDef/actionDefと同型にpartBodyElement
+    内へネストして書ける。従来occurrenceDefはpartBodyElementの代替に
+    登録されておらず未対応だった。2026-08-29、235件パース失敗の要因分析
+    で発見。"""
+    ast = parse_sysml_antlr(
+        "part def P { occurrence def Nested { attribute x; } }"
+    )
+    nested = ast["children"][0]["children"][0]
+    assert nested["type"] == "occurrence_def"
+    assert nested["name"] == "Nested"
+    assert nested["children"] == [
+        {
+            "type": "attribute_usage",
+            "name": "x",
+            "shortName": None,
+            "type_name": None,
+            "multiplicity": None,
+            "inheritance": None,
+            "isAbstract": False,
+            "isConstant": False,
+            "isDerived": False,
+            "isRef": False,
+            "visibility": None,
+            "redefines": [],
+            "prefixMetadata": [],
+            "value": None,
+            "defaultValue": None,
+            "variability": None,
+            "children": [],
+        },
+    ]
+
+
+def test_antlr_nested_requirement_def_in_requirement_body():
+    """`requirement def R { ... requirement def <'1'> A { ... } }`
+    （RequirementTest.sysml）のように、requirementDef自体もrequirementBody
+    Element（=partBodyElementに委譲）内へネストして書ける。従来
+    requirementDefはpartBodyElementの代替に登録されておらず未対応
+    だった（occurrenceDefと同型のギャップ）。2026-08-29、235件パース
+    失敗の要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "requirement def R { requirement def <'1'> A { doc /* x */ } }"
+    )
+    nested = ast["children"][0]["children"][0]
+    assert nested["type"] == "requirement_def"
+    assert nested["name"] == "A"
+    assert len(nested["children"]) == 1
+    assert nested["children"][0]["type"] == "documentation"

@@ -1320,6 +1320,17 @@ partBodyElement
     // partBodyElement内にネストして書ける（2026-08-28、730件回帰
     // チェックで発見）。
     | partDef
+    // `part AHFN_LocalCloudDD_Seqs = ... { occurrence def
+    // APIS_transfer_lifetime { ... } }`（AHFSequences.sysml）のように、
+    // occurrenceDef自体もpartDef/stateDef/actionDefと同型にpartBodyElement
+    // 内へネストして書ける（2026-08-29、235件パース失敗の要因分析で発見）。
+    | occurrenceDef
+    // `requirement def R { ... requirement def <'1'> A { ... } }`
+    // （RequirementTest.sysml）のように、requirementDef自体も
+    // requirementBodyElement（=partBodyElementに委譲）内へネストして
+    // 書ける（2026-08-29、235件パース失敗の要因分析で発見。occurrenceDef
+    // と同型のギャップ）。
+    | requirementDef
     ;
 
 // 公式コーパスには`ref self: Part :>> Item::self;`や`ref stateSpace:
