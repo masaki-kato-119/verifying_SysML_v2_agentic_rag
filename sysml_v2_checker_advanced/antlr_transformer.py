@@ -1505,6 +1505,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         ):
             id_ctx = ctx.ID()
             redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
+            bare_ends = ctx.connectorEndPath()
+            bare_interface_part = (
+                self._binary_part("binary_interface_part", bare_ends[0], bare_ends[1])
+                if len(bare_ends) == 2 else None
+            )
             return {
                 "type": "interface_usage",
                 "name": _optional_simple_name_text(ctx.simpleName()),
@@ -1512,6 +1517,10 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
                 "isAbstract": ctx.isAbstract is not None,
                 "redefines": redefines,
+                # `interface : StagingInterface connect a.p to b.q;`のように、
+                # 名前省略の型付きinterface usage（この裸形分岐）も`connect`節を
+                # 持ちうる（2026-08-28、730件パース失敗の要因分析で発見）。
+                "interface_part": bare_interface_part,
                 "children": [self.visit(el) for el in ctx.partBodyElement()],
             }
         ends = ctx.connectorEndPath()

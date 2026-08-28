@@ -3964,3 +3964,44 @@ def test_antlr_recursive_wildcard_import():
     expose_node = expose_ast["children"][0]
     assert expose_node["type"] == "special_stmt"
     assert expose_node["children"][0]["type"] == "expose"
+
+
+def test_antlr_interface_usage_unnamed_typed_inline_connect():
+    """`interface : StagingInterface connect a.p to b.q;`のように、名前を
+    省略した型付きinterface usageへのインライン`connect...to...`が
+    未対応だった（2026-08-28、730件パース失敗の要因分析で発見。コーパス
+    全体で11件のパース失敗の直接原因）。再現: apollo-11-sysml-v2/
+    Technical/TechnicalComponentsPackage.sysml。第1代替（名前付き形）は
+    `simpleName`が必須のため名前省略形にマッチできず、`connect`節を
+    持たない第2代替（裸形）にフォールバックしていたが、そちらには
+    `connect`節が無かった。名前付き形（第1代替）が既存どおり動くことも
+    合わせて確認する。"""
+    unnamed_ast = parse_sysml_antlr(
+        "part a { part p; }\n"
+        "part b { part q; }\n"
+        "interface : StagingInterface connect a.p to b.q;\n"
+    )
+    interface_node = unnamed_ast["children"][-1]
+    assert interface_node["type"] == "interface_usage"
+    assert interface_node["name"] is None
+    assert interface_node["type_name"] == "StagingInterface"
+    assert interface_node["interface_part"] == {
+        "type": "binary_interface_part",
+        "from_end": {"reference_subsetting": {"referenced_feature": "a::p"}},
+        "to_end": {"reference_subsetting": {"referenced_feature": "b::q"}},
+    }
+
+    named_ast = parse_sysml_antlr(
+        "part a { part p; }\n"
+        "part b { part q; }\n"
+        "interface cmLMDocking : DockingInterface connect a.p to b.q;\n"
+    )
+    named_node = named_ast["children"][-1]
+    assert named_node["type"] == "interface_usage"
+    assert named_node["name"] == "cmLMDocking"
+    assert named_node["type_name"] == "DockingInterface"
+    assert named_node["interface_part"] == {
+        "type": "binary_interface_part",
+        "from_end": {"reference_subsetting": {"referenced_feature": "a::p"}},
+        "to_end": {"reference_subsetting": {"referenced_feature": "b::q"}},
+    }

@@ -699,11 +699,16 @@ interfaceUsage
     // connections { doc ... }`（Interfaces.sysml）のように、`connect`を
     // 伴わない裸のinterface usage形（connection/allocation/message/flow等と
     // 同型）も第2代替として持つ（connectionUsage/flowUsageのbare形と
-    // 同じ設計）。
+    // 同じ設計）。`interface : StagingInterface connect a.p to b.q;`
+    // （TechnicalComponentsPackage.sysml）のように、名前を省略した
+    // 型付きinterface usageへの`connect`節も第1代替では受理できない
+    // （simpleNameが必須のため）ので、この第2代替にも`connect`節を追加する
+    // （2026-08-28、730件パース失敗の要因分析で発見）。
     | isAbstract='abstract'? 'interface' simpleName?
       (':' ID)?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      ( 'connect' connectorEndPath 'to' connectorEndPath )?
       ( '{' partBodyElement* '}' | ';' )
     ;
 
