@@ -1767,9 +1767,25 @@ assignmentStmt
 // 混在させる場合もあるため、payloadのみ`qualifiedName`ではなく
 // `namespacePath`を使う（receiver/toTarget/viaTargetは実コーパスで
 // `::`混在の使用例が無いため`qualifiedName`のまま）。
+// `action publish send new Publish(someTopic, somePublication) via
+// publicationPort;`（ServerSequenceOutsideRealization-2.sysml）のように、
+// payloadが`new Type(args)`というオブジェクト生成式のこともある
+// （2026-08-28、730件パース失敗の要因分析で発見）。`payload=namespacePath`
+// を`expression`へ全面置換すると既存の文字列ベースの`payload`フィールド
+// （多数のテスト・呼び出し元が依存）が壊れるため、`new`式専用の代替節
+// `newPayload`を別ラベルで追加する形に留める（named形には`via`節も無かった
+// ため、anonymous形と同じ`to`/`via`両対応にする）。
+// `then action sendFuelCommand send new FuelCommand() to engine_a;`
+// （Interaction Realization-1.sysml）のように、named形は先頭の裸`then`
+// （直前ノードとの暗黙の連鎖、assignmentStmt/flowControlNodeと同じ設計）
+// も持ちうる（2026-08-28、730件パース失敗の要因分析で発見）。
 sendActionStmt
-    : 'action' name=simpleName 'send' payload=namespacePath 'to' receiver=qualifiedName ';'          # sendActionNamed
-    | 'send' payload=namespacePath ( 'to' toTarget=qualifiedName | 'via' viaTarget=qualifiedName ) ';' # sendActionAnonymous
+    : isThen='then'? 'action' name=simpleName 'send'
+      ( payload=namespacePath | 'new' newPayloadType=qualifiedName '(' (newPayloadArgs+=newArgument (',' newPayloadArgs+=newArgument)*)? ')' )
+      ( 'to' receiver=qualifiedName | 'via' receiverVia=qualifiedName ) ';'          # sendActionNamed
+    | 'send'
+      ( payload=namespacePath | 'new' newPayloadType=qualifiedName '(' (newPayloadArgs+=newArgument (',' newPayloadArgs+=newArgument)*)? ')' )
+      ( 'to' toTarget=qualifiedName | 'via' viaTarget=qualifiedName ) ';' # sendActionAnonymous
     ;
 
 // --- accept action (Section 7.17 AcceptActionUsage) --------------------------

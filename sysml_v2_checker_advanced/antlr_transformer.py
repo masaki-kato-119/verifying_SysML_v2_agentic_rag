@@ -840,12 +840,40 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             **({"actionName": _simple_name_text(ctx.actionName)} if ctx.actionName is not None else {}),
         }
 
+    def _send_action_payload(self, ctx) -> Dict | str:
+        """sendActionStmtの`payload`は既存の`namespacePath`（文字列）形が
+        大半だが、`new Type(args)`というオブジェクト生成式のこともある
+        （2026-08-28、730件パース失敗の要因分析で発見。ServerSequence
+        OutsideRealization-2.sysml参照）。`payload=namespacePath`を丸ごと
+        `expression`へ置換すると既存の文字列ベースpayloadに依存する呼び
+        出し元・テストが壊れるため、`new`式のときだけ`new_instance`辞書
+        （visitNewExprと同型）を返す2択にする。"""
+        if ctx.payload is not None:
+            return _namespace_path_text(ctx.payload)
+        return {
+            "type": "new_instance",
+            "name": _qualified_name_text(ctx.newPayloadType),
+            "arguments": [self.visit(a) for a in ctx.newPayloadArgs],
+            "children": [],
+        }
+
     def visitSendActionNamed(self, ctx: SysMLMinParser.SendActionNamedContext) -> Dict:
+        # `action publish send new Publish(...) via publicationPort;`の
+        # ように`via`節も持ちうる（従来は`to`のみだった。2026-08-28、
+        # 730件パース失敗の要因分析で発見）。既存の`receiver`キー
+        # （常に`to`だった旧仕様）との互換のため、`to`/`via`どちらでも
+        # `receiver`に値を入れ、`receiver_type`で種別を追加で示す。
+        if ctx.receiver is not None:
+            receiver, receiver_type = ctx.receiver, "to"
+        else:
+            receiver, receiver_type = ctx.receiverVia, "via"
         return {
             "type": "send_action",
             "name": _simple_name_text(ctx.name),
-            "payload": _namespace_path_text(ctx.payload),
-            "receiver": _qualified_name_text(ctx.receiver),
+            "payload": self._send_action_payload(ctx),
+            "receiver": _qualified_name_text(receiver),
+            "receiver_type": receiver_type,
+            **({"isThen": True} if ctx.isThen is not None else {}),
         }
 
     def visitSendActionAnonymous(self, ctx: SysMLMinParser.SendActionAnonymousContext) -> Dict:
@@ -856,7 +884,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return {
             "type": "send_action",
             "name": None,
-            "payload": _namespace_path_text(ctx.payload),
+            "payload": self._send_action_payload(ctx),
             "target": _qualified_name_text(target),
             "target_type": target_type,
         }

@@ -984,7 +984,7 @@ def test_antlr_send_action_all_forms():
     )
     ast = parse_sysml_antlr(text)
     assert ast["children"][0]["children"] == [
-        {"type": "send_action", "name": "snd", "payload": "x", "receiver": "y"},
+        {"type": "send_action", "name": "snd", "payload": "x", "receiver": "y", "receiver_type": "to"},
         {"type": "send_action", "name": None, "payload": "x", "target": "y", "target_type": "to"},
         {"type": "send_action", "name": None, "payload": "x", "target": "y", "target_type": "via"},
     ]
@@ -4616,3 +4616,61 @@ def test_antlr_concern_stakeholder_usage():
     assert bare_node["type"] == "stakeholder_usage"
     assert bare_node["name"] == "s1"
     assert bare_node["type_name"] is None
+
+
+def test_antlr_send_action_new_expression_payload():
+    """`action publish send new Publish(someTopic, somePublication) via
+    publicationPort;`（ServerSequenceOutsideRealization-2.sysml）のように、
+    sendActionStmtのpayloadが`new Type(args)`オブジェクト生成式を取る形が
+    未対応だった。named形には`via`節も先頭の裸`then`（直前ノードとの暗黙の
+    連鎖）も無かった（`then action sendFuelCommand send new FuelCommand()
+    to engine_a;`、Interaction Realization-1.sysml参照）。2026-08-28、
+    730件パース失敗の要因分析で発見。既存の文字列ベースpayload（namespacePath
+    参照）との互換性も確認する。"""
+    named_new_via_ast = parse_sysml_antlr(
+        "action def A {\n"
+        "    action publish send new Publish(someTopic, somePublication) via publicationPort;\n"
+        "}\n"
+    )
+    named_new_via_node = named_new_via_ast["children"][0]["children"][0]
+    assert named_new_via_node["type"] == "send_action"
+    assert named_new_via_node["name"] == "publish"
+    assert named_new_via_node["payload"] == {
+        "type": "new_instance",
+        "name": "Publish",
+        "arguments": [
+            {"type": "positional_argument", "value": {"type": "name_ref", "reference": "someTopic"}, "children": []},
+            {"type": "positional_argument", "value": {"type": "name_ref", "reference": "somePublication"}, "children": []},
+        ],
+        "children": [],
+    }
+    assert named_new_via_node["receiver"] == "publicationPort"
+    assert named_new_via_node["receiver_type"] == "via"
+
+    then_named_new_to_ast = parse_sysml_antlr(
+        "action def A {\n"
+        "    action a1 { }\n"
+        "    then action sendFuelCommand send new FuelCommand() to engine_a;\n"
+        "}\n"
+    )
+    then_node = then_named_new_to_ast["children"][0]["children"][1]
+    assert then_node["name"] == "sendFuelCommand"
+    assert then_node["payload"]["type"] == "new_instance"
+    assert then_node["payload"]["name"] == "FuelCommand"
+    assert then_node["receiver"] == "engine_a"
+    assert then_node["receiver_type"] == "to"
+    assert then_node["isThen"] is True
+
+    anonymous_new_ast = parse_sysml_antlr("action def A { send new SetSpeed() to vehicle_a; }")
+    anonymous_node = anonymous_new_ast["children"][0]["children"][0]
+    assert anonymous_node["payload"]["type"] == "new_instance"
+    assert anonymous_node["payload"]["name"] == "SetSpeed"
+    assert anonymous_node["target"] == "vehicle_a"
+    assert anonymous_node["target_type"] == "to"
+
+    # 既存の文字列ベースpayload（namespacePath参照）との互換性を確認する。
+    plain_named_ast = parse_sysml_antlr("action def A { action snd send x to y; }")
+    plain_named_node = plain_named_ast["children"][0]["children"][0]
+    assert plain_named_node["payload"] == "x"
+    assert plain_named_node["receiver"] == "y"
+    assert plain_named_node["receiver_type"] == "to"
