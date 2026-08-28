@@ -4116,3 +4116,24 @@ def test_antlr_item_and_subject_usage_qualified_type_clause():
 
     plain_subject_ast = parse_sysml_antlr("requirement def R { subject s : Vehicle; }")
     assert plain_subject_ast["children"][0]["children"][0]["type_name"] == "Vehicle"
+
+
+def test_antlr_action_def_nested_in_state_body():
+    """state本体（stateBodyElement）への`action def`のネストが未対応
+    だった（2026-08-28、730件パース失敗の要因分析で発見。コーパス全体で
+    9件のパース失敗の直接原因）。以前対応したfix_nested_partdef_in_partbody
+    （part def本体へのpart defネスト）と全く同型のギャップ。再現:
+    StopWatchStates.sysml `state s { ... action def VehicleStartSignal; ... }`。"""
+    ast = parse_sysml_antlr(
+        "state def S {\n"
+        "    state s {\n"
+        "        action def VehicleStartSignal;\n"
+        "        action def VehicleOnSignal;\n"
+        "    }\n"
+        "}\n"
+    )
+    inner_state = ast["children"][0]["children"][0]
+    assert inner_state["type"] == "state_usage"
+    nested_action_defs = inner_state["children"]
+    assert [c["type"] for c in nested_action_defs] == ["action_def", "action_def"]
+    assert [c["name"] for c in nested_action_defs] == ["VehicleStartSignal", "VehicleOnSignal"]

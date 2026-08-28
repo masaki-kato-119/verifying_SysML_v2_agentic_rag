@@ -1830,6 +1830,12 @@ stateBodyElement
     | doActionMember
     | exitActionMember
     | stateDef
+    // `state s { ... action def VehicleStartSignal; ... }`
+    // （StopWatchStates.sysml）のように、state本体内に別の`action def`を
+    // ネストさせる構文も使われる（stateDefと同じくpartBodyElementの
+    // fix_nested_partdef_in_partbodyと同型のギャップ。2026-08-28、
+    // 730件パース失敗の要因分析で発見）。
+    | actionDef
     | stateUsage
     | transitionStmt
     | bindingConnector
