@@ -392,6 +392,13 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             kind = "redefines"
         elif kind_token.text == "specializes":
             kind = "specializes"
+        elif kind_token.text == "::>":
+            # `#cause causeA ::> a;`（CauseAndEffectExample.sysml）のように、
+            # `::>`は`references`キーワードの記号形の同義語であり、
+            # subsets/redefinesとは異なるKerMLの関係種別（References）。
+            # featureUsageのみがpreKind/postKindの選択肢として持つ
+            # （2026-08-28、発見）。
+            kind = "references"
         else:
             kind = "subsets"
         result = {"kind": kind, "target": targets[0]}
@@ -1561,6 +1568,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         prefix_metadata = [
             _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
         ]
+        # `end #cause ::> a;`（CauseAndEffectExample.sysml）のような、
+        # 名前・型節を一切伴わない直接参照形（`::>`/`references`+参照先の
+        # み）。他のフィールドは既定値のまま（2026-08-28、発見）。
+        direct_reference = (
+            _namespace_path_text(ctx.directTarget) if ctx.directTarget is not None else None
+        )
         return {
             "type": "connection_end_member",
             "name": inner_name or end_name,
@@ -1572,6 +1585,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "endMultiplicity": self._multiplicity_dict(ctx.endMult),
             "redefines": redefines,
             "prefixMetadata": prefix_metadata,
+            "reference": direct_reference,
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 

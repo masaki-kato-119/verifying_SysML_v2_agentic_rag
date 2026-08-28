@@ -454,12 +454,12 @@ def test_antlr_connection_def_end_members():
         {
             "type": "connection_end_member", "name": "a", "endName": "a", "kind": None,
             "isRef": False, "type_name": "PortA", "multiplicity": None, "endMultiplicity": None,
-            "redefines": [], "prefixMetadata": [], "children": [],
+            "redefines": [], "prefixMetadata": [], "reference": None, "children": [],
         },
         {
             "type": "connection_end_member", "name": "b", "endName": "b", "kind": None,
             "isRef": False, "type_name": "PortB", "multiplicity": None, "endMultiplicity": None,
-            "redefines": [], "prefixMetadata": [], "children": [],
+            "redefines": [], "prefixMetadata": [], "reference": None, "children": [],
         },
     ]
     lint_ast(ast)  # クラッシュしないことを確認
@@ -817,6 +817,41 @@ def test_antlr_hash_prefix_on_connection_end_member():
     assert end_member["prefixMetadata"] == ["cause"]
     assert end_member["endName"] == "cause1"
     assert end_member["type_name"] == "Causer1"
+
+
+def test_antlr_connection_end_member_direct_reference_form():
+    """`end #cause ::> a;`（CauseAndEffectExample.sysml）のように、
+    connectionEndMemberには名前・型節を一切伴わず`#Type`プレフィックス
+    直後に`::>`（`references`の記号形同義語）+参照先のみで構成される
+    代替形もある（2026-08-28、発見）。"""
+    ast = parse_sysml_antlr(
+        "occurrence a; connection def C { end #cause ::> a; }"
+    )
+    end_member = ast["children"][-1]["children"][0]
+    assert end_member["type"] == "connection_end_member"
+    assert end_member["prefixMetadata"] == ["cause"]
+    assert end_member["endName"] is None
+    assert end_member["reference"] == "a"
+
+    # 既存の名前付き形は変わらず動作する（reference=None）。
+    named_ast = parse_sysml_antlr(
+        "part def Causer1; connection def C { end #cause cause1 : Causer1; }"
+    )
+    named_member = named_ast["children"][-1]["children"][0]
+    assert named_member["reference"] is None
+
+
+def test_antlr_feature_usage_double_colon_gt_redefine():
+    """`#cause causeA ::> a;`（CauseAndEffectExample.sysml）のように、型
+    キーワードを一切伴わない裸のfeatureUsageは`::>`（`references`の記号形
+    同義語）をredefine節としても使える（2026-08-28、発見。subsets/
+    redefinesとは異なる"references"種別として区別する）。"""
+    ast = parse_sysml_antlr("occurrence a; #cause causeA ::> a;")
+    node = ast["children"][-1]
+    assert node["type"] == "feature_usage"
+    assert node["name"] == "causeA"
+    assert node["prefixMetadata"] == ["cause"]
+    assert node["redefines"] == [{"kind": "references", "target": "a"}]
 
 
 def test_antlr_do_action_member_inline_send():

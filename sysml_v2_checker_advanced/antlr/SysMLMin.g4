@@ -770,14 +770,20 @@ connectionBodyElement
 // だった（2026-08-28、参照実装比較レポートP1-4で発見）。
 // `end #cause cause1 : Causer1;`（CauseAndEffectExample.sysml）のような
 // `#Type`プレフィックス注釈（2026-08-28、730件回帰チェックで発見）。
+// `end #cause ::> a;`（CauseAndEffectExample.sysml）のように、名前・型節を
+// 一切伴わず、`#Type`プレフィックス直後に`::>`（`references`の記号形
+// 同義語）+参照先のみで構成される代替形もある（2026-08-28、発見）。
 connectionEndMember
-    : 'end' prefixMetadataAnnotation* (endName=simpleName endMult=multiplicitySpec?)?
-      kind=('occurrence' | 'port' | 'item')?
-      isRef='ref'?
-      innerName=simpleName?
-      (':' conjugated='~'? ID)?
-      multiplicitySpec?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+    : 'end' prefixMetadataAnnotation*
+      ( (endName=simpleName endMult=multiplicitySpec?)?
+        kind=('occurrence' | 'port' | 'item')?
+        isRef='ref'?
+        innerName=simpleName?
+        (':' conjugated='~'? ID)?
+        multiplicitySpec?
+        (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      | directKind=('::>' | 'references') directTarget=namespacePath
+      )
       ( '{' partBodyElement* '}' | ';' )
     ;
 
@@ -1157,14 +1163,20 @@ partBodyElement
 // （MetadataTest.sysml）のように、`#Type`プレフィックス注釈は他の
 // 修飾子（visibility/abstract/constant/ref）の後、名前の前に置かれる
 // （2026-08-28、730件回帰チェックで発見）。
+// `#cause causeA ::> a;`（CauseAndEffectExample.sysml）のように、型
+// キーワードを一切伴わず`#Type`プレフィックス+名前+`::>`（`references`の
+// 記号形同義語）のみで構成される裸のfeature宣言がpackage直下にある
+// （2026-08-28、発見）。`::>`はpreKind/postKindにも追加する
+// （`_redefine_dict`側でsubsets/redefinesとは別の"references"種別へ
+// 正規化する）。
 featureUsage
     : visibilityIndicator? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
       prefixMetadataAnnotation*
       simpleName?
-      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>') preTarget+=namespacePathList)*
       (':' typeList=namespacePathList)?
       multiplicitySpec?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>') postTarget+=namespacePathList)*
       ('=' value=expression)?
       ('default' defaultValue=expression)?
       ( '{' partBodyElement* '}' | ';' )
