@@ -2162,19 +2162,24 @@ def test_antlr_bare_implicit_return_expression():
 
 def test_antlr_action_parameter_nested():
     """d69_action_parameter_nesting_missing: SampledFunctions.sysmlの
-    `in calc calculation { in x; }`のように、calc種別のactionParameter
-    自身のbody内にさらにactionParameterをネストする形が受理できな
-    かった（従来のbodyはdocumentationStmt/bareDocCommentのみ）。"""
+    `in calc calculation { in x; }`のように、calc種別のパラメータ自身の
+    body内にさらにパラメータをネストする形が受理できなかった（従来の
+    bodyはdocumentationStmt/bareDocCommentのみ）。calc def本体内なので
+    calcParameterのkind節（2026-08-29、add_part_kind_to_calc_action_
+    parameterで追加）を経由するのが正しい経路になり、以前の
+    actionParameter経由（kind節が無かったため`in calc ...`がcalcParameter
+    にマッチせずpartBodyElement経由でactionParameterへフォールバック
+    していた）から変わった。"""
     ast = parse_sysml_antlr("calc def Sample { in calc calculation { in x; } }")
     outer = ast["children"][0]["children"][0]
-    assert outer["type"] == "param"
+    assert outer["type"] == "calc_parameter"
     assert outer["kind"] == "calc"
     assert outer["name"] == "calculation"
     inner = outer["children"][0]
     assert inner == {
-        "type": "param", "direction": "in", "is_item": False, "kind": None,
-        "name": "x", "type_spec": None, "type_name": None, "multiplicity": None,
-        "redefines": [], "value": None, "defaultValue": None, "children": [],
+        "type": "calc_parameter", "direction": "in", "kind": None,
+        "name": "x", "type_name": None, "multiplicity": None,
+        "value": None, "children": [],
     }
 
 
@@ -5273,3 +5278,43 @@ def test_antlr_messageusage_of_type_with_from_to():
     assert bare_node["type"] == "message_usage"
     assert bare_node["from_end"] is None
     assert bare_node["to_end"] is None
+
+
+def test_antlr_part_kind_calc_and_action_parameter():
+    """`in part : Engine;`・`return part : Engine;`（TradeStudyTest.sysml）、
+    `in part testVehicle : Vehicle = ...;`（Verification Case Definition
+    Example.sysml）のように、calc/actionのパラメータ宣言のkind節に`part`が
+    含まれていなかった（従来calcParameterにはkind節自体が無く、
+    actionParameterはitem/attribute/ref/calc/actionのみ）。2026-08-29、
+    235件パース失敗の要因分析で発見。"""
+    calc_ast = parse_sysml_antlr(
+        "calc def E { in part : Engine; return part : Engine; }"
+    )
+    calc_children = calc_ast["children"][0]["children"]
+    in_param = calc_children[0]
+    assert in_param["type"] == "calc_parameter"
+    assert in_param["direction"] == "in"
+    assert in_param["kind"] == "part"
+    assert in_param["type_name"] == "Engine"
+    return_param = calc_children[1]
+    assert return_param["type"] == "calc_parameter"
+    assert return_param["direction"] == "return"
+    assert return_param["kind"] == "part"
+    assert return_param["type_name"] == "Engine"
+
+    action_ast = parse_sysml_antlr(
+        "action collectData { in part testVehicle : Vehicle = "
+        "VehicleMassTest::testVehicle; }"
+    )
+    action_param = action_ast["children"][0]["params"][0]
+    assert action_param["type"] == "param"
+    assert action_param["direction"] == "in"
+    assert action_param["kind"] == "part"
+    assert action_param["name"] == "testVehicle"
+    assert action_param["type_name"] == "Vehicle"
+
+    # 既存のkind無し形（`in x = value;`）が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr("calc def C { in x = 1; }")
+    plain_param = plain_ast["children"][0]["children"][0]
+    assert plain_param["type"] == "calc_parameter"
+    assert plain_param["kind"] is None

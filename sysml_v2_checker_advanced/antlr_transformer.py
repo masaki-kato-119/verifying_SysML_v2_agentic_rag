@@ -778,11 +778,17 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # ため、それぞれ独立に任意（両方Noneも両方指定も可）。
         direction_ctx = ctx.direction()
         direction_text = direction_ctx.getText() if direction_ctx is not None else ctx.dirReturn.text
+        # `in part : Engine;`・`return part : Engine;`（TradeStudyTest.sysml）
+        # のように、actionParameterと同型のkind（item/attribute/ref/part/
+        # calc/action）節を持つことがある（2026-08-29、235件パース失敗の
+        # 要因分析で発見）。
+        kind_text = ctx.kind.text if ctx.kind is not None else None
         type_ctx = ctx.namespacePath()
         value_ctx = ctx.expression()
         return {
             "type": "calc_parameter",
             "direction": direction_text,
+            "kind": kind_text,
             "name": _optional_simple_name_text(ctx.simpleName()),
             "type_name": _namespace_path_text(type_ctx) if type_ctx is not None else None,
             "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),

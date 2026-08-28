@@ -616,8 +616,15 @@ resultExpressionMember
 // 型節+多重度+値代入を同時に持つ形（公式コーパス全体で`return`のみ6件・
 // 2ファイル、SampledFunctions.sysml/QuantityCalculations.sysml）もある
 // ため、型節・値節はそれぞれ独立に任意である。
+// `in part : Engine;`・`return part : Engine;`（TradeStudyTest.sysml）
+// のように、actionParameterと同型の`kind`（item/attribute/ref/part/
+// calc/action）節を持つことがある（従来calcParameterにはkind節が
+// 一切なく、`part`に限らず全種別が未対応だった。2026-08-29、235件
+// パース失敗の要因分析で発見）。
 calcParameter
-    : (direction | dirReturn='return') simpleName?
+    : (direction | dirReturn='return')
+      kind=('item' | 'attribute' | 'ref' | 'part' | 'calc' | 'action')?
+      simpleName?
       (':' namespacePath multiplicitySpec?)?
       ('=' expression)?
       ( '{' calcBodyElement* '}' | ';' )
@@ -1784,9 +1791,13 @@ actionBodyElement
 // （`default expr`｜`= expr`）を持つ。
 // `out xxx : ~xxxx;`のように、portUsageと同じ`~`接頭辞（共役ポート
 // 参照）を型節が取りうる（actionのin/outパラメータとしてport型を渡す形）。
+// `in part testVehicle : Vehicle = VehicleMassTest::testVehicle;`
+// （Verification Case Definition Example.sysml）のように、kind節に
+// `part`も現れる（従来item/attribute/ref/calc/actionのみで`part`が
+// 抜けていた。2026-08-29、235件パース失敗の要因分析で発見）。
 actionParameter
     : (direction | dirReturn='return')
-      kind=('item' | 'attribute' | 'ref' | 'calc' | 'action')?
+      kind=('item' | 'attribute' | 'ref' | 'part' | 'calc' | 'action')?
       simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       preMult=multiplicitySpec?
