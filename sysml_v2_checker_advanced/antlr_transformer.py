@@ -1902,6 +1902,13 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
             "isAbstract": ctx.isAbstract is not None,
             "redefines": redefines,
+            # `message submitCheckout of CheckoutRequest from
+            # storefront.submitSent to apiGateway.submitReceived;`
+            # （WebShopArchitecture.sysml）のように、`of Type`と`from...to`が
+            # 同時に現れることがある（2026-08-29、235件パース失敗の要因分析
+            # で発見）。
+            "from_end": _namespace_path_text(ctx.fromEnd) if ctx.fromEnd is not None else None,
+            "to_end": _namespace_path_text(ctx.toEnd) if ctx.toEnd is not None else None,
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 

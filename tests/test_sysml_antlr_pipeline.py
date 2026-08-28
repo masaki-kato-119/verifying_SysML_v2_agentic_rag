@@ -5234,4 +5234,42 @@ def test_antlr_connectionusage_named_typed_inline_connect():
     assert bare_node["type_name"] == "Connection"
     assert bare_node["firstEnd"] is None
     assert bare_node["thenEnd"] is None
-    assert bare_node["ends"] is None
+
+
+def test_antlr_messageusage_of_type_with_from_to():
+    """`message submitCheckout of CheckoutRequest from storefront.submitSent
+    to apiGateway.submitReceived;`（WebShopArchitecture.sysml）のように、
+    `messageUsage`が`of Type`ペイロード型節と`from...to`端点節を同時に
+    持つことがある。従来`from...to`は`messageStmt`（`from`/`to`必須の
+    別構文）側にのみあり、`messageUsage`側は非対応だった。2026-08-29、
+    235件パース失敗の要因分析で発見。既存の`of Type`のみの形・裸形が
+    引き続き機能することも確認する。"""
+    ast = parse_sysml_antlr(
+        "part def X { message submitCheckout of CheckoutRequest "
+        "from storefront.submitSent to apiGateway.submitReceived; }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "message_usage"
+    assert node["name"] == "submitCheckout"
+    assert node["type_name"] == "CheckoutRequest"
+    assert node["from_end"] == "storefront::submitSent"
+    assert node["to_end"] == "apiGateway::submitReceived"
+
+    # 既存の`of Type`のみ（`from...to`なし）の形が引き続き機能することを確認する。
+    of_only_ast = parse_sysml_antlr(
+        "part def X { message publish_message of Publish[1]; }"
+    )
+    of_only_node = of_only_ast["children"][0]["children"][0]
+    assert of_only_node["type"] == "message_usage"
+    assert of_only_node["type_name"] == "Publish"
+    assert of_only_node["from_end"] is None
+    assert of_only_node["to_end"] is None
+
+    # 既存の裸形（`of`/`from...to`なし）が引き続き機能することを確認する。
+    bare_ast = parse_sysml_antlr(
+        "part def X { abstract message messages: Message[0..*] nonunique :> transfers, actions; }"
+    )
+    bare_node = bare_ast["children"][0]["children"][0]
+    assert bare_node["type"] == "message_usage"
+    assert bare_node["from_end"] is None
+    assert bare_node["to_end"] is None

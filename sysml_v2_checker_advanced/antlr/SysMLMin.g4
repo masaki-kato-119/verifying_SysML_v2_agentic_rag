@@ -1959,11 +1959,17 @@ messageStmt
 // のように、ペイロード型節が`of Type`形を取ることがある（`: ID`単一
 // セグメントとは異なり`::`区切りの型参照も受理できるようnamespacePathを
 // 使う）（2026-08-28、参照実装比較レポートP2-1で発見）。
+// `message submitCheckout of CheckoutRequest from storefront.submitSent to
+// apiGateway.submitReceived;`（WebShopArchitecture.sysml）のように、`of Type`
+// ペイロード型節と`from...to`端点節を同時に持つことがある（従来
+// `messageStmt`側にのみ`from...to`があり、`messageUsage`側は非対応だった。
+// 2026-08-29、235件パース失敗の要因分析で発見）。
 messageUsage
     : isAbstract='abstract'? 'message' simpleName?
       ( ':' ID | 'of' payloadType=namespacePath )?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      ( 'from' fromEnd=namespacePath 'to' toEnd=namespacePath )?
       ( '{' partBodyElement* '}' | ';' )
     ;
 
