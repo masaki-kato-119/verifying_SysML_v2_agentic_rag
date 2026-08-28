@@ -1819,8 +1819,12 @@ initialTransitionMember
 // 混在させる場合もあるため、connectUsageと同じ考え方で端点は
 // `connectorEnd`ではなく`connectorEndPath`（`.`/`::`両対応）を使う
 // （共有`connectorEnd`自体は他の参照元への影響を避けるため変更しない）。
+// `ref bind chargePort = battery.chargeInPort;`
+// （The-SysMLv2-Book-DroneSystemModel-Example.sysml）のように、他のusage
+// 系規則と同じ`ref`修飾子が付きうる（2026-08-28、コーパス全体1件のみだが
+// 公式の書籍例で確認）。
 bindingConnector
-    : simpleName? connMult=multiplicitySpec? 'bind'
+    : isRef='ref'? simpleName? connMult=multiplicitySpec? 'bind'
       leftMult=multiplicitySpec? leftEnd=connectorEndPath '='
       rightMult=multiplicitySpec? rightEnd=connectorEndPath
       ( '{' partBodyElement* '}' | ';' )

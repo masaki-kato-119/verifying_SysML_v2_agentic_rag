@@ -2367,6 +2367,23 @@ def test_antlr_named_multiplicity_binding_connector():
     assert body_node["children"][0]["type"] == "documentation"
 
 
+def test_antlr_binding_connector_ref_modifier():
+    """`ref bind chargePort = battery.chargeInPort;`
+    （The-SysMLv2-Book-DroneSystemModel-Example.sysml）のように、
+    bindingConnectorにも他のusage系規則と同じ`ref`修飾子が付きうる
+    （2026-08-28、コーパス全体1件のみだが公式の書籍例で確認）。"""
+    ref_ast = parse_sysml_antlr("part def P { ref bind chargePort = battery.chargeInPort; }")
+    ref_node = ref_ast["children"][-1]["children"][0]
+    assert ref_node["type"] == "binding_connector"
+    assert ref_node["isRef"] is True
+    assert ref_node["leftEnd"]["reference"] == "chargePort"
+    assert ref_node["rightEnd"]["reference"] == "battery::chargeInPort"
+
+    plain_ast = parse_sysml_antlr("part def P { bind a = b; }")
+    plain_node = plain_ast["children"][-1]["children"][0]
+    assert plain_node["isRef"] is False
+
+
 def test_antlr_binding_connector_endpoint_double_colon_mixed():
     """d99_binding_connector_endpoint_double_colon_mixed_missing: 実
     モデル（adas-sysmlv2-main）のADAS.sysmlの`bind LDW::'レーンモデルを

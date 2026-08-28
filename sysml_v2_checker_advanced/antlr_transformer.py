@@ -1040,6 +1040,9 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "type": "binding_connector",
             "name": _optional_simple_name_text(ctx.simpleName()),
             "multiplicity": self._multiplicity_dict(ctx.connMult),
+            # `ref bind chargePort = battery.chargeInPort;`のような`ref`
+            # 修飾子（2026-08-28、公式の書籍例で発見）。
+            "isRef": ctx.isRef is not None,
             "leftMultiplicity": self._multiplicity_dict(ctx.leftMult),
             "leftEnd": self.visit(ctx.leftEnd),
             "rightMultiplicity": self._multiplicity_dict(ctx.rightMult),
