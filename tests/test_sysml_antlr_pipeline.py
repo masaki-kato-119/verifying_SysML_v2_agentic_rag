@@ -573,6 +573,29 @@ def test_antlr_enum_literal_type_clause():
     assert plain_lit["type_name"] is None
 
 
+def test_antlr_hash_prefix_on_enum_literal_and_feature_usage():
+    """`#Security enum secret : ClassificationLevel = 2;`（MetadataTest.sysml
+    L9）・`private ref #Classified #Security z1;`（同 L33）のように、
+    `#Type`プレフィックス注釈はenumLiteral・featureUsageのいずれにも付きうる
+    （2026-08-28、730件回帰チェックで発見。extend_hash_prefix_annotation_
+    and_bare_ref_featureで他規則へは拡張済みだったがこの2規則を見落として
+    いた）。"""
+    enum_ast = parse_sysml_antlr("enum def E { #Security secret : E = 2; }")
+    enum_lit = enum_ast["children"][-1]["children"][0]
+    assert enum_lit["prefixMetadata"] == ["Security"]
+    assert enum_lit["name"] == "secret"
+    assert enum_lit["type_name"] == "E"
+
+    feature_ast = parse_sysml_antlr(
+        "metadata def Classified; metadata def Security; "
+        "private ref #Classified #Security z1;"
+    )
+    feature_node = feature_ast["children"][-1]
+    assert feature_node["type"] == "feature_usage"
+    assert feature_node["prefixMetadata"] == ["Classified", "Security"]
+    assert feature_node["name"] == "z1"
+
+
 def test_antlr_satisfy_requirement_usage_bare_and_typed():
     bare = parse_sysml_antlr("assert satisfiedBy x;")
     assert bare["children"][0] == {

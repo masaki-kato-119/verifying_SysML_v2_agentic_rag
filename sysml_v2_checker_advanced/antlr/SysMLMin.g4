@@ -938,9 +938,13 @@ enumBodyElement
 // `uncl : ClassificationLevel = 0;`（MetadataTest.sysml、pilot-implementation
 // 生データ）のように、列挙子自体が型節（`: Type`）を伴うことがある
 // （2026-08-28、730件回帰チェックで発見）。
+// `#Security enum secret : ClassificationLevel = 2;`（MetadataTest.sysml）
+// のような`#Type`プレフィックス注釈（2026-08-28、730件回帰チェックで発見。
+// extend_hash_prefix_annotation_and_bare_ref_featureで他規則へは拡張済み
+// だったがenumLiteral自体を見落としていた）。
 enumLiteral
-    : 'enum'? simpleName (':' typeRef=namespacePath)? '=' value=expression ';'               # enumLiteralValue
-    | 'enum'? simpleName (':' typeRef=namespacePath)? ( '{' enumBodyElement* '}' | ';' )      # enumLiteralBody
+    : prefixMetadataAnnotation* 'enum'? simpleName (':' typeRef=namespacePath)? '=' value=expression ';'               # enumLiteralValue
+    | prefixMetadataAnnotation* 'enum'? simpleName (':' typeRef=namespacePath)? ( '{' enumBodyElement* '}' | ';' )      # enumLiteralBody
     ;
 
 // --- attribute definition (8.2.2.6) ---------------------------------------------
@@ -1114,8 +1118,13 @@ partBodyElement
 // `ref sentMessage :>> sentTransfer: MessageTransfer, MessageAction
 // { ... }`（Actions.sysml）のように、型節がカンマ区切りの複数型を取る
 // ことがあるため、専用ラベル`typeList=namespacePathList`を使う。
+// `private ref #Classified #Security z1;`・`abstract #Classified z2;`
+// （MetadataTest.sysml）のように、`#Type`プレフィックス注釈は他の
+// 修飾子（visibility/abstract/constant/ref）の後、名前の前に置かれる
+// （2026-08-28、730件回帰チェックで発見）。
 featureUsage
     : visibilityIndicator? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
+      prefixMetadataAnnotation*
       simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       (':' typeList=namespacePathList)?

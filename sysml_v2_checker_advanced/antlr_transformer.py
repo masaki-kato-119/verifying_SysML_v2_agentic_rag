@@ -273,10 +273,16 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # `low = 0.25;`という裸の名前+値代入形（`RiskMetadata.sysml`）。
         # `uncl : ClassificationLevel = 0;`のように型節を伴うこともある
         # （2026-08-28、730件回帰チェックで発見）。
+        # `#Security enum secret : ... = 2;`のような`#Type`プレフィックス
+        # 注釈（2026-08-28、730件回帰チェックで発見）。
+        prefix_metadata = [
+            _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
+        ]
         return {
             "type": "enum_literal",
             "name": _simple_name_text(ctx.simpleName()),
             "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
+            "prefixMetadata": prefix_metadata,
             "value": self.visit(ctx.value),
             "children": [],
         }
@@ -285,10 +291,14 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # `enum 'literal';`という明示的キーワード形、`open { doc ... }`という
         # 裸の名前+body形のいずれも同じ形状で扱う（`enum`キーワードの有無は
         # AST上区別しない。意味的にどちらも同じenum-literal宣言のため）。
+        prefix_metadata = [
+            _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
+        ]
         return {
             "type": "enum_literal",
             "name": _simple_name_text(ctx.simpleName()),
             "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
+            "prefixMetadata": prefix_metadata,
             "value": None,
             "children": [self.visit(el) for el in ctx.enumBodyElement()],
         }
@@ -1342,6 +1352,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         )
         visibility_ctx = ctx.visibilityIndicator()
         children = [self.visit(el) for el in ctx.partBodyElement()]
+        # `private ref #Classified #Security z1;`のような`#Type`プレフィックス
+        # 注釈（2026-08-28、730件回帰チェックで発見）。
+        prefix_metadata = [
+            _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
+        ]
         # `default expression`値節（itemUsage/subjectUsage/requirementUsage
         # 等と同型）と、`ref :>> baseType = causes as SysML::Usage;`
         # （CauseAndEffect.sysml）という`=`値代入の両方を持つ。
@@ -1357,6 +1372,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "isRef": ctx.isRef is not None,
             "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
             "redefines": redefines,
+            "prefixMetadata": prefix_metadata,
             "value": self.visit(ctx.value) if ctx.value is not None else None,
             "defaultValue": self.visit(ctx.defaultValue) if ctx.defaultValue is not None else None,
             "children": children,
