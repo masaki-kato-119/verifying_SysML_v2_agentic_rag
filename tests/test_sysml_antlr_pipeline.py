@@ -4591,3 +4591,28 @@ def test_antlr_bodyless_package_forward_declaration():
     inner = with_body_ast["children"][0]
     assert inner["name"] == "Inner"
     assert len(inner["children"]) == 1
+
+
+def test_antlr_concern_stakeholder_usage():
+    """`stakeholder s : S;`（concern def本体内のstakeholder宣言）が
+    未実装だった（2026-08-28、730件パース失敗の要因分析で発見。コーパス
+    全体で6件のパース失敗の直接原因）。再現: ViewTest.sysml
+    `concern def C { subject; stakeholder s : S; }`。subjectUsageと
+    同型の設計。"""
+    ast = parse_sysml_antlr(
+        "part def S;\n"
+        "concern def C {\n"
+        "    subject;\n"
+        "    stakeholder s : S;\n"
+        "}\n"
+    )
+    stakeholder_node = ast["children"][-1]["children"][-1]
+    assert stakeholder_node["type"] == "stakeholder_usage"
+    assert stakeholder_node["name"] == "s"
+    assert stakeholder_node["type_name"] == "S"
+
+    bare_ast = parse_sysml_antlr("concern def C { stakeholder s1; }")
+    bare_node = bare_ast["children"][-1]["children"][-1]
+    assert bare_node["type"] == "stakeholder_usage"
+    assert bare_node["name"] == "s1"
+    assert bare_node["type_name"] is None

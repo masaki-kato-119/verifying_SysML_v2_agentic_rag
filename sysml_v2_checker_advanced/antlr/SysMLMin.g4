@@ -1041,6 +1041,21 @@ subjectUsage
       ( '{' partBodyElement* '}' | ';' )
     ;
 
+// `stakeholder s : S;`・`stakeholder s1;`（ViewTest.sysml/
+// Annex_A_VehicleViews.sysml等）のように、`concern def`本体内で使われる
+// stakeholder宣言（subjectUsageと同型の設計。2026-08-28、730件パース
+// 失敗の要因分析で発見）。
+stakeholderUsage
+    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'stakeholder' simpleName?
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (':' typeRef=namespacePath)?
+      multiplicitySpec?
+      ('=' value=expression)?
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      ('default' defaultValue=expression)?
+      ( '{' partBodyElement* '}' | ';' )
+    ;
+
 // `actor driver : RoadUser;`・`actor passengers : Person[0..4];`
 // （TrafficLightIntersectionRequirements.sysml/Use Case Definition
 // Example.sysml等）のように、`use case def`本体内で使われるactor宣言
@@ -1156,12 +1171,13 @@ partBodyElement
     | constraintDef
     | itemUsage
     | actionUsageStmt
-    // `subject`/`objective`/`actor`は常に別のcase/analysis/requirement/
-    // objective定義の本体内にネストして使われる（公式コーパスに例外
-    // なし）ため、partBodyElementのみに登録する。
+    // `subject`/`objective`/`actor`/`stakeholder`は常に別のcase/analysis/
+    // requirement/objective/concern定義の本体内にネストして使われる
+    // （公式コーパスに例外なし）ため、partBodyElementのみに登録する。
     | subjectUsage
     | objectiveUsage
     | actorUsage
+    | stakeholderUsage
     // `view def V { ref view :>> self : View; ... }`（Views.sysml）のように、
     // view/viewpoint/renderingの各定義本体内にネストして使われるため
     // partBodyElementにも登録する。
