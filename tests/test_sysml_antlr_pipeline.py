@@ -4568,3 +4568,26 @@ def test_antlr_perform_action_with_type_clause():
     unnamed_untyped_node = unnamed_untyped_ast["children"][-1]["children"][-1]
     assert unnamed_untyped_node["name"] is None
     assert unnamed_untyped_node["type_name"] is None
+
+
+def test_antlr_bodyless_package_forward_declaration():
+    """`package 'Application Layer';`（DependencyTest.sysml）のように、
+    本体`{}`を持たないpackage宣言が未対応だった（従来はpackageに常に
+    `{ ... }`本体を要求していた。2026-08-28、730件パース失敗の要因分析で
+    発見。コーパス全体で6件のパース失敗の直接原因）。"""
+    ast = parse_sysml_antlr(
+        "package DependencyTest {\n"
+        "    package 'Application Layer';\n"
+        "    package 'Service Layer';\n"
+        "}\n"
+    )
+    app_layer, service_layer = ast["children"]
+    assert app_layer == {"type": "package", "name": "Application Layer", "shortName": None, "children": []}
+    assert service_layer["name"] == "Service Layer"
+    assert service_layer["children"] == []
+
+    # 本体ありの既存形も壊れていないことを確認する。
+    with_body_ast = parse_sysml_antlr("package Outer { package Inner { part def X; } }")
+    inner = with_body_ast["children"][0]
+    assert inner["name"] == "Inner"
+    assert len(inner["children"]) == 1

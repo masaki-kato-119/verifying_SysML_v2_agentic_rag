@@ -27,8 +27,11 @@ topLevelElement
 // `standard library package <USCU> USCustomaryUnits { ... }`のように、
 // packageもKerMLのShortName注釈（attributeUsageと同じ仕組み）を
 // 取りうる（公式コーパスで1件）。
+// `package 'Application Layer';`（DependencyTest.sysml）のように、本体
+// `{}`を持たない、フォワード宣言/空パッケージ宣言もある（2026-08-28、
+// 730件パース失敗の要因分析で発見）。
 packageDef
-    : ('standard')? ('library')? 'package' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName '{' topLevelElement* '}'
+    : ('standard')? ('library')? 'package' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName ( '{' topLevelElement* '}' | ';' )
     ;
 
 packageBodyElement
