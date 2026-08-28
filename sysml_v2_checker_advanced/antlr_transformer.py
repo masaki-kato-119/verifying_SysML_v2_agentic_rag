@@ -924,10 +924,23 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             # `perform X :>> Y;`というredefine節（2026-08-28、730件回帰
             # チェックで発見）。
             redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
+            # `perform illuminateRegion.sendOnOffCmd { out onOffCmd =
+            # onOffCmdPort.onOffCmd; }`のような裸参照形のbody
+            # （2026-08-28、730件パース失敗の要因分析で発見）。
+            params = []
+            children = []
+            for el in ctx.actionBodyElement():
+                node = self.visit(el)
+                if isinstance(node, dict) and node.get("type") == "param":
+                    params.append(node)
+                else:
+                    children.append(node)
             return {
                 "type": "perform_action",
                 "reference": _namespace_path_text(npath_ctx),
                 "redefines": redefines,
+                "params": params,
+                "children": children,
                 **({"isThen": True} if ctx.isThen is not None else {}),
                 **({"variability": ctx.variability.text} if ctx.variability is not None else {}),
             }

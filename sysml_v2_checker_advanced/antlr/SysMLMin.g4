@@ -1840,9 +1840,13 @@ performActionStmt
     // perform doY; }`（7a1-Variant Configuration...-a.sysml）のように、
     // Variability機能の先頭修飾子がここにも付く（2026-08-28、730件パース
     // 失敗の要因分析で発見）。
+    // `perform illuminateRegion.sendOnOffCmd { out onOffCmd =
+    // onOffCmdPort.onOffCmd; }`（Flashlight Example.sysml）のように、
+    // 裸参照形にも`action`キーワード付き形と同型のbodyが続くことがある
+    // （2026-08-28、730件パース失敗の要因分析で発見）。
     : variability=('variation' | 'variant')? isThen='then'? 'perform' namespacePath
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
-      ';'
+      ( '{' actionBodyElement* '}' | ';' )
     // `perform action performLunarMission : PerformLunarMission;`
     // （MissionPackage.sysml）のように、`action`キーワード付き形にも型節が
     // 付くことがある（2026-08-28、730件パース失敗の要因分析で発見）。

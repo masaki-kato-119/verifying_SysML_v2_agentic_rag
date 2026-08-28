@@ -1085,7 +1085,7 @@ def test_antlr_named_accept_action_bare_body():
 def test_antlr_perform_action():
     ast = parse_sysml_antlr("action def Act { perform logFailure; }")
     assert ast["children"][0]["children"][0] == {
-        "type": "perform_action", "reference": "logFailure", "redefines": [],
+        "type": "perform_action", "reference": "logFailure", "redefines": [], "params": [], "children": [],
     }
 
 
@@ -1118,7 +1118,9 @@ def test_antlr_if_else_with_full_action_body():
     assert if_stmt["then"] == [
         {"type": "assignment_stmt", "name": "y", "operator": "=", "value": {"type": "literal", "literal_type": "int", "value": 1}}
     ]
-    assert if_stmt["else"] == [{"type": "perform_action", "reference": "logFailure", "redefines": []}]
+    assert if_stmt["else"] == [
+        {"type": "perform_action", "reference": "logFailure", "redefines": [], "params": [], "children": []}
+    ]
 
 
 def test_antlr_if_without_else_has_none_else():
@@ -2061,7 +2063,9 @@ def test_antlr_perform_action_named_redefine_body():
 
     bare_ast = parse_sysml_antlr("part def P { perform y; }")
     bare_node = bare_ast["children"][0]["children"][-1]
-    assert bare_node == {"type": "perform_action", "reference": "y", "redefines": []}
+    assert bare_node == {
+        "type": "perform_action", "reference": "y", "redefines": [], "params": [], "children": [],
+    }
 
 
 def test_antlr_double_colon_qualified_reference_targets():
@@ -2078,7 +2082,9 @@ def test_antlr_double_colon_qualified_reference_targets():
     共存も確認する。"""
     perform_ast = parse_sysml_antlr("part def P { perform FCW::'外界の映像を撮る'; }")
     perform_node = perform_ast["children"][0]["children"][-1]
-    assert perform_node == {"type": "perform_action", "reference": "FCW::外界の映像を撮る", "redefines": []}
+    assert perform_node == {
+        "type": "perform_action", "reference": "FCW::外界の映像を撮る", "redefines": [], "params": [], "children": [],
+    }
 
     dep_ast = parse_sysml_antlr(
         "package LDW { requirement '事故の予防' { requirement "
@@ -2101,7 +2107,7 @@ def test_antlr_double_colon_qualified_reference_targets():
 
     plain_perform = parse_sysml_antlr("action def Act { perform logFailure; }")
     assert plain_perform["children"][0]["children"][0] == {
-        "type": "perform_action", "reference": "logFailure", "redefines": [],
+        "type": "perform_action", "reference": "logFailure", "redefines": [], "params": [], "children": [],
     }
 
     plain_dep = parse_sysml_antlr("part def A; part def B; dependency A to B;")
@@ -2416,7 +2422,10 @@ def test_antlr_assign_then_perform_while_action_syntax():
             "children": [],
         },
     }
-    assert inner[1] == {"type": "perform_action", "reference": "body", "redefines": [], "isThen": True}
+    assert inner[1] == {
+        "type": "perform_action", "reference": "body", "redefines": [], "params": [], "children": [],
+        "isThen": True,
+    }
     assert inner[2]["type"] == "assignment_stmt"
     assert inner[2]["isThen"] is True
 
@@ -2428,7 +2437,9 @@ def test_antlr_assign_then_perform_while_action_syntax():
         "operator": ":=",
         "value": {"type": "literal", "literal_type": "int", "value": 1},
     }
-    assert bare_children[1] == {"type": "perform_action", "reference": "y", "redefines": []}
+    assert bare_children[1] == {
+        "type": "perform_action", "reference": "y", "redefines": [], "params": [], "children": [],
+    }
 
 
 def test_antlr_action_parameter_reversed_type_order():
@@ -3103,6 +3114,8 @@ def test_antlr_perform_action_bare_with_redefine():
         "type": "perform_action",
         "reference": "GroundSupportSystem::performCrewIngress",
         "redefines": [{"kind": "redefines", "target": "performCrewIngress"}],
+        "params": [],
+        "children": [],
     }
 
 
@@ -4739,3 +4752,54 @@ def test_antlr_quoted_name_type_reference():
     assert state_node["type"] == "state_usage"
     assert state_node["name"] == "perform self test"
     assert state_node["type_name"] == "Perform Self Test"
+
+
+def test_antlr_perform_bare_reference_with_body():
+    """`perform illuminateRegion.sendOnOffCmd { out onOffCmd =
+    onOffCmdPort.onOffCmd; }`（Flashlight Example.sysml）のように、
+    `action`キーワードを伴わない裸参照形のperformにも、`action`キーワード
+    付き形と同型の`{ ... }`bodyが続くことがある。従来は`;`終端か
+    redefines節にしか対応していなかった。2026-08-28、730件パース失敗の
+    要因分析で発見。既存の裸参照形（body無し）との共存も確認する。"""
+    ast = parse_sysml_antlr(
+        "action def A {\n"
+        "    action illuminateRegion {\n"
+        "        action sendOnOffCmd { out onOffCmd: OnOffCmd; }\n"
+        "    }\n"
+        "    part user {\n"
+        "        port onOffCmdPort: OnOffCmdPort;\n"
+        "        perform illuminateRegion.sendOnOffCmd {\n"
+        "            out onOffCmd = onOffCmdPort.onOffCmd;\n"
+        "        }\n"
+        "    }\n"
+        "}\n"
+    )
+    part_user = ast["children"][0]["children"][1]
+    node = part_user["children"][-1]
+    assert node["type"] == "perform_action"
+    assert node["reference"] == "illuminateRegion::sendOnOffCmd"
+    assert node["redefines"] == []
+    assert node["params"] == [
+        {
+            "type": "param",
+            "direction": "out",
+            "is_item": False,
+            "kind": None,
+            "name": "onOffCmd",
+            "type_spec": None,
+            "type_name": None,
+            "multiplicity": None,
+            "redefines": [],
+            "value": {"type": "name_ref", "reference": "onOffCmdPort.onOffCmd"},
+            "defaultValue": None,
+            "children": [],
+        },
+    ]
+    assert node["children"] == []
+
+    # 既存の裸参照形（body無し、`;`終端）との共存を確認する。
+    bare_ast = parse_sysml_antlr("part def P { perform y; }")
+    bare_node = bare_ast["children"][0]["children"][-1]
+    assert bare_node == {
+        "type": "perform_action", "reference": "y", "redefines": [], "params": [], "children": [],
+    }
