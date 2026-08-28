@@ -1114,14 +1114,22 @@ featureUsage
 // プレフィックス修飾子（2026-08-28、参照実装比較レポートP0-3で発見）。
 // `part <'1'> b: B;`（PartTest.sysml）のように、ShortName注釈（山括弧の
 // 短縮名）を持つことがある（2026-08-28、参照実装比較レポートP1-1で発見）。
+// `part missions[1..*] : Mission;`（CoSMAPackage.sysml）のように、名前の
+// 直後に多重度、その後に型節という順序もある（portUsageのpreMult/postMult
+// と同じ設計）。`part subcomponents : MassedComponent [*] default null;`
+// （同ファイル）のように、値代入節の後に`default`節（既定値。
+// attributeUsageと同じ意味）も取りうる（2026-08-28、730件回帰チェックで
+// 発見）。
 partUsage
     : visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
       'part' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      preMult=multiplicitySpec?
       (':' typeRef=namespacePath)?
-      multiplicitySpec?
+      postMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ('=' value=expression)?
+      ('default' defaultValue=expression)?
       ( '{' partBodyElement* '}' | ';' )
     ;
 
@@ -1577,11 +1585,16 @@ defaultTargetSuccessionStmt
 // `individual action a : AP1;`/`individual action :>> a : IA2;`
 // （IndividualTest.sysml）のように、`individual`はusage側にも付く
 // プレフィックス修飾子（2026-08-28、参照実装比較レポートP0-3で発見）。
+// `action subfunctions[*] : Function :>> subactions;`（CoSMAPackage.sysml）
+// のように、名前の直後に多重度、その後に型節という順序もある
+// （partUsage/portUsageと同じpreMult/postMult設計、2026-08-28、
+// 730件回帰チェックで発見）。
 actionUsageStmt
     : isThen='then'? visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? isRef='ref'? 'action' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      preMult=multiplicitySpec?
       (':' typeRef=ID)?
-      multiplicitySpec?
+      postMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ('=' value=expression)?
       ( 'while' guard=expression )?

@@ -1106,6 +1106,41 @@ def test_antlr_nested_part_def_in_part_body():
     assert inner["children"][-1]["type"] == "part_instance"
 
 
+def test_antlr_part_usage_multiplicity_before_type_and_default():
+    """`part missions[1..*] : Mission;`（CoSMAPackage.sysml）のように、
+    partUsageも名前直後の多重度→型節という順序（portUsageのpreMult/
+    postMultと同じ設計）を取りうる。`part subcomponents : MassedComponent
+    [*] default null;`のように、値代入とは別のdefault節（既定値）も
+    取りうる（2026-08-28、730件回帰チェックで発見）。"""
+    pre_ast = parse_sysml_antlr("part def Mission; part def P { part missions[1..*] : Mission; }")
+    pre_node = pre_ast["children"][-1]["children"][-1]
+    assert pre_node["type_name"] == "Mission"
+    assert pre_node["multiplicity"]["size"]["max"] == "*"
+
+    default_ast = parse_sysml_antlr(
+        "part def MassedComponent; part def P { part subcomponents : MassedComponent [*] default null; }"
+    )
+    default_node = default_ast["children"][-1]["children"][-1]
+    assert default_node["type_name"] == "MassedComponent"
+    assert default_node["multiplicity"]["size"]["max"] == "*"
+    assert default_node["defaultValue"] is not None
+
+
+def test_antlr_action_usage_multiplicity_before_type():
+    """`action subfunctions[*] : Function :>> subactions;`
+    （CoSMAPackage.sysml）のように、actionUsageStmtも名前直後の多重度→
+    型節という順序を取りうる（partUsage/portUsageと同じpreMult/postMult
+    設計、2026-08-28、730件回帰チェックで発見）。"""
+    ast = parse_sysml_antlr(
+        "action def Function; action def A { action subfunctions[*] : Function :>> subactions; }"
+    )
+    node = ast["children"][-1]["children"][-1]
+    assert node["type"] == "action_usage"
+    assert node["type_name"] == "Function"
+    assert node["multiplicity"]["size"]["max"] == "*"
+    assert node["redefines"] == [{"kind": "redefines", "target": "subactions"}]
+
+
 def test_antlr_state_body_element_doc_and_assert_constraint():
     """d57_state_body_element_documentation_stmt_missing: States.sysmlの
     `state def StateAction { doc /* ... */ ... assert constraint {...} }`

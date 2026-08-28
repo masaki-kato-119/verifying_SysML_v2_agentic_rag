@@ -415,7 +415,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "shortName": ctx.shortName.text if ctx.shortName is not None else None,
             "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
             "role": None,
-            "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
+            # `part missions[1..*] : Mission;`（多重度が型節より先）・
+            # `part subcomponents : MassedComponent [*] ...;`（通常順）の
+            # 両方があるため、preMult/postMultのどちらか一方
+            # （両方同時に現れる実例は無い）を読む。
+            "multiplicity": self._multiplicity_dict(ctx.preMult if ctx.preMult is not None else ctx.postMult),
             "inheritance": None,
             "isAbstract": ctx.isAbstract is not None,
             "isConstant": ctx.isConstant is not None,
@@ -426,6 +430,9 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
             "redefines": redefines,
             "expression": self.visit(ctx.value) if ctx.value is not None else None,
+            # `part subcomponents : MassedComponent [*] default null;`の
+            # ような既定値節（2026-08-28、730件回帰チェックで発見）。
+            "defaultValue": self.visit(ctx.defaultValue) if ctx.defaultValue is not None else None,
             "children": children,
         }
 
@@ -778,7 +785,10 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             # `action <'xxx'> Name { ... }`のようなShortName注釈。
             "shortName": ctx.shortName.text if ctx.shortName is not None else None,
             "type_name": type_ref_ctx.text if type_ref_ctx is not None else None,
-            "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
+            # `action subfunctions[*] : Function :>> subactions;`（多重度が
+            # 型節より先）・通常順の両方があるため、preMult/postMultの
+            # どちらか一方（両方同時に現れる実例は無い）を読む。
+            "multiplicity": self._multiplicity_dict(ctx.preMult if ctx.preMult is not None else ctx.postMult),
             # `private ref action thisConnection = self;`（Flows.sysml）
             # という`=`値代入。
             "value": self.visit(ctx.value) if ctx.value is not None else None,
