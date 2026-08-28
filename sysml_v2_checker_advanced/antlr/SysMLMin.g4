@@ -283,8 +283,12 @@ individualDef
 // `individual two_types : A_1, B_1;`（IndividualUsage_Invalid.sysml）の
 // ように、型節がカンマ区切りの複数型を取ることがある（calculationUsageと
 // 同じ理由。2026-08-28、730件パース失敗の要因分析で発見）。
+// `individual reference : 'Temporal-Spatial Reference_ID1' { ... }`
+// （6-Individual and Snapshots.sysml）のように、型節がQUOTED_NAMEを取る
+// ことと、`;`終端だけでなく本体`{}`も持ちうることの両方が未対応だった
+// （2026-08-28、730件パース失敗の要因分析で発見）。
 individualUsage
-    : isAbstract='abstract'? 'individual' simpleName ( ':' ID (',' extraTypeRefs+=ID)* )? ';'
+    : isAbstract='abstract'? 'individual' simpleName ( ':' typeRef=(ID | QUOTED_NAME) (',' extraTypeRefs+=(ID | QUOTED_NAME))* )? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // --- interaction / sequence diagram notation ---------------------------------
@@ -458,10 +462,15 @@ useCaseDef
 // `variation use case uc1 { variant use case uc11; variant use case
 // uc12; }`（VariabilityTest.sysml）のように、Variability機能の先頭修飾子
 // がここにも付く（2026-08-28、730件パース失敗の要因分析で発見）。
+// `use case 'provide transportation' : 'Provide Transportation' { ... }`
+// （Use Case Usage Example.sysml）のように、型節がQUOTED_NAME（スペースを
+// 含む名前の引用形）を取ることがある（従来はIDのみだった。`typeRef`と
+// いう専用ラベルを使うことで、`_usage_keyword_node`の既存のToken対応
+// パスがそのまま使える。2026-08-28、730件パース失敗の要因分析で発見）。
 useCaseUsage
     : variability=('variation' | 'variant')? visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'use' 'case' simpleName?
       (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
-      (':' ID)?
+      (':' typeRef=(ID | QUOTED_NAME))?
       multiplicitySpec?
       (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )
@@ -1927,7 +1936,10 @@ actionUsageStmt
     : variability=('variation' | 'variant')? isThen='then'? visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? isRef='ref'? 'action' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       preMult=multiplicitySpec?
-      (':' typeRef=ID)?
+      // `action 'provide power': 'Provide Power'{ ... }`（3a-Function-based
+      // Behavior-1.sysml）のように、型節がQUOTED_NAMEを取ることがある
+      // （2026-08-28、730件パース失敗の要因分析で発見）。
+      (':' typeRef=(ID | QUOTED_NAME))?
       postMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ('=' value=expression)?
@@ -2037,10 +2049,13 @@ stateBodyElement
 // vehicleStates parallel { ... }`（VehicleModel_2_Simplified.sysml）の
 // ように、直交(orthogonal)状態を表す`parallel`修飾子が本体の直前に付きうる
 // （2026-08-28、StateTest.sysmlの調査で発見。実コーパスで10件超）。
+// `state 'vehicle states': 'Vehicle States' parallel { ... }`
+// （5-State-based Behavior-1.sysml）のように、型節がQUOTED_NAMEを取る
+// ことがある（2026-08-28、730件パース失敗の要因分析で発見）。
 stateUsage
     : isAbstract='abstract'? isRef='ref'? 'state' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
-      (':' ID)?
+      (':' typeRef=(ID | QUOTED_NAME))?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       isParallel='parallel'?

@@ -111,6 +111,17 @@ def _simple_name_text(ctx) -> str:
     （参照: KerMLExpressions.xtext の terminal UNRESTRICTED_NAME）。
     """
     text = ctx.getText()
+    return _unquote_text(text)
+
+
+def _unquote_text(text: str) -> str:
+    """`'Provide Power'`のような単一引用符名から引用符を外し、
+    `\\'` `\\\\` のエスケープを解除する（_simple_name_textと同じロジック。
+    typeRef=(ID | QUOTED_NAME)のような生Tokenの`.text`/`.getText()`は
+    QUOTED_NAMEでも引用符付きのまま返るため、型解決（self.types/
+    self.symbolsはいずれも_simple_name_text経由の引用符無しキー）に使う
+    type_name等では別途この関数で剥がす必要がある。2026-08-28、730件
+    パース失敗の要因分析で発見）。"""
     if text.startswith("'") and text.endswith("'"):
         inner = text[1:-1]
         return inner.replace("\\'", "'").replace("\\\\", "\\")
@@ -989,7 +1000,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "name": _optional_simple_name_text(ctx.simpleName()),
             # `action <'xxx'> Name { ... }`のようなShortName注釈。
             "shortName": ctx.shortName.text if ctx.shortName is not None else None,
-            "type_name": type_ref_ctx.text if type_ref_ctx is not None else None,
+            "type_name": _unquote_text(type_ref_ctx.text) if type_ref_ctx is not None else None,
             # `action subfunctions[*] : Function :>> subactions;`（多重度が
             # 型節より先）・通常順の両方があるため、preMult/postMultの
             # どちらか一方（両方同時に現れる実例は無い）を読む。
@@ -1062,9 +1073,9 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             if isinstance(id_ctx, SysMLMinParser.NamespacePathContext):
                 type_name = _namespace_path_text(id_ctx)
             elif hasattr(id_ctx, "getText"):
-                type_name = id_ctx.getText()
+                type_name = _unquote_text(id_ctx.getText())
             else:
-                type_name = id_ctx.text
+                type_name = _unquote_text(id_ctx.text)
         else:
             type_name = None
         # `#goal requirement deliverPayload { ... }`のような`#Type`プレフィックス
@@ -1209,14 +1220,14 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # transitionからは参照できない。
         # `ref`修飾子・型節・redefine節も持つ（itemUsage/partUsage等と同型）。
         children = [self.visit(el) for el in ctx.stateBodyElement()]
-        id_ctx = ctx.ID()
+        id_ctx = ctx.typeRef
         redefines = self._redefine_list_namespace(ctx.preKind, ctx.preTarget) + self._redefine_list_namespace(
             ctx.postKind, ctx.postTarget
         )
         return {
             "type": "state_usage",
             "name": _optional_simple_name_text(ctx.simpleName()),
-            "type_name": id_ctx.getText() if id_ctx is not None else None,
+            "type_name": _unquote_text(id_ctx.text) if id_ctx is not None else None,
             "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
             "inheritance": None,
             "isAbstract": ctx.isAbstract is not None,
@@ -2568,17 +2579,21 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
 
     def visitIndividualUsage(self, ctx: SysMLMinParser.IndividualUsageContext) -> Dict:
         # `individual two_types : A_1, B_1;`のように型節がカンマ区切りの
-        # 複数型を取ることがある（`ctx.ID()`は無ラベル分+`extraTypeRefs`分
-        # 合わせたリストを返す。2026-08-28、730件パース失敗の要因分析で発見）。
-        type_ctxs = ctx.ID()
-        type_names = [t.getText() for t in type_ctxs] if type_ctxs else []
+        # 複数型を取ることがある。`individual reference :
+        # 'Temporal-Spatial Reference_ID1' { ... }`のように型節が
+        # QUOTED_NAMEを取ることと本体`{}`を持つことの両方にも対応する
+        # （従来は`;`終端のみ、型はIDのみだった。2026-08-28、730件パース
+        # 失敗の要因分析で発見）。
+        type_names = ([_unquote_text(ctx.typeRef.text)] if ctx.typeRef is not None else []) + [
+            _unquote_text(t.text) for t in ctx.extraTypeRefs
+        ]
         return {
             "type": "individual_usage",
             "name": _simple_name_text(ctx.simpleName()),
             "type_name": type_names[0] if type_names else None,
             **({"type_names": type_names} if len(type_names) > 1 else {}),
             "isAbstract": ctx.isAbstract is not None,
-            "children": [],
+            "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 
     # --- interaction / sequence diagram notation --------------------------------

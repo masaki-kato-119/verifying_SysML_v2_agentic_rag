@@ -4674,3 +4674,68 @@ def test_antlr_send_action_new_expression_payload():
     assert plain_named_node["payload"] == "x"
     assert plain_named_node["receiver"] == "y"
     assert plain_named_node["receiver_type"] == "to"
+
+
+def test_antlr_quoted_name_type_reference():
+    """`use case 'provide transportation' : 'Provide Transportation' { }`
+    （Use Case Usage Example.sysml）・`action 'provide power' :
+    'Provide Power' { }`（3a-Function-based Behavior-1.sysml）・
+    `individual reference : 'Temporal-Spatial Reference_ID1' { }`
+    （6-Individual and Snapshots.sysml）・`state 'perform self test' :
+    'Perform Self Test' { }`（5-State-based Behavior-1.sysml）のように、
+    useCaseUsage/actionUsageStmt/individualUsage/stateUsageの型節が
+    プレーンIDしか受け付けず、QUOTED_NAME（スペース入り型名）で
+    'mismatched input ... expecting ID'となっていた。type_nameは
+    self.types/self.symbolsのキー（引用符無し）と一致させるため、
+    QUOTED_NAMEの引用符を剥がした値になる必要がある。2026-08-28、
+    730件パース失敗の要因分析で発見。individualUsageは同時に
+    `{ ... }`body（それまで無かった）にも対応させた。"""
+    use_case_ast = parse_sysml_antlr(
+        "use case def 'Provide Transportation';\n"
+        "use case 'provide transportation' : 'Provide Transportation' { }\n"
+    )
+    use_case_node = use_case_ast["children"][-1]
+    assert use_case_node["type"] == "use_case_usage"
+    assert use_case_node["name"] == "provide transportation"
+    assert use_case_node["type_name"] == "Provide Transportation"
+
+    action_ast = parse_sysml_antlr(
+        "action def 'Provide Power';\n"
+        "part def P { action 'provide power' : 'Provide Power' { } }\n"
+    )
+    action_node = action_ast["children"][-1]["children"][0]
+    assert action_node["type"] == "action_usage"
+    assert action_node["name"] == "provide power"
+    assert action_node["type_name"] == "Provide Power"
+
+    # プレーンIDの型参照（既存挙動）が引き続き機能することも確認する。
+    action_plain_ast = parse_sysml_antlr("action def X; part def P { action a : X; } ")
+    action_plain_node = action_plain_ast["children"][-1]["children"][0]
+    assert action_plain_node["type_name"] == "X"
+
+    individual_ast = parse_sysml_antlr(
+        "part def 'Temporal-Spatial Reference_ID1';\n"
+        "part def P { individual reference : 'Temporal-Spatial Reference_ID1' { attribute x; } }\n"
+    )
+    individual_node = individual_ast["children"][-1]["children"][0]
+    assert individual_node["type"] == "individual_usage"
+    assert individual_node["name"] == "reference"
+    assert individual_node["type_name"] == "Temporal-Spatial Reference_ID1"
+    assert len(individual_node["children"]) == 1
+
+    # 複数型参照（extraTypeRefs）とbody無し（`;`終端）の既存挙動も確認する。
+    individual_plain_ast = parse_sysml_antlr(
+        "part def A_1; part def B_1; individual two_types : A_1, B_1;"
+    )
+    individual_plain_node = individual_plain_ast["children"][-1]
+    assert individual_plain_node["type_name"] == "A_1"
+    assert individual_plain_node["type_names"] == ["A_1", "B_1"]
+
+    state_ast = parse_sysml_antlr(
+        "state def 'Perform Self Test';\n"
+        "part def P { state 'perform self test' : 'Perform Self Test' { } }\n"
+    )
+    state_node = state_ast["children"][-1]["children"][0]
+    assert state_node["type"] == "state_usage"
+    assert state_node["name"] == "perform self test"
+    assert state_node["type_name"] == "Perform Self Test"
