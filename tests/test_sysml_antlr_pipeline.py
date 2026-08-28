@@ -550,6 +550,29 @@ def test_antlr_calculation_usage_short_name():
     assert lint_ast(ast) == []
 
 
+def test_antlr_enum_literal_type_clause():
+    """`uncl : ClassificationLevel = 0;`（MetadataTest.sysml、
+    pilot-implementation生データ）のように、enumLiteral自体が型節
+    （`: Type`）を伴うことがある（2026-08-28、730件回帰チェックで発見。
+    値代入形・本体形のいずれも型節を持たなかった）。"""
+    value_ast = parse_sysml_antlr("enum def E { uncl : E = 0; }")
+    value_lit = value_ast["children"][-1]["children"][0]
+    assert value_lit["type"] == "enum_literal"
+    assert value_lit["name"] == "uncl"
+    assert value_lit["type_name"] == "E"
+    assert value_lit["value"]["value"] == 0
+
+    body_ast = parse_sysml_antlr("enum def E { open : E { doc /* x */ } }")
+    body_lit = body_ast["children"][-1]["children"][0]
+    assert body_lit["name"] == "open"
+    assert body_lit["type_name"] == "E"
+
+    # 型節無しの既存形も変わらず動作する。
+    plain_ast = parse_sysml_antlr("enum def E { low = 1; }")
+    plain_lit = plain_ast["children"][-1]["children"][0]
+    assert plain_lit["type_name"] is None
+
+
 def test_antlr_satisfy_requirement_usage_bare_and_typed():
     bare = parse_sysml_antlr("assert satisfiedBy x;")
     assert bare["children"][0] == {

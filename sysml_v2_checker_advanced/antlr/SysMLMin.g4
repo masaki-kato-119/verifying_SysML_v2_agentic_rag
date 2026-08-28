@@ -935,9 +935,12 @@ enumBodyElement
 
 // (a) `enum 'literal';`という明示的キーワード形、(b)/(c) 裸の名前に
 // 値代入または本体が続く形、のいずれも受理する。
+// `uncl : ClassificationLevel = 0;`（MetadataTest.sysml、pilot-implementation
+// 生データ）のように、列挙子自体が型節（`: Type`）を伴うことがある
+// （2026-08-28、730件回帰チェックで発見）。
 enumLiteral
-    : 'enum'? simpleName '=' value=expression ';'               # enumLiteralValue
-    | 'enum'? simpleName ( '{' enumBodyElement* '}' | ';' )      # enumLiteralBody
+    : 'enum'? simpleName (':' typeRef=namespacePath)? '=' value=expression ';'               # enumLiteralValue
+    | 'enum'? simpleName (':' typeRef=namespacePath)? ( '{' enumBodyElement* '}' | ';' )      # enumLiteralBody
     ;
 
 // --- attribute definition (8.2.2.6) ---------------------------------------------

@@ -271,9 +271,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
 
     def visitEnumLiteralValue(self, ctx: SysMLMinParser.EnumLiteralValueContext) -> Dict:
         # `low = 0.25;`という裸の名前+値代入形（`RiskMetadata.sysml`）。
+        # `uncl : ClassificationLevel = 0;`のように型節を伴うこともある
+        # （2026-08-28、730件回帰チェックで発見）。
         return {
             "type": "enum_literal",
             "name": _simple_name_text(ctx.simpleName()),
+            "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
             "value": self.visit(ctx.value),
             "children": [],
         }
@@ -285,6 +288,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return {
             "type": "enum_literal",
             "name": _simple_name_text(ctx.simpleName()),
+            "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
             "value": None,
             "children": [self.visit(el) for el in ctx.enumBodyElement()],
         }
