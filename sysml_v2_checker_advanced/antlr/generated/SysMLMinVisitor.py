@@ -259,6 +259,11 @@ class SysMLMinVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by SysMLMinParser#verifyRequirementUsage.
+    def visitVerifyRequirementUsage(self, ctx:SysMLMinParser.VerifyRequirementUsageContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by SysMLMinParser#requireUsage.
     def visitRequireUsage(self, ctx:SysMLMinParser.RequireUsageContext):
         return self.visitChildren(ctx)

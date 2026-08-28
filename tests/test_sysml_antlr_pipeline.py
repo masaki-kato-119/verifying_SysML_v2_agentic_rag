@@ -4897,3 +4897,71 @@ def test_antlr_assignment_operator_colon_equals():
     assert param_node["type"] == "param"
     assert param_node["name"] == "positions"
     assert param_node["value"] == {"type": "sequence", "elements": [], "children": []}
+
+
+def test_antlr_verify_requirement_usage():
+    """`verify requirement : R;`（無名の型付きインライン宣言）・`verify
+    requirement massRequirement : MassRequirement;`（有名、
+    9-Verification-simplified.sysml）・`verify r;`（既存requirement
+    usageへの裸参照）・`verify vehicleSpec by VehicleTest;`（`by`節付き、
+    diagnostics.test.ts）・`verify vehicleMassRequirement :>>
+    massRequirement;`（redefine節付き、同ファイル）のように、`verify`
+    requirement usage形が全く未実装だった。`requirement`キーワードの
+    有無で「型付きインライン宣言」と「既存usageへの裸参照（by/redefine/
+    body任意）」の2代替を判別する。2026-08-28、730件パース失敗の要因分析
+    で発見。"""
+    typed_named_ast = parse_sysml_antlr(
+        "requirement def R; verification def V { objective { "
+        "verify requirement massRequirement : R; } }"
+    )
+    typed_named_node = typed_named_ast["children"][-1]["children"][0]["children"][0]
+    assert typed_named_node == {
+        "type": "verify_requirement_usage",
+        "name": "massRequirement",
+        "type_name": "R",
+        "by": None,
+        "redefines": [],
+        "children": [],
+    }
+
+    typed_anon_ast = parse_sysml_antlr(
+        "requirement def R; verification def V { objective { verify requirement : R; } }"
+    )
+    typed_anon_node = typed_anon_ast["children"][-1]["children"][0]["children"][0]
+    assert typed_anon_node["name"] is None
+    assert typed_anon_node["type_name"] == "R"
+
+    bare_ast = parse_sysml_antlr(
+        "requirement r; verification def V { objective { verify r; } }"
+    )
+    bare_node = bare_ast["children"][-1]["children"][0]["children"][0]
+    assert bare_node == {
+        "type": "verify_requirement_usage",
+        "name": "r",
+        "type_name": None,
+        "by": None,
+        "redefines": [],
+        "children": [],
+    }
+
+    by_ast = parse_sysml_antlr(
+        "requirement vehicleSpec; case def VehicleTest; verification def V { "
+        "objective { verify vehicleSpec by VehicleTest; } } "
+    )
+    by_node = by_ast["children"][-1]["children"][0]["children"][0]
+    assert by_node == {
+        "type": "verify_requirement_usage",
+        "name": "vehicleSpec",
+        "type_name": None,
+        "by": "VehicleTest",
+        "redefines": [],
+        "children": [],
+    }
+
+    redefine_ast = parse_sysml_antlr(
+        "requirement r1; requirement r2; verification def V { objective { "
+        "verify r1 :>> r2; } } "
+    )
+    redefine_node = redefine_ast["children"][-1]["children"][0]["children"][0]
+    assert redefine_node["name"] == "r1"
+    assert redefine_node["redefines"] == [{"kind": "redefines", "target": "r2"}]

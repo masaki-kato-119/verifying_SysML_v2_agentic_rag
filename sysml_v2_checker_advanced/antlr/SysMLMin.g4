@@ -85,6 +85,7 @@ packageBodyElement
     | constraintUsage
     | assertConstraintUsage
     | satisfyRequirementUsage
+    | verifyRequirementUsage
     | requireUsage
     | caseDef
     | caseUsage
@@ -735,6 +736,25 @@ satisfyRequirementUsage
     | 'satisfy' 'requirement'? nameRef=namespacePath 'by' by=namespacePath ( '{' partBodyElement* '}' | ';' )
     ;
 
+// `verify requirement : R;`・`verify requirement massRequirement :
+// MassRequirement;`（VerificationTest.sysml、9-Verification-simplified.sysml）
+// のように、`verify`は`requirement`キーワード付きで無名/有名の
+// インラインrequirement usage宣言（型節付き）を導入できる。一方
+// `verify r;`・`verify vehicleSpec by VehicleTest;`・`verify
+// vehicleMassRequirement :>> massRequirement;`（diagnostics.test.ts、
+// 9-Verification-simplified.sysml）のように、既存requirement usageへの
+// 裸参照（`by`節・redefine節・body節はいずれも任意）という形も別途ある。
+// `requirement`キーワードの有無で2つの代替を判別する（2026-08-28、730件
+// パース失敗の要因分析で発見）。
+verifyRequirementUsage
+    : 'verify' 'requirement' simpleName? (':' typeRef=namespacePath)?
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      ( '{' partBodyElement* '}' | ';' )
+    | 'verify' nameRef=namespacePath ('by' by=namespacePath)?
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      ( '{' partBodyElement* '}' | ';' )
+    ;
+
 // `require viewpointSatisfactions { ref :>> ownedPerformances::this,
 // subperformances::this default that.that; }`（Views.sysml、
 // `satisfyRequirementUsage`のbody内にネスト）のように、`require`単体
@@ -1161,6 +1181,10 @@ partBodyElement
     // `satisfyRequirementUsage`/`requireUsage`はpartBodyElement内にも
     // 書ける。
     | satisfyRequirementUsage
+    // `verify requirement : R;`（objective本体内、VerificationTest.sysml）・
+    // `verify r;`（同）のように、`verifyRequirementUsage`もpartBodyElement
+    // 内に書ける（2026-08-28、730件パース失敗の要因分析で発見）。
+    | verifyRequirementUsage
     | requireUsage
     | enumDef
     // `analysis def`/`calc def`/`constraint def`等の本体（partBodyElement）

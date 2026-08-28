@@ -1143,6 +1143,35 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             **({"variability": variability_token.text} if variability_token is not None else {}),
         }
 
+    def visitVerifyRequirementUsage(self, ctx: SysMLMinParser.VerifyRequirementUsageContext) -> Dict:
+        # `verify requirement : R;`/`verify requirement massRequirement :
+        # MassRequirement;`という`requirement`キーワード付き代替（無名/有名の
+        # インラインrequirement usage宣言）と、`verify r;`/`verify vehicleSpec
+        # by VehicleTest;`という既存requirement usageへの裸参照代替（`by`節・
+        # redefine節任意）の2つを、`ctx.nameRef`（裸参照代替のみで設定される
+        # `nameRef=namespacePath`ラベル）の有無で区別する
+        # （2026-08-28、730件パース失敗の要因分析で発見）。
+        redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
+        if ctx.nameRef is not None:
+            by_ctx = ctx.by
+            return {
+                "type": "verify_requirement_usage",
+                "name": _namespace_path_text(ctx.nameRef),
+                "type_name": None,
+                "by": _namespace_path_text(by_ctx) if by_ctx is not None else None,
+                "redefines": redefines,
+                "children": [self.visit(el) for el in ctx.partBodyElement()],
+            }
+        type_ctx = ctx.typeRef
+        return {
+            "type": "verify_requirement_usage",
+            "name": _optional_simple_name_text(ctx.simpleName()),
+            "type_name": _namespace_path_text(type_ctx) if type_ctx is not None else None,
+            "by": None,
+            "redefines": redefines,
+            "children": [self.visit(el) for el in ctx.partBodyElement()],
+        }
+
     # --- フェーズ2続き: satisfy requirement usage ------------------------------------
 
     def visitSatisfyRequirementUsage(self, ctx: SysMLMinParser.SatisfyRequirementUsageContext) -> Dict:
