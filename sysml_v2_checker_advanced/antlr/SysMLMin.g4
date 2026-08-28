@@ -1161,6 +1161,13 @@ partBodyElement
     // 使われる（従来はpackage直下限定だった。2026-08-28、730件パース
     // 失敗の要因分析で発見）。
     | importStmt
+    // `view structure : GeneralView { expose
+    // TrafficLightIntersection::intersectionInstance; ... }`
+    // （Views.sysml）のように、`exposeStmt`はview/viewpoint本体
+    // （partBodyElement経由）でも使われる（従来はpackage直下限定だった。
+    // 2026-08-28、730件パース失敗の要因分析で発見）。
+    | exposeStmt
+    | filterStmt
     | partUsage
     | flowUsage
     | connectUsage
@@ -2429,6 +2436,12 @@ expression
     // `qualifiedName`は`.`区切りのみのため、`::`区切りの`namespacePath`を
     // 別代替として持つ。単一IDの場合は先に書いた`nameRefExpr`が勝つ。
     | namespacePath                                             # namespacePathRefExpr
+    // `filter @SysML::PartUsage or @SysML::PartDefinition;`（Views.sysml）の
+    // `filterStmt`本体で使われる、メタデータ型への`@`参照式（分類判定の
+    // 短縮記法。metadataUsageShorthand宣言文の`@Type { ... }`とは別に、
+    // 式コンテキストでも同じ`@Type`表記が使われる。2026-08-28、730件
+    // パース失敗の要因分析で発見）。
+    | '@' typeRef=namespacePath                                 # metadataRefExpr
     | literal                                                   # literalExpr
     ;
 
@@ -2583,6 +2596,16 @@ namespacePathList
 // "expose",...}]}という入れ子で返す。
 exposeStmt
     : 'expose' namespacePath ('::' '*' '*'?)? ';'
+    ;
+
+// `filter @SysML::PartUsage or @SysML::PartDefinition or
+// @SysML::PortUsage or @SysML::PortDefinition;`（Views.sysml）のように、
+// view/viewpoint本体で表示対象を絞り込むfilter文が、`exposeStmt`と同じ
+// view本体（partBodyElement経由）で使われる。対象は`@Type`メタデータ
+// 参照式の論理式（`metadataRefExpr`、2026-08-28、730件パース失敗の
+// 要因分析で発見）。
+filterStmt
+    : 'filter' expression ';'
     ;
 
 // --- interface def (8.2.2.14) -------------------------------------------------

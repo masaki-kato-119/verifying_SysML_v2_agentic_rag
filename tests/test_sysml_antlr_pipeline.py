@@ -4965,3 +4965,50 @@ def test_antlr_verify_requirement_usage():
     redefine_node = redefine_ast["children"][-1]["children"][0]["children"][0]
     assert redefine_node["name"] == "r1"
     assert redefine_node["redefines"] == [{"kind": "redefines", "target": "r2"}]
+
+
+def test_antlr_view_expose_and_filter():
+    """`expose TrafficLightIntersection::intersectionInstance;`・`filter
+    @SysML::PartUsage or @SysML::PartDefinition or @SysML::PortUsage or
+    @SysML::PortDefinition;`（Views.sysml、elan8-sysml-examples）のように、
+    view/viewpoint本体でexposeStmt/filterStmtが使われる。従来
+    exposeStmtはpackageBodyElementにしか登録されておらず（viewUsageの
+    body＝partBodyElement内では未対応）、filterStmt自体・式コンテキストの
+    `@Type`メタデータ参照式（metadataRefExpr）はいずれも完全に未実装
+    だった。2026-08-28、730件パース失敗の要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "view structure : GeneralView {\n"
+        "    expose Pkg::instance;\n"
+        "    filter @SysML::PartUsage or @SysML::PartDefinition;\n"
+        "}\n"
+    )
+    view_node = ast["children"][0]
+    assert view_node["type"] == "view_usage"
+    expose_node = view_node["children"][0]
+    assert expose_node == {
+        "type": "special_stmt",
+        "children": [
+            {
+                "type": "expose",
+                "qualified_name": "Pkg::instance",
+                "wildcard": False,
+                "children": [],
+            },
+        ],
+    }
+    filter_node = view_node["children"][1]
+    assert filter_node == {
+        "type": "special_stmt",
+        "children": [
+            {
+                "type": "filter",
+                "expression": {
+                    "type": "binary_expr",
+                    "op": "or",
+                    "left": {"type": "metadata_ref", "reference": "SysML::PartUsage"},
+                    "right": {"type": "metadata_ref", "reference": "SysML::PartDefinition"},
+                },
+                "children": [],
+            },
+        ],
+    }

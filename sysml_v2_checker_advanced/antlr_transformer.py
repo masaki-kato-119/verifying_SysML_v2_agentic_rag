@@ -1740,6 +1740,18 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         }
         return {"type": "special_stmt", "children": [expose_node]}
 
+    def visitFilterStmt(self, ctx: SysMLMinParser.FilterStmtContext) -> Dict:
+        # `filter @SysML::PartUsage or @SysML::PartDefinition;`（Views.sysml）
+        # のように、view/viewpoint本体で表示対象を絞り込むfilter文。
+        # exposeStmtと同じ入れ子形状（"filter"ノードを1つ子に持つ
+        # special_stmt）で返す。
+        filter_node = {
+            "type": "filter",
+            "expression": self.visit(ctx.expression()),
+            "children": [],
+        }
+        return {"type": "special_stmt", "children": [filter_node]}
+
     # --- フェーズ2続き: type def --------------------------------------------------
 
     def visitTypeDef(self, ctx: SysMLMinParser.TypeDefContext) -> Dict:
@@ -2141,6 +2153,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "reference": _namespace_path_text(ctx.namespacePath()),
             "segments": _namespace_path_segments(ctx.namespacePath()),
         }
+
+    def visitMetadataRefExpr(self, ctx: SysMLMinParser.MetadataRefExprContext) -> Dict:
+        # `filter @SysML::PartUsage or @SysML::PartDefinition;`（Views.sysml）
+        # の`@Type`メタデータ参照式。
+        return {"type": "metadata_ref", "reference": _namespace_path_text(ctx.typeRef)}
 
     def visitLiteralExpr(self, ctx: SysMLMinParser.LiteralExprContext) -> Dict:
         return self.visit(ctx.literal())
