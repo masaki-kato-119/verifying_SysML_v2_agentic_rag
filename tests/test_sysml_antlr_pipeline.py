@@ -3141,6 +3141,7 @@ def test_antlr_occurrence_usage_is_new_clean_shape():
         "value": None,
         "defaultValue": None,
         "multiplicity": None,
+        "type_name": None,
         "children": [],
     }
 
@@ -4373,3 +4374,89 @@ def test_antlr_dependency_from_to_without_name():
     assert prefixed_dependency_node["prefixMetadata"] == ["refinement"]
     assert prefixed_dependency_node["clients"] == ["A"]
     assert prefixed_dependency_node["suppliers"] == ["B"]
+
+
+def test_antlr_occurrence_usage_type_clause():
+    """occurrenceUsageに型節`: Type`が全く無かった（`ref occurrence occ1 :
+    Occ;`/`occurrence situations : Situation[*] nonunique;`が未対応。
+    2026-08-28、730件パース失敗の要因分析で発見。コーパス全体で6件の
+    パース失敗の直接原因）。itemUsageと同じtypeRef=namespacePathパターンを
+    追加した。"""
+    ast = parse_sysml_antlr(
+        "occurrence def Occ;\n"
+        "occurrence def Situation;\n"
+        "part def P {\n"
+        "    ref occurrence occ1 : Occ;\n"
+        "    abstract occurrence situations : Situation[*] nonunique;\n"
+        "}\n"
+    )
+    occ1, situations = ast["children"][-1]["children"]
+    assert occ1["type"] == "occurrence_usage"
+    assert occ1["type_name"] == "Occ"
+    assert occ1["isRef"] is True
+    assert situations["type_name"] == "Situation"
+    assert situations["multiplicity"] == {
+        "size": {"min": "*", "max": "*"}, "is_ordered": False, "is_unique": False
+    }
+
+
+def test_antlr_mult_before_type_extended_to_more_usage_kinds():
+    """`fix_partusage_actionusage_mult_before_type_order_and_default`
+    （過去完了）で対応した「名前の直後に多重度、その後に型節」という順序を、
+    requirement/item/attribute/connection usageにも拡張した（2026-08-28、
+    730件パース失敗の要因分析で発見。コーパス全体で6件のパース失敗の
+    直接原因）。既存の「型節→多重度」の通常順が壊れていないことも
+    合わせて確認する。"""
+    ast = parse_sysml_antlr(
+        "requirement def Goal;\n"
+        "connection def D;\n"
+        "part def P {\n"
+        "    requirement goals[1..*] : Goal;\n"
+        "    item concerns[*] : D;\n"
+        "    attribute occurs[0..1] : Real;\n"
+        "    abstract connection capabilityToGoals[*] : D;\n"
+        "}\n"
+    )
+    goals, concerns, occurs, capabilityToGoals = ast["children"][-1]["children"]
+
+    assert goals["type"] == "requirement_usage"
+    assert goals["type_name"] == "Goal"
+    assert goals["multiplicity"] == {
+        "size": {"min": 1, "max": "*"}, "is_ordered": False, "is_unique": True
+    }
+
+    assert concerns["type"] == "item_usage"
+    assert concerns["type_name"] == "D"
+    assert concerns["multiplicity"] == {
+        "size": {"min": "*", "max": "*"}, "is_ordered": False, "is_unique": True
+    }
+
+    assert occurs["type"] == "attribute_usage"
+    assert occurs["type_name"] == "Real"
+    assert occurs["multiplicity"] == {
+        "size": {"min": 0, "max": 1}, "is_ordered": False, "is_unique": True
+    }
+
+    assert capabilityToGoals["type"] == "connection_usage"
+    assert capabilityToGoals["type_name"] == "D"
+    assert capabilityToGoals["multiplicity"] == {
+        "size": {"min": "*", "max": "*"}, "is_ordered": False, "is_unique": True
+    }
+
+    # 既存の「型節→多重度」の通常順（partUsageで既に対応済みのものに加え、
+    # 今回拡張した規則）も壊れていないことを確認する。
+    ok_ast = parse_sysml_antlr(
+        "requirement def Goal;\n"
+        "connection def D;\n"
+        "part def P {\n"
+        "    requirement g : Goal[1..*];\n"
+        "    item c : D[*];\n"
+        "    attribute o : Real[0..1];\n"
+        "    abstract connection cc : D[*];\n"
+        "}\n"
+    )
+    ok_goals, ok_concerns, ok_occurs, ok_capability = ok_ast["children"][-1]["children"]
+    assert ok_goals["multiplicity"]["size"] == {"min": 1, "max": "*"}
+    assert ok_concerns["multiplicity"]["size"] == {"min": "*", "max": "*"}
+    assert ok_occurs["multiplicity"]["size"] == {"min": 0, "max": 1}
+    assert ok_capability["multiplicity"]["size"] == {"min": "*", "max": "*"}

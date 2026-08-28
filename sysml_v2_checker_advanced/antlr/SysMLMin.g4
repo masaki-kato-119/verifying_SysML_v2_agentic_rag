@@ -246,8 +246,14 @@ occurrenceDef
 // 代入・default節を持つ（他のusage規則と同型の設計）。`packageBodyElement`
 // だけでなく`partBodyElement`にも登録する（action本体内にもネストしうる
 // ため）。
+// `ref occurrence occ1 : Occ;`/`occurrence situations : Situation[*]
+// nonunique;`（OccurrenceTest.sysml/Model Library Example.sysml）のように、
+// occurrenceUsageは型節`: Type`を全く持っていなかった（2026-08-28、730件
+// パース失敗の要因分析で発見）。itemUsageと同じ`typeRef=namespacePath`
+// パターンを追加する。
 occurrenceUsage
     : direction? isAbstract='abstract'? isConstant='constant'? isRef='ref'? 'occurrence' simpleName?
+      (':' typeRef=namespacePath)?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ('=' value=expression)?
@@ -917,8 +923,12 @@ itemDef
 // `ref`が`individual`より前に来る語順も実在する（既存の`individual ...
 // ref`という語順とは逆）。`isRefPre`という別スロットをisIndividualの前に
 // 追加して両語順を受理する（2026-08-28、730件回帰チェックで発見）。
+// `item concerns[*]: Concern;`（CoSMAPackage.sysml）のように、名前の直後に
+// 多重度、その後に型節という順序もある（partUsage/requirementUsageと
+// 同じpreMult/postMult設計。2026-08-28、730件パース失敗の要因分析で発見）。
 itemUsage
     : visibilityIndicator? isRefPre='ref'? isIndividual='individual'? isDerived='derived'? isAbstract='abstract'? isRef='ref'? 'item' simpleName?
+      preMult=multiplicitySpec?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       // `item boundingBox : ShapeItems::Box [1] :> boundingShapes { ... }`
       // （DontPanic-SysMLv2-Batmobile.sysml）のように、型節が`::`修飾型名を
@@ -926,7 +936,7 @@ itemUsage
       // パース失敗の要因分析で発見）。`typeRef`という専用ラベルを使う
       // （_usage_keyword_nodeが自動で読む）。
       (':' typeRef=namespacePath)?
-      multiplicitySpec?
+      postMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( 'default' defaultValue=expression | '=' value=expression )?
       ( '{' partBodyElement* '}' | ';' )
@@ -949,14 +959,18 @@ itemUsage
 // `variation requirement r { variant requirement r1; }`
 // （VariabilityTest.sysml）のように、Variability機能の先頭修飾子がここにも
 // 付く（partDefと同じ理由、2026-08-28）。
+// `requirement goals[1..*] : Goal;`（CoSMAPackage.sysml）のように、名前の
+// 直後に多重度、その後に型節という順序もある（partUsage/portUsageと同じ
+// preMult/postMult設計。2026-08-28、730件パース失敗の要因分析で発見）。
 requirementUsage
     : variability=('variation' | 'variant')? prefixMetadataAnnotation* visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'requirement' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
+      preMult=multiplicitySpec?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       // `typeRef`という専用ラベルを使う（無ラベルの`ID`のままだと、上のshortName
       // （ID|QUOTED_NAMEの代替）と合わせて`ctx.ID()`が2件のリストを返すように
       // なり、`_usage_keyword_node`側の単純な`ctx.ID()`呼び出しと衝突するため）。
       (':' typeRef=ID)?
-      multiplicitySpec?
+      postMult=multiplicitySpec?
       // `ref requirement requirementVerifications : RequirementCheck[0..*]
       // = obj.requirementVerifications { ... }`（VerificationCases.sysml）
       // のようにインライン値代入を伴う形も存在する（subjectUsageと同じ位置）。
@@ -1359,12 +1373,16 @@ partUsage
 // `variant attribute diameterSmall = 70[mm];`（Variation Definitions.sysml）
 // のように、Variability機能の先頭修飾子がここにも付く（partDefと同じ理由、
 // 2026-08-28）。
+// `attribute occurs[0..1]: Real;`（14c-Language Extensions.sysml）のように、
+// 名前の直後に多重度、その後に型節という順序もある（partUsage/itemUsageと
+// 同じpreMult/postMult設計。2026-08-28、730件パース失敗の要因分析で発見）。
 attributeUsage
     : variability=('variation' | 'variant')? prefixMetadataAnnotation* visibilityIndicator? isDerived='derived'? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
       'attribute' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
+      preMult=multiplicitySpec?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       (':' (typeList=namespacePathList | typeQuoted=QUOTED_NAME))?
-      multiplicitySpec?
+      postMult=multiplicitySpec?
       ('=' value=expression)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ('default' defaultValue=expression)?
@@ -1488,9 +1506,14 @@ connectionUsage
       | '(' naryEnds+=connectorEndPath (',' naryEnds+=connectorEndPath)+ ')'
       )
       ( '{' partBodyElement* '}' | ';' )
+    // `abstract connection capabilityToGoals[*] : CapabilityToGoalDerivation;`
+    // （CoSMAPackage.sysml）のように、名前の直後に多重度、その後に型節と
+    // いう順序もある（partUsage/requirementUsageと同じpreMult/postMult
+    // 設計。2026-08-28、730件パース失敗の要因分析で発見）。
     | prefixMetadataAnnotation* isAbstract='abstract'? 'connection' simpleName?
+      preMult=multiplicitySpec?
       (':' ID)?
-      multiplicitySpec?
+      postMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )
     ;

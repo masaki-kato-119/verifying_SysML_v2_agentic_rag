@@ -383,6 +383,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         prefix_metadata = [
             _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
         ]
+        # `attribute occurs[0..1]: Real;`のように多重度が型節より前に来る
+        # こともあるため、preMult/postMultの2ラベルを持つ（`multiplicitySpec()`
+        # は複数出現によりリストを返すようになるため、実際にマッチした方
+        # （最大1件）を読む。connectionUsageと同じ設計。2026-08-28）。
+        attr_mult_list = ctx.multiplicitySpec()
         return {
             "type": "attribute_usage",
             "name": _optional_simple_name_text(ctx.simpleName()),
@@ -391,7 +396,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "shortName": ctx.shortName.text if ctx.shortName is not None else None,
             "type_name": type_name,
             **({"type_names": type_names} if len(type_names) > 1 else {}),
-            "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
+            "multiplicity": self._multiplicity_dict(attr_mult_list[0] if attr_mult_list else None),
             "inheritance": None,
             "isAbstract": ctx.isAbstract is not None,
             "isConstant": ctx.isConstant is not None,
@@ -1017,12 +1022,21 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # usage）にしかないため、getattrで安全に読む（prefixMetadataと
         # 同じ方針。2026-08-28、730件パース失敗の要因分析で発見）。
         variability_token = getattr(ctx, "variability", None)
+        # `requirement goals[1..*] : Goal;`のように、名前の直後に多重度、
+        # その後に型節という順序（preMult/postMultという専用ラベル）を
+        # 持つ規則が一部にしかない（今のところrequirementUsageのみ）ため、
+        # hasattrで安全に読む（typeRef/prefixMetadataと同じ方針。
+        # 2026-08-28、730件パース失敗の要因分析で発見）。
+        if hasattr(ctx, "preMult"):
+            multiplicity_ctx = ctx.preMult if ctx.preMult is not None else ctx.postMult
+        else:
+            multiplicity_ctx = ctx.multiplicitySpec()
         return {
             "type": node_type,
             "name": _optional_simple_name_text(ctx.simpleName()),
             "shortName": short_name_token.text if short_name_token is not None else None,
             "type_name": type_name,
-            "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
+            "multiplicity": self._multiplicity_dict(multiplicity_ctx),
             "isAbstract": ctx.isAbstract is not None,
             "isRef": ctx.isRef is not None,
             "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
@@ -2440,6 +2454,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "value": self.visit(ctx.value) if ctx.value is not None else None,
             "defaultValue": self.visit(ctx.defaultValue) if ctx.defaultValue is not None else None,
             "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
+            "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
             "children": children,
         }
 
