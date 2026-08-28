@@ -1906,9 +1906,16 @@ sendActionStmt
 // messageType節（`Items::'外界'`・`Parts::'方向指示器'::'指示状態'`という
 // 3階層`::`区切りも実在）は`::`区切り型参照を受理できるよう
 // `namespacePath`を使う。
+// `then accept sig after 10[SI::s];`（ActionTest.sysml）のように、
+// `via`節が無く代わりに`after`継続時間（タイムアウト）節を持つ形もある
+// （従来`via`節は必須だったが、`then accept S;`という`via`/`after`いずれも
+// 無い裸形も同じくActionTest.sysmlで使われているため、この節全体を
+// 任意化する。2026-08-29、235件パース失敗の要因分析で発見）。
 acceptActionStmt
     : isThen='then'? visibilityIndicator? ('action' actionName=simpleName?)?
-      'accept' message=qualifiedName ( ':' messageType=namespacePath )? 'via' port=qualifiedName ';'
+      'accept' message=qualifiedName ( ':' messageType=namespacePath )?
+      ( 'via' port=qualifiedName | 'after' afterDuration=expression )?
+      ';'
     ;
 
 // --- perform action (Section 7.17 PerformActionUsage) -------------------------
@@ -2324,8 +2331,12 @@ exitActionMember
 // TimeTriggerKind）は、既存の`trigger=namespacePath`（単純な信号参照）とは
 // 別の代替として持つ（2026-08-28、参照実装比較レポートP0-5で発見。
 // `5-State-based Behavior-1a.sysml`で確認）。
+// `accept after 48[h]`（Change and Time Triggers.sysml、Local Clock
+// Example.sysml）のように、`after`継続時間（タイムアウト）トリガーも
+// `when`/`at`と同型の代替として持つ（2026-08-29、235件パース失敗の
+// 要因分析で発見）。
 transitionTrigger
-    : triggerKind=('when' | 'at') triggerExpr=expression
+    : triggerKind=('when' | 'at' | 'after') triggerExpr=expression
     | trigger=namespacePath (':' triggerType=namespacePath)? ('via' via=namespacePath)?
     ;
 

@@ -932,7 +932,13 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "type": "accept_action",
             "message": _qualified_name_text(ctx.message),
             "message_type": _namespace_path_text(ctx.messageType) if ctx.messageType is not None else None,
-            "port": _qualified_name_text(ctx.port),
+            "port": _qualified_name_text(ctx.port) if ctx.port is not None else None,
+            # `then accept sig after 10[SI::s];`（ActionTest.sysml）のように、
+            # `via`節の代わりに`after`継続時間節を持つことがある（従来`via`は
+            # 必須だったが、`then accept S;`という両方とも無い裸形もあるため
+            # 節全体を任意化した。2026-08-29、235件パース失敗の要因分析で
+            # 発見）。
+            "after": self.visit(ctx.afterDuration) if ctx.afterDuration is not None else None,
             **({"isThen": True} if ctx.isThen is not None else {}),
             **({"visibility": visibility_ctx.getText()} if visibility_ctx is not None else {}),
             **({"actionName": _simple_name_text(ctx.actionName)} if ctx.actionName is not None else {}),

@@ -1046,6 +1046,7 @@ def test_antlr_accept_action_with_type():
         "message": "response",
         "message_type": "ConnectionResponse",
         "port": "client",
+        "after": None,
     }
 
 
@@ -1070,6 +1071,7 @@ def test_antlr_named_accept_action_bare_body():
         "message": "scene",
         "message_type": "Parts::方向指示器::指示状態",
         "port": "レンズ",
+        "after": None,
         "actionName": "外界取得",
     }
 
@@ -1079,6 +1081,7 @@ def test_antlr_named_accept_action_bare_body():
         "message": "response",
         "message_type": "ConnectionResponse",
         "port": "client",
+        "after": None,
     }
 
 
@@ -5379,3 +5382,46 @@ def test_antlr_performactionstmt_action_form_multiplicity():
     assert plain_node["name"] == "performLunarMission"
     assert plain_node["type_name"] == "PerformLunarMission"
     assert plain_node["multiplicity"] is None
+
+
+def test_antlr_accept_after_duration_trigger():
+    """`then accept sig after 10[SI::s];`（ActionTest.sysml）、
+    `accept after 48[h] then normal;`（Change and Time Triggers.sysml）の
+    ように、`after`継続時間（タイムアウト）トリガー節がaccept文
+    （acceptActionStmt/transitionStmtのaccept節どちらも）で未対応
+    だった。acceptActionStmtは従来`via`節が必須で、`then accept S;`という
+    `via`/`after`いずれも無い裸形も同じファイルで使われているため、この
+    節全体を任意化して対応した。2026-08-29、235件パース失敗の要因分析
+    で発見。"""
+    ast = parse_sysml_antlr(
+        "action a1 { first start; then accept S; "
+        "then accept sig after 10[SI::s]; }"
+    )
+    children = ast["children"][0]["children"]
+    bare_accept = children[1]
+    assert bare_accept["type"] == "accept_action"
+    assert bare_accept["message"] == "S"
+    assert bare_accept["port"] is None
+    assert bare_accept["after"] is None
+
+    after_accept = children[2]
+    assert after_accept["type"] == "accept_action"
+    assert after_accept["message"] == "sig"
+    assert after_accept["port"] is None
+    assert after_accept["after"]["type"] == "quantity_literal"
+
+    # 既存の`via`節形が引き続き機能することを確認する。
+    via_ast = parse_sysml_antlr(
+        "action def Act { accept response : ConnectionResponse via client; }"
+    )
+    via_node = via_ast["children"][0]["children"][0]
+    assert via_node["port"] == "client"
+    assert via_node["after"] is None
+
+    # 暗黙遷移（implicitTransitionStmt）側のafterトリガーも確認する。
+    implicit_ast = parse_sysml_antlr(
+        "state def X { state normal; accept after 48 [h] then normal; }"
+    )
+    transition_node = implicit_ast["children"][0]["children"][-1]
+    assert transition_node["type"] == "transition"
+    assert transition_node["trigger"]["trigger_kind"] == "after"
