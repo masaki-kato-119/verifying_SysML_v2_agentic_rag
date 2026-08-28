@@ -1705,11 +1705,19 @@ successionStmt
 // ...;`のみ）・名前・先頭多重度・connectorEnd側の多重度・bodyを持つ。
 // 公式コーパスの.sysmlファイル3件で確認した範囲（名前と先頭多重度は
 // 排他的に使われ同時出現例が無い）に絞って実装する。
+// `succession flow onOffCmdFlow from sendOnOffCmd.onOffCmd to
+// produceDirectedLight.onOffCmd;`（FlashlightExample.sysml）のように、
+// successionとflowを組み合わせた複合キーワード形（SuccessionFlowUsage）が
+// ある。`first`/`then`形とは終端の書き方が異なる（`from`/`to` +
+// namespacePath、connectorEndではない）ため、別代替として持つ
+// （2026-08-28、参照実装比較レポートP2-2で発見）。
 successionUsage
     : visibilityIndicator? 'succession' simpleName? multiplicitySpec?
       'first' firstMult=multiplicitySpec? firstEnd=connectorEnd
       'then' thenMult=multiplicitySpec? thenEnd=connectorEnd
-      ( '{' partBodyElement* '}' | ';' )
+      ( '{' partBodyElement* '}' | ';' )                                # successionUsageFirstThen
+    | visibilityIndicator? 'succession' 'flow' simpleName?
+      'from' fromEnd=namespacePath 'to' toEnd=namespacePath ';'         # successionUsageFlow
     ;
 
 // --- bare first/then（action/part本体内の連鎖チェーン形） --------------------

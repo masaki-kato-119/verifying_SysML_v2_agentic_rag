@@ -574,8 +574,13 @@ class SysMLMinVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
-    # Visit a parse tree produced by SysMLMinParser#successionUsage.
-    def visitSuccessionUsage(self, ctx:SysMLMinParser.SuccessionUsageContext):
+    # Visit a parse tree produced by SysMLMinParser#successionUsageFirstThen.
+    def visitSuccessionUsageFirstThen(self, ctx:SysMLMinParser.SuccessionUsageFirstThenContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by SysMLMinParser#successionUsageFlow.
+    def visitSuccessionUsageFlow(self, ctx:SysMLMinParser.SuccessionUsageFlowContext):
         return self.visitChildren(ctx)
 
 

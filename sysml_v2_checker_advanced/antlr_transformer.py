@@ -959,7 +959,24 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "children": [],
         }
 
-    def visitSuccessionUsage(self, ctx: SysMLMinParser.SuccessionUsageContext) -> Dict:
+    def visitSuccessionUsageFlow(self, ctx: SysMLMinParser.SuccessionUsageFlowContext) -> Dict:
+        # `succession flow onOffCmdFlow from sendOnOffCmd.onOffCmd to
+        # produceDirectedLight.onOffCmd;`という複合キーワード形
+        # （2026-08-28、参照実装比較レポートP2-2で発見）。`first`/`then`形
+        # （visitSuccessionUsageFirstThen）とはend側の形が違う
+        # （namespacePath、connectorEndではない）ため別形状で返す。
+        visibility_ctx = ctx.visibilityIndicator()
+        return {
+            "type": "succession_usage",
+            "name": _optional_simple_name_text(ctx.simpleName()),
+            "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
+            "isFlow": True,
+            "fromEnd": _namespace_path_text(ctx.fromEnd),
+            "toEnd": _namespace_path_text(ctx.toEnd),
+            "children": [],
+        }
+
+    def visitSuccessionUsageFirstThen(self, ctx: SysMLMinParser.SuccessionUsageFirstThenContext) -> Dict:
         # `succession causalOrdering first [nCauses] causes.startShot then
         # [nEffects] effects { ... }`のように、`succession`キーワード自体・
         # 名前・先頭多重度・connectorEnd側の多重度・bodyを持つ形。先頭多重度は
@@ -976,6 +993,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "type": "succession_usage",
             "name": _optional_simple_name_text(ctx.simpleName()),
             "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
+            "isFlow": False,
             "multiplicity": self._multiplicity_dict(leading_mult_ctx),
             "firstMultiplicity": self._multiplicity_dict(ctx.firstMult),
             "firstEnd": self.visit(ctx.firstEnd),

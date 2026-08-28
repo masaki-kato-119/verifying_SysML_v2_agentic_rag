@@ -2914,6 +2914,28 @@ def test_antlr_succession_usage_leading_multiplicity_no_name():
     assert node["thenMultiplicity"]["size"] == {"min": 0, "max": 1}
 
 
+def test_antlr_succession_flow_composite_form():
+    """`succession flow onOffCmdFlow from sendOnOffCmd.onOffCmd to
+    produceDirectedLight.onOffCmd;`（FlashlightExample.sysml）のような、
+    successionとflowを組み合わせた複合キーワード形（2026-08-28、参照実装
+    比較レポートP2-2で発見）。既存の`first`/`then`形（connectorEnd使用）
+    とは終端の書き方が異なる（namespacePath、`from`/`to`）ため別形状で
+    返す。"""
+    ast = parse_sysml_antlr(
+        "part def P { succession flow onOffCmdFlow from a.x to b.y; }"
+    )
+    node = ast["children"][0]["children"][-1]
+    assert node == {
+        "type": "succession_usage",
+        "name": "onOffCmdFlow",
+        "visibility": None,
+        "isFlow": True,
+        "fromEnd": "a::x",
+        "toEnd": "b::y",
+        "children": [],
+    }
+
+
 def test_antlr_power_expression():
     """d59_ampersand_caret_operators_lexer_missing: SI.sysmlの`s^-1`・
     ShapeItems.sysmlの`Triangle::length^2 + Triangle::width^2`のように、
