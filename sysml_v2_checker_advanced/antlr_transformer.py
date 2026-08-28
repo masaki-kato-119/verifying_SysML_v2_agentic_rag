@@ -690,7 +690,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
     # --- フェーズ2: action の item パラメータ -----------------------------------
 
     def visitActionDef(self, ctx: SysMLMinParser.ActionDefContext) -> Dict:
-        # "param"型の子だけをparamsへ、それ以外(decision_node/send_action/
+        # "param"型の子だけをparamsへ、それ以外(decide_node/send_action/
         # assignment_stmt等)はchildrenへ分離する。linter.pyの
         # _check_control_nodes_in_action等はaction_node["children"]しか
         # 見ないため、この分離を維持する必要がある。
@@ -798,6 +798,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "type": node_type,
             "name": _simple_name_text(name_ctx) if name_ctx is not None else None,
             "children": children,
+            **({"isThen": True} if ctx.isThen is not None else {}),
         }
 
     def visitAssignmentStmt(self, ctx: SysMLMinParser.AssignmentStmtContext) -> Dict:
@@ -2344,6 +2345,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "defaultValue": self.visit(ctx.defaultValue) if ctx.defaultValue is not None else None,
             "ownedReferenceSubsetting": None,
             "children": [self.visit(el) for el in ctx.partBodyElement()],
+            **({"isThen": True} if ctx.isThen is not None else {}),
         }
 
     def visitExhibitStateUsageStmt(self, ctx: SysMLMinParser.ExhibitStateUsageStmtContext) -> Dict:

@@ -116,7 +116,7 @@ class ActionBehaviorRulesMixin:
                 child_type = child.get("type")
 
                 # Control Node の種類別チェック
-                if child_type in ["merge_node", "decision_node", "join_node", "fork_node"]:
+                if child_type in ["merge_node", "decide_node", "join_node", "fork_node"]:
                     self._check_control_node_structure(child, child_type, action_name)
     def _check_control_node_structure(self, node: Dict, node_type: str, action_name: str) -> None:
         """
@@ -131,7 +131,7 @@ class ActionBehaviorRulesMixin:
         is_composite = node.get("isComposite", False)
         
         # isComposite フラグのチェック
-        if node_type in ["merge_node", "decision_node", "join_node", "fork_node"]:
+        if node_type in ["merge_node", "decide_node", "join_node", "fork_node"]:
             # これらのノードは通常 composite ではない
             if is_composite:
                 self.issues.append(LintIssue(
@@ -141,7 +141,7 @@ class ActionBehaviorRulesMixin:
                 ))
         
         # ノード固有の制約チェック
-        if node_type == "decision_node":
+        if node_type == "decide_node":
             # DecisionNode は guard 条件を持つべき
             children = node.get("children", [])
             has_guard = any(child.get("type") == "guard_property" for child in children if isinstance(child, dict))

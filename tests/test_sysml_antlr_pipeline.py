@@ -919,10 +919,13 @@ def test_antlr_nested_state_def():
 
 
 def test_antlr_decision_bare_and_named():
-    ast = parse_sysml_antlr("action def Act { decision; decision D; }")
+    """キーワードは`decision`ではなく`decide`が正しい（公式文法
+    sysml2-cli/grammar/sysml.pegの`KW_DECIDE`参照。2026-08-28、
+    `then decide`未対応の調査中に発見した既存の誤りを修正）。"""
+    ast = parse_sysml_antlr("action def Act { decide; decide D; }")
     children = ast["children"][0]["children"]
-    assert children[0] == {"type": "decision_node", "name": None, "children": []}
-    assert children[1] == {"type": "decision_node", "name": "D", "children": []}
+    assert children[0] == {"type": "decide_node", "name": None, "children": []}
+    assert children[1] == {"type": "decide_node", "name": "D", "children": []}
     lint_ast(ast)  # クラッシュしないことを確認
 
 
@@ -936,7 +939,7 @@ def test_antlr_fork_join_merge_bare():
 def test_antlr_decision_with_nested_body():
     """control nodeのbodyはactionBodyElementの反復を許可し、代入・send action
     をネストできる（旧Lark実装のflow_node_bodyより実用上広い。AST_SCHEMA.md参照）。"""
-    ast = parse_sysml_antlr("action def Act { decision D { x = 1; send p to q; } }")
+    ast = parse_sysml_antlr("action def Act { decide D { x = 1; send p to q; } }")
     decision = ast["children"][0]["children"][0]
     assert decision["name"] == "D"
     assert decision["children"] == [
@@ -1005,10 +1008,10 @@ def test_antlr_send_action_double_colon_qualified_payload():
 
 
 def test_antlr_action_def_separates_params_from_control_flow_children():
-    """param型の子はparamsへ、それ以外(decision_node/assignment_stmt等)は
+    """param型の子はparamsへ、それ以外(decide_node/assignment_stmt等)は
     childrenへ分離される（旧Lark実装 action_def_stmt と同じ振る舞い。
     linter.pyのcontrol node/send actionチェックはchildrenしか見ないため必須）。"""
-    ast = parse_sysml_antlr("action def Act { in item x : T; decision D; y = 2; }")
+    ast = parse_sysml_antlr("action def Act { in item x : T; decide D; y = 2; }")
     action = ast["children"][0]
     assert action["params"] == [
         {
@@ -1026,7 +1029,7 @@ def test_antlr_action_def_separates_params_from_control_flow_children():
             "children": [],
         }
     ]
-    assert [c["type"] for c in action["children"]] == ["decision_node", "assignment_stmt"]
+    assert [c["type"] for c in action["children"]] == ["decide_node", "assignment_stmt"]
 
 
 # --- accept action / perform action / message / if-else / action usage --------
@@ -4033,3 +4036,47 @@ def test_antlr_use_case_actor_usage():
     assert passengers["multiplicity"] == {
         "size": {"min": 0, "max": 4}, "is_ordered": False, "is_unique": True
     }
+
+
+def test_antlr_then_control_node_keywords():
+    """`then fork F { ... }`/`then merge m;`/`then decide D;`（succession先
+    として制御フローノードをインライン宣言する形）と`then event occurrence
+    ...;`が未対応だった（2026-08-28、730件パース失敗の要因分析で発見。
+    コーパス全体で11件のパース失敗の直接原因）。再現: ControlNodeTest.sysml
+    `then fork F { ... }`、ActionTest.sysml `then merge m;`、
+    DecisionTest.sysml.xt `then decide D;`、Event Occurrence
+    Example.sysml `then event occurrence sensedSpeedReceived;`。
+    調査中に、既存のflowControlNodeのキーワードが公式文法(`decide`)ではなく
+    誤って`decision`になっていたことも発覚したため、あわせて修正した
+    （実コーパスに`decision`をキーワードとして使う例は無い）。"""
+    ast = parse_sysml_antlr(
+        "action def A {\n"
+        "    action A1;\n"
+        "    then fork F { in a; }\n"
+        "    then merge m;\n"
+        "    then decide D;\n"
+        "}\n"
+    )
+    _a1, fork, merge, decide = ast["children"][0]["children"]
+    assert fork["type"] == "fork_node" and fork["name"] == "F" and fork["isThen"] is True
+    assert merge["type"] == "merge_node" and merge["name"] == "m" and merge["isThen"] is True
+    assert decide["type"] == "decide_node" and decide["name"] == "D" and decide["isThen"] is True
+
+    # `then`無しの既存形（bareのcontrol node宣言）も壊れていないことを確認する。
+    bare_ast = parse_sysml_antlr("action def A { fork F; merge m; decide D; }")
+    bare_fork, bare_merge, bare_decide = bare_ast["children"][0]["children"]
+    assert "isThen" not in bare_fork
+    assert "isThen" not in bare_merge
+    assert "isThen" not in bare_decide
+
+    event_ast = parse_sysml_antlr(
+        "part cruiseController {\n"
+        "    event occurrence setSpeedReceived;\n"
+        "    then event occurrence sensedSpeedReceived;\n"
+        "}\n"
+    )
+    plain_event, then_event = event_ast["children"][0]["children"]
+    assert "isThen" not in plain_event
+    assert then_event["type"] == "event_occurrence_usage"
+    assert then_event["name"] == "sensedSpeedReceived"
+    assert then_event["isThen"] is True

@@ -157,8 +157,12 @@ dependencyStmt
 // 型」の順（itemUsage等の「: 型 多重度」とは逆順）のため、多重度を
 // type節より先に置く。package直下だけでなくpartBodyElementにも登録する
 // （action/flow本体内にもネストしうるため）。
+// `then event occurrence sensedSpeedReceived;`（Event Occurrence
+// Example.sysml）のように、succession先としてevent occurrenceを
+// インライン宣言する形も広く使われるため、flowControlNodeと同じ`isThen`
+// 先頭修飾子を追加する（2026-08-28、730件パース失敗の要因分析で発見）。
 eventOccurrenceUsageStmt
-    : direction? 'event' 'occurrence' simpleName?
+    : isThen='then'? direction? 'event' 'occurrence' simpleName?
       multiplicitySpec?
       (':' namespacePath)?
       ('default' defaultValue=expression)?
@@ -1576,13 +1580,24 @@ direction
     : 'in' | 'out' | 'inout'
     ;
 
-// --- decision/fork/join/merge の制御フローノード (8.2.2.17) ------------------
+// --- decide/fork/join/merge の制御フローノード (8.2.2.17) ------------------
 // 参照: KerML.xtext の `DecisionNode`/`ForkNode`/`JoinNode`/`MergeNode`
-// （'decision'|'fork'|'join'|'merge' + 宣言名(省略可) + body-or-semi）。
+// （'decide'|'fork'|'join'|'merge' + 宣言名(省略可) + body-or-semi）。
 // 公式仕様通りに名前をAST化する。bodyはactionBodyElementの反復を許可する
 // （ネストしたcontrol nodeや代入・send actionを書けるようにする）。
+// キーワードは公式文法（sysml2-cli/grammar/sysml.peg の`KW_DECIDE`、
+// SysML-textual-bnf.kebnf の`'decide'`）に合わせて`decision`ではなく
+// `decide`が正しい（2026-08-28、`then decide`未対応の調査中に発見した
+// 既存の誤り。実コーパスでも`decide;`/`then decide D;`という形でのみ
+// 使われ、`decision`が実際のキーワードとして使われている例は無い）。
+// `action A1; then fork F { ... }`（ControlNodeTest.sysml）・
+// `then merge m;`（ActionTest.sysml）・`then decide D;`（DecisionTest.sysml.xt）
+// のように、succession先としてcontrol nodeをインライン宣言する形が
+// 広く使われるため、assignmentStmtと同じ`isThen`先頭修飾子を追加する
+// （2026-08-28、730件パース失敗の要因分析で発見。コーパス全体で11件の
+// パース失敗の直接原因）。
 flowControlNode
-    : kind=('decision' | 'fork' | 'join' | 'merge') simpleName? ( '{' actionBodyElement* '}' | ';' )
+    : isThen='then'? kind=('decide' | 'fork' | 'join' | 'merge') simpleName? ( '{' actionBodyElement* '}' | ';' )
     ;
 
 // --- 代入文 (Section 7.17 AssignmentActionUsage) -----------------------------
