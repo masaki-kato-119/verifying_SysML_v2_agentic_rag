@@ -2311,6 +2311,11 @@ performActionStmt
       mult=multiplicitySpec?
       (':' typeRef=namespacePath)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      // `perform action :>> doXorY = doX;`（7a1-Variant Configuration...-a.sysml）
+      // のように、attributeUsageと同様、redefine節の後に`= value`で値代入
+      // できる（従来performActionStmtには移植されていなかった。2026-08-29、
+      // 730件ベースライン154件エラー要因分析で発見）。
+      ('=' value=expression)?
       ( '{' actionBodyElement* '}' | ';' )
     ;
 
@@ -3051,10 +3056,17 @@ portDef
 // 共役（`~`）修飾型節が`::`修飾名を取ることがある（従来は単一segment
 // のIDのみで、namespacePathへの全面置換漏れだった。2026-08-29、235件
 // パース失敗の要因分析で発見）。
+// `port leftWheelToRoadPort :> wheelToRoadPort = wheelToRoadPort#(1);`
+// （2a-Parts Interconnection.sysml）・`port fuelCmdPort:>>fuelCmdPort=
+// vehicle_1.fuelCmdPort;`（VehicleModel_2_Simplified.sysml）のように、
+// attributeUsageと同様、redefine節（`:>`/`:>>`等）の後に`= value`で
+// 値代入できる（従来portUsageには移植されていなかった。2026-08-29、
+// 730件ベースライン154件エラー要因分析で発見）。
 portUsage
     : variability=('variation' | 'variant')? prefixMetadataAnnotation* visibilityIndicator? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
       'port' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      ('=' value=expression)?
       preMult=multiplicitySpec?
       (':' conjugated='~'? typeRefs+=namespacePath (',' typeRefs+=namespacePath)*)?
       postMult=multiplicitySpec?

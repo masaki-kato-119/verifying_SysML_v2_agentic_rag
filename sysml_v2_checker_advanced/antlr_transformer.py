@@ -1072,6 +1072,10 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "children": children,
             **({"isThen": True} if ctx.isThen is not None else {}),
             **({"variability": ctx.variability.text} if ctx.variability is not None else {}),
+            # `perform action :>> doXorY = doX;`（7a1-Variant Configuration...
+            # -a.sysml）のように、redefine節の後に`= value`で値代入できる
+            # （2026-08-29、730件ベースライン154件エラー要因分析で発見）。
+            **({"value": self.visit(ctx.value)} if ctx.value is not None else {}),
         }
 
     def visitMessageStmt(self, ctx: SysMLMinParser.MessageStmtContext) -> Dict:
@@ -1859,6 +1863,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
             "redefines": redefines,
             "variability": ctx.variability.text if ctx.variability is not None else None,
+            # `port leftWheelToRoadPort :> wheelToRoadPort = wheelToRoadPort#(1);`
+            # （2a-Parts Interconnection.sysml）のように、redefine節の後に
+            # `= value`で値代入できる（2026-08-29、730件ベースライン154件
+            # エラー要因分析で発見）。既存のexact-equality辞書テストを
+            # 壊さないよう、無い場合はキー自体を省略する。
+            **({"value": self.visit(ctx.value)} if ctx.value is not None else {}),
             "children": children,
         }
 

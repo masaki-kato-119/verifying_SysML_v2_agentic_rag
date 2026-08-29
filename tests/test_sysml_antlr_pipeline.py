@@ -2386,6 +2386,39 @@ def test_antlr_perform_action_named_redefine_body():
     }
 
 
+def test_antlr_portusage_performaction_redefine_assign():
+    """`port fuelCmdPort:>>fuelCmdPort=vehicle_1.fuelCmdPort;`
+    （VehicleModel_2_Simplified.sysml）・`port leftWheelToRoadPort :>
+    wheelToRoadPort = wheelToRoadPort#(1);`（2a-Parts Interconnection.sysml）・
+    `perform action :>> doXorY = doX;`（7a1-Variant Configuration...-a.sysml）
+    のように、attributeUsageには既にあるredefine節後の`= value`値代入が
+    portUsage・performActionStmt(action形)には移植されていなかった。
+    2026-08-29、730件ベースライン154件エラー要因分析で発見。"""
+    port_ast = parse_sysml_antlr(
+        "part def P { port fuelCmdPort:>>fuelCmdPort=vehicle_1.fuelCmdPort; }"
+    )
+    port_node = port_ast["children"][0]["children"][-1]
+    assert port_node["type"] == "port_usage"
+    assert port_node["redefines"] == [{"kind": "redefines", "target": "fuelCmdPort"}]
+    assert port_node["value"] == {"type": "name_ref", "reference": "vehicle_1.fuelCmdPort"}
+
+    plain_port_ast = parse_sysml_antlr("part def P { port p : T; } ")
+    plain_port_node = plain_port_ast["children"][0]["children"][-1]
+    assert "value" not in plain_port_node
+
+    perform_ast = parse_sysml_antlr(
+        "action def A { variant perform action :>> doXorY = doX; } "
+    )
+    perform_node = perform_ast["children"][0]["children"][-1]
+    assert perform_node["type"] == "perform_action"
+    assert perform_node["redefines"] == [{"kind": "redefines", "target": "doXorY"}]
+    assert perform_node["value"] == {"type": "name_ref", "reference": "doX"}
+
+    plain_perform_ast = parse_sysml_antlr("part def P { perform action { } }")
+    plain_perform_node = plain_perform_ast["children"][0]["children"][-1]
+    assert "value" not in plain_perform_node
+
+
 def test_antlr_double_colon_qualified_reference_targets():
     """d94_double_colon_qualified_reference_targets_missing: 実モデル
     （adas-sysmlv2-main）のADAS.sysmlの`perform FCW::'外界の映像を撮る';`
