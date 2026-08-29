@@ -898,25 +898,17 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             # `default`キーワードも受理する（`=`とは排他）。
             "defaultValue": self.visit(ctx.defaultValue) if ctx.defaultValue is not None else None,
             # `in calc calculation { in x; }`のように、actionParameter自身が
-            # body内にネストされることがあるため、ActionParameterContextも
-            # 子として拾う。`in dt : TimeValue { @ToolVariable { name =
-            # "deltaT"; } }`のような`@Type { ... }`インラインメタデータ注釈
-            # （MetadataUsageKeywordContext/MetadataUsageShorthandContext、
-            # 2026-08-28、730件パース失敗の要因分析で発見）も同様に拾う。
-            "children": [
-                self.visit(child)
-                for child in ctx.getChildren()
-                if isinstance(
-                    child,
-                    (
-                        SysMLMinParser.DocumentationStmtContext,
-                        SysMLMinParser.BareDocCommentContext,
-                        SysMLMinParser.ActionParameterContext,
-                        SysMLMinParser.MetadataUsageKeywordContext,
-                        SysMLMinParser.MetadataUsageShorthandContext,
-                    ),
-                )
-            ],
+            # body内にネストされることがある。`in dt : TimeValue {
+            # @ToolVariable { name = "deltaT"; } }`のような`@Type { ... }`
+            # インラインメタデータ注釈も同様に持ちうる。`private in ref y:
+            # A, B { part B_b redefines B::b; }`（PartTest.sysml）のように、
+            # 一般のpartBodyElement内容（part/port等）も持ちうるため、
+            # 他の多くの規則と同じ`ctx.partBodyElement()`経由に統一する
+            # （従来は4種のContext型を手動でフィルタしていたが、
+            # partBodyElement自体がこの4種を含むため単純化できる。
+            # 2026-08-29、add_nested_packagedef_in_partbody対応中に
+            # 連鎖的に発見）。
+            "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 
     # --- decision/fork/join/merge/assignment/send action ------------------------

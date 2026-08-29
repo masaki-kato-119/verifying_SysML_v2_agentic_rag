@@ -2061,7 +2061,19 @@ actionParameter
       // （AnalysisAnnotation.sysml）のように、型節直後のbodyに
       // `@Type { ... }`ショートハンド形のインラインメタデータ注釈が
       // 続くことがある（2026-08-28、730件パース失敗の要因分析で発見）。
-      ( '{' (documentationStmt | bareDocComment | actionParameter | metadataUsage)* '}' | ';' )
+      // `private in ref y: A, B { part B_b redefines B::b; port B_x
+      // redefines B::x; }`（PartTest.sysml、port def本体内）のように、
+      // bodyに一般のpartBodyElement内容（part/port等のredefine宣言）が
+      // 続くこともある（従来はdocumentationStmt/bareDocComment/
+      // actionParameter/metadataUsageの4種のみに限定されていた。
+      // partBodyElement自体がこの4種を全て含むため、他の多くの規則と
+      // 同じ`partBodyElement*`に揃えることで一般化する。この変更は
+      // actionParameter自体がどのルールへディスパッチされるかには
+      // 影響しない（同ルールのbody内容の許可範囲を広げるのみ）ため、
+      // feedback_grammar_alt_order_ambiguityで警告された代替順
+      // アンビギュイティのリスクはない。2026-08-29、
+      // add_nested_packagedef_in_partbody対応中に連鎖的に発見）。
+      ( '{' partBodyElement* '}' | ';' )
     ;
 
 direction

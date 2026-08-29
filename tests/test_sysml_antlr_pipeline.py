@@ -6525,6 +6525,55 @@ def test_antlr_visibility_prefix_on_actionparameter():
     assert "type_names" not in plain_param
 
 
+def test_antlr_actionparameter_general_body_content():
+    """`private in ref y: A, B { part B_b redefines B::b; port B_x
+    redefines B::x; }`（PartTest.sysml L38、private port def C本体内）の
+    ように、actionParameterのbodyには一般のpartBodyElement内容
+    （part/port等のredefine宣言）も持ちうる（従来はdocumentationStmt/
+    bareDocComment/actionParameter/metadataUsageの4種のみに限定されて
+    おり、`part`キーワードで構文エラーになっていた）。誤診断の経緯:
+    当初はfeatureUsageにdirectionプレフィックスを追加する必要があると
+    考えたが、実際にはactionParameter自体へのディスパッチは既に正しく
+    行われており（`kind`は既に`'ref'`を含む）、body内容の許可範囲が
+    狭すぎただけだった。partBodyElement自体がこの4種を全て含むため、
+    他の多くの規則と同じ`partBodyElement*`に一般化することで解決した
+    （actionParameterへのディスパッチ自体は変更していないため、
+    feedback_grammar_alt_order_ambiguityで警告された代替順アンビギュ
+    イティのリスクは無い）。既存の入れ子actionParameter形・`@Type { ... }`
+    インラインメタデータ注釈形が引き続き機能することも確認する。
+    2026-08-29、add_nested_packagedef_in_partbody対応中に連鎖的に発見。"""
+    ast = parse_sysml_antlr(
+        "part def X { private in ref y: A, B { "
+        "part B_b redefines B::b; port B_x redefines B::x; } }"
+    )
+    param = ast["children"][0]["children"][0]
+    assert param["type"] == "param"
+    assert param["direction"] == "in"
+    assert param["kind"] == "ref"
+    assert [c["type"] for c in param["children"]] == ["part_instance", "port_usage"]
+    assert param["children"][0]["redefines"] == [
+        {"kind": "redefines", "target": "B::b"}
+    ]
+    assert param["children"][1]["redefines"] == [
+        {"kind": "redefines", "target": "B::x"}
+    ]
+
+    # 既存の入れ子actionParameter形が引き続き機能することを確認する。
+    nested_ast = parse_sysml_antlr("action def A { in calc calculation { in x; } }")
+    nested_param = nested_ast["children"][0]["params"][0]
+    assert nested_param["children"][0]["type"] == "param"
+    assert nested_param["children"][0]["name"] == "x"
+
+    # 既存の`@Type { ... }`インラインメタデータ注釈形が引き続き機能する
+    # ことを確認する。
+    meta_ast = parse_sysml_antlr(
+        'action def A { in dt : TimeValue { @ToolVariable { name = "deltaT"; } } }'
+    )
+    meta_param = meta_ast["children"][0]["params"][0]
+    assert meta_param["children"][0]["type"] == "metadata_usage"
+    assert meta_param["children"][0]["name"] == "ToolVariable"
+
+
 def test_antlr_visibility_modifier_on_aliasstmt():
     """`public alias X for Y;`（Package Example.sysml）のように、
     aliasStmtにvisibilityIndicator（public/private/protected）が付いて
