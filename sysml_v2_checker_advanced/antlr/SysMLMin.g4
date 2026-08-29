@@ -2792,6 +2792,14 @@ expression
     // （`if`は既に`ifActionStmt`/`transitionStmt`のguard節で使用済みだが、
     // いずれも異なる文脈のため曖昧性は無い）。
     | 'if' cond=expression '?' thenExpr=expression 'else' elseExpr=expression  # conditionalExpr
+    // `filter @Safety and (as Safety).isMandatory;`（Filtering
+    // Example-1.sysml）のように、`asCastExpr`（`expr as Type`）の左辺を
+    // 省略した「暗黙の対象をTypeとして扱う」短縮形`(as Type)`がある。
+    // `as`キーワードは通常left-recursiveなasCastExprの中置演算子としてのみ
+    // 現れ、新規expressionの先頭には来ないため、`'(' 'as'`で
+    // parenExprと曖昧性なく判別できる（2026-08-29、730件ベースラインの
+    // 154件エラー要因分析で発見）。
+    | '(' 'as' typeRef=namespacePath ')'                        # implicitSubjectAsCastExpr
     | '(' expression ')'                                        # parenExpr
     // `(1..size(seq))->selectOne{...}`（Interfaces.sysml/
     // SampledFunctions.sysml/ShapeItems.sysml、6件）のように、`(a..b)`と

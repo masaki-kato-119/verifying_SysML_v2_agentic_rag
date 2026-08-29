@@ -2266,6 +2266,17 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "children": [],
         }
 
+    def visitImplicitSubjectAsCastExpr(self, ctx: SysMLMinParser.ImplicitSubjectAsCastExprContext) -> Dict:
+        # `(as Safety).isMandatory`（Filtering Example-1.sysml）のように、
+        # `asCastExpr`の左辺（暗黙の対象）を省略した短縮形。`as_cast`と同型
+        # だが`base`はNone（2026-08-29、連鎖的に発見）。
+        return {
+            "type": "as_cast",
+            "base": None,
+            "type_name": _namespace_path_text(ctx.typeRef),
+            "children": [],
+        }
+
     def visitMetaExpr(self, ctx: SysMLMinParser.MetaExprContext) -> Dict:
         # KerMLの`meta`式（`expr meta Type`。例: `multicausations meta
         # SysML::Usage`）。`asCastExpr`と同型。

@@ -664,6 +664,11 @@ class SysMLMinVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by SysMLMinParser#implicitSubjectAsCastExpr.
+    def visitImplicitSubjectAsCastExpr(self, ctx:SysMLMinParser.ImplicitSubjectAsCastExprContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by SysMLMinParser#newExpr.
     def visitNewExpr(self, ctx:SysMLMinParser.NewExprContext):
         return self.visitChildren(ctx)

@@ -3731,6 +3731,35 @@ def test_antlr_member_access_after_cast():
     assert plain_value == {"type": "name_ref", "reference": "that.that"}
 
 
+def test_antlr_implicit_subject_ascast_expression():
+    """`filter @Safety and (as Safety).isMandatory;`（Filtering
+    Example-1.sysml L32）のように、`asCastExpr`(`expr as Type`)の左辺
+    （暗黙の対象）を省略した短縮形`(as Type)`が未対応だった（従来`as`は
+    常にleft-recursiveな中置演算子としてのみ現れる前提だった）。既存の
+    明示的な左辺を持つ`(that as Occurrence)`形が引き続き機能することも
+    確認する。2026-08-29、730件ベースラインの154件エラー要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "part def P { attribute a = (as Safety).isMandatory; }"
+    )
+    value = ast["children"][0]["children"][-1]["value"]
+    assert value == {
+        "type": "member_access",
+        "base": {
+            "type": "as_cast",
+            "base": None,
+            "type_name": "Safety",
+            "children": [],
+        },
+        "member": "isMandatory",
+        "children": [],
+    }
+
+    # 既存の明示的な左辺を持つas_cast形が引き続き機能することを確認する。
+    explicit_ast = parse_sysml_antlr("part def P { attribute a = that as Occurrence; }")
+    explicit_value = explicit_ast["children"][0]["children"][-1]["value"]
+    assert explicit_value["base"] == {"type": "name_ref", "reference": "that"}
+
+
 def test_antlr_succession_usage_named_with_body_and_symbolic_multiplicity():
     """d53_named_succession_usage_with_body: CausationConnections.sysmlの
     `succession causalOrdering first [nCauses] causes.startShot then
