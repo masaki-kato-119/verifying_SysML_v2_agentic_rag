@@ -2066,6 +2066,46 @@ def test_antlr_flow_connect_endpoint_double_colon_mixed():
     }
 
 
+def test_antlr_flowusage_prekind_redefine_before_type_or_from_to():
+    """`flow :>> publish_message: Transfers::MessageTransfer { ... }`・
+    `flow :>> publish_message from producer... to server... { ... }`
+    （ServerSequenceOutsideRealization-2/3.sysml、
+    ServerSequenceRealization-2/3.sysml）のように、flowUsageの名前省略
+    代替（型付き代替・from/to代替の両方）は`postKind`（型節後の
+    redefine）しか持たず、名前の代わりに型節前にredefineターゲットを
+    置く`preKind`（attributeUsage等と同型）が無かった。型付き代替の
+    型節が`::`修飾名を取れなかった（同じ行の反例、`ID`単体のみだった）
+    ことも併せて対応する。2026-08-29、
+    add_flow_end_member_triple_colon_gt_operator対応中に連鎖的に発見。"""
+    typed_ast = parse_sysml_antlr(
+        "flow :>> publish_message: Transfers::MessageTransfer { }"
+    )
+    typed_node = typed_ast["children"][0]
+    assert typed_node["type"] == "flow_usage"
+    assert typed_node["name"] is None
+    assert typed_node["type_name"] == "Transfers::MessageTransfer"
+    assert typed_node["redefines"] == [
+        {"kind": "redefines", "target": "publish_message"}
+    ]
+
+    from_to_ast = parse_sysml_antlr(
+        "flow :>> publish_message from producer.a to server.b { }"
+    )
+    from_to_node = from_to_ast["children"][0]
+    assert from_to_node["type"] == "flow_usage"
+    assert from_to_node["from_end"] == "producer::a"
+    assert from_to_node["to_end"] == "server::b"
+    assert from_to_node["redefines"] == [
+        {"kind": "redefines", "target": "publish_message"}
+    ]
+
+    # 既存のpreKindを伴わない裸のfrom/to形（"redefines"キー自体が無い）が
+    # 引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr("part def P { flow from a to b; }")
+    plain_node = plain_ast["children"][0]["children"][-1]
+    assert "redefines" not in plain_node
+
+
 def test_antlr_perform_action_named_redefine_body():
     """d93_perform_action_named_redefine_body_missing: 実モデル
     （adas-sysmlv2-main）のADAS.sysmlの`perform action '外界の映像を

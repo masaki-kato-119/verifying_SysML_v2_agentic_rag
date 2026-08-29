@@ -1872,14 +1872,29 @@ qualifiedName
 // できるようにする（interfaceUsageのtypeRefと同じ設計。2026-08-29、
 // 名前スロット追加に伴いsimpleNameの有無だけでは判別できなくなった
 // ため対応）。
+// `flow :>> publish_message: Transfers::MessageTransfer { ... }`・
+// `flow :>> publish_message from producer... to server... { ... }`
+// （ServerSequenceOutsideRealization-2/3.sysml、ServerSequenceRealization-
+// 2/3.sysml）のように、名前省略代替（両代替とも）は`postKind`（型節後
+// のredefine）しか持たなかったが、名前の代わりに`preKind`（型節前に
+// redefineターゲットを置く形、attributeUsage等と同型）も取りうる
+// （2026-08-29、add_flow_end_member_triple_colon_gt_operator対応中に
+// 連鎖的に発見）。
 flowUsage
-    : 'flow' simpleName? ( 'of' ofType=ID )?
+    : 'flow' simpleName?
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      ( 'of' ofType=ID )?
       ( 'from' fromEnd=namespacePath 'to' toEnd=namespacePath
       | fromEnd=namespacePath 'to' toEnd=namespacePath
       )?
       ( '{' partBodyElement* '}' | ';' )
     | isAbstract='abstract'? 'flow' simpleName?
-      (':' typeRef=ID)?
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      // `flow :>> publish_message: Transfers::MessageTransfer { ... }`の
+      // ように、型節が`::`修飾名を取ることもあるため`ID`単体ではなく
+      // `namespacePath`を使う（同じ行の反例のため、preKind対応と同時に
+      // 発見・対応）。
+      (':' typeRef=namespacePath)?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )

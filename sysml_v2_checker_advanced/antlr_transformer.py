@@ -721,11 +721,16 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # 判別材料として使えない。2026-08-29、235件パース失敗の要因分析
         # で発見）。
         if ctx.typeRef is not None or ctx.multiplicitySpec() is not None or len(ctx.postKind) > 0 or ctx.isAbstract is not None:
-            redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
+            # `flow :>> publish_message: Transfers::MessageTransfer { ... }`
+            # のように、preKind（名前の代わりに型節前に置くredefine）も
+            # 持ちうる（2026-08-29、連鎖的に発見）。
+            redefines = self._redefine_list_namespace(ctx.preKind, ctx.preTarget) + self._redefine_list_namespace(
+                ctx.postKind, ctx.postTarget
+            )
             return {
                 "type": "flow_usage",
                 "name": _optional_simple_name_text(ctx.simpleName()),
-                "type_name": ctx.typeRef.text if ctx.typeRef is not None else None,
+                "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
                 "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
                 "isAbstract": ctx.isAbstract is not None,
                 "redefines": redefines,
@@ -735,12 +740,20 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # （`_namespace_path_text`は区切り文字を常に`::`へ正規化する）。
         from_end = _namespace_path_text(ctx.fromEnd) if ctx.fromEnd is not None else None
         to_end = _namespace_path_text(ctx.toEnd) if ctx.toEnd is not None else None
+        # `flow :>> publish_message from producer... to server... { ... }`
+        # のように、この代替（from/to形）もpreKind（redefine）を持ちうる
+        # （従来この代替にredefine節自体が無かった。2026-08-29、
+        # add_flow_end_member_triple_colon_gt_operator対応中に連鎖的に
+        # 発見）。既存のexact-equality辞書テストを壊さないよう、preKindが
+        # 無い場合はキー自体を省略する。
+        bare_redefines = self._redefine_list_namespace(ctx.preKind, ctx.preTarget)
         return {
             "type": "flow_usage",
             "name": _optional_simple_name_text(ctx.simpleName()),
             "item_type": ctx.ofType.text if ctx.ofType is not None else None,
             "from_end": from_end,
             "to_end": to_end,
+            **({"redefines": bare_redefines} if bare_redefines else {}),
             # `flow NAME from A to B { attribute :>> isInstant = true; }`
             # （ServerSequenceOutsideRealization-3.sysml）のように、`;`
             # 終端の代わりに本体を持つこともある（2026-08-29、235件パース
