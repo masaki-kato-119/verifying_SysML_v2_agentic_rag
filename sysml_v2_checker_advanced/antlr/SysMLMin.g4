@@ -170,11 +170,19 @@ dependencyStmt
 // Example.sysml）のように、succession先としてevent occurrenceを
 // インライン宣言する形も広く使われるため、flowControlNodeと同じ`isThen`
 // 先頭修飾子を追加する（2026-08-28、730件パース失敗の要因分析で発見）。
+// `event publish_source_event = publish_message.start;`
+// （ServerSequenceModelOutside.sysml）のように、`occurrence`キーワードを
+// 省略した裸形もある。同ファイルには`event occurrence :>>
+// subscribe_target_event = subscribe_message.done;`という、名前を持たず
+// `:>>`redefine節（値束縛リデファイン文と同型）と`=`値代入を同時に
+// 持つ形もあるため、redefine節・`=`値代入も併せて追加する
+// （2026-08-29、235件パース失敗の要因分析で発見）。
 eventOccurrenceUsageStmt
-    : isThen='then'? direction? 'event' 'occurrence' simpleName?
+    : isThen='then'? direction? 'event' 'occurrence'? simpleName?
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       multiplicitySpec?
       (':' namespacePath)?
-      ('default' defaultValue=expression)?
+      ( 'default' defaultValue=expression | '=' value=expression )?
       ( '{' partBodyElement* '}' | ';' )
     ;
 

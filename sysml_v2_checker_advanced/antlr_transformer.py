@@ -2599,12 +2599,21 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
     def visitEventOccurrenceUsageStmt(self, ctx: SysMLMinParser.EventOccurrenceUsageStmtContext) -> Dict:
         direction_ctx = ctx.direction()
         type_ctx = ctx.namespacePath()
+        # `event publish_source_event = publish_message.start;`
+        # （ServerSequenceModelOutside.sysml）のように、`occurrence`
+        # キーワードを省略した裸形、`event occurrence :>>
+        # subscribe_target_event = subscribe_message.done;`という
+        # redefine節+`=`値代入を持つ形も受理する（2026-08-29、235件パース
+        # 失敗の要因分析で発見）。
+        redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
         return {
             "type": "event_occurrence_usage",
             "name": _optional_simple_name_text(ctx.simpleName()),
             "direction": direction_ctx.getText() if direction_ctx is not None else None,
             "type_name": _namespace_path_text(type_ctx) if type_ctx is not None else None,
             "defaultValue": self.visit(ctx.defaultValue) if ctx.defaultValue is not None else None,
+            "value": self.visit(ctx.value) if ctx.value is not None else None,
+            "redefines": redefines,
             "ownedReferenceSubsetting": None,
             "children": [self.visit(el) for el in ctx.partBodyElement()],
             **({"isThen": True} if ctx.isThen is not None else {}),

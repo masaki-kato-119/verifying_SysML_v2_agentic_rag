@@ -2970,6 +2970,8 @@ def test_antlr_event_occurrence_usage_is_new_construct():
         "direction": None,
         "type_name": None,
         "defaultValue": None,
+        "value": None,
+        "redefines": [],
         "ownedReferenceSubsetting": None,
         "children": [],
     }
@@ -5500,3 +5502,41 @@ def test_antlr_portusage_conjugated_type_namespacepath():
     plain_ast = parse_sysml_antlr("part def X { port p2 : SimpleType; }")
     plain_node = plain_ast["children"][0]["children"][0]
     assert plain_node["type_name"] == "SimpleType"
+
+
+def test_antlr_event_usage_occurrence_keyword_omission():
+    """`event publish_source_event = publish_message.start;`
+    （ServerSequenceModelOutside.sysml）のように、`occurrence`キーワードを
+    省略した`event`usage形が未対応だった（従来`occurrence`は必須）。
+    同ファイルの`event occurrence :>> subscribe_target_event =
+    subscribe_message.done;`という、名前を持たず`:>>`redefine節と`=`値
+    代入を同時に持つ形（従来いずれも規則自体に存在しなかった）も併せて
+    確認する。2026-08-29、235件パース失敗の要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "part def X { event publish_source_event = publish_message.start; }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "event_occurrence_usage"
+    assert node["name"] == "publish_source_event"
+    assert node["value"]["reference"] == "publish_message.start"
+    assert node["redefines"] == []
+
+    redefine_ast = parse_sysml_antlr(
+        "part def X { event occurrence :>> subscribe_target_event = "
+        "subscribe_message.done; }"
+    )
+    redefine_node = redefine_ast["children"][0]["children"][0]
+    assert redefine_node["type"] == "event_occurrence_usage"
+    assert redefine_node["name"] is None
+    assert redefine_node["value"]["reference"] == "subscribe_message.done"
+    assert redefine_node["redefines"] == [
+        {"kind": "redefines", "target": "subscribe_target_event"}
+    ]
+
+    # 既存の`occurrence`キーワード付き裸形が引き続き機能することを確認する。
+    bare_ast = parse_sysml_antlr("event occurrence A;")
+    bare_node = bare_ast["children"][0]
+    assert bare_node["type"] == "event_occurrence_usage"
+    assert bare_node["name"] == "A"
+    assert bare_node["value"] is None
+    assert bare_node["redefines"] == []
