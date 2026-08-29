@@ -2023,8 +2023,21 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # `abstract allocation allocations: Allocation[0..*] nonunique :>
         # binaryConnections { ... }`のように、`allocate`節を伴わない
         # multiplicity・redefine節・bodyの形も持つ。
-        ends = ctx.connectorEndPath()
-        connector_part = self._binary_part("binary_connector_part", ends[0], ends[1]) if len(ends) == 2 else None
+        # `allocate ( logical ::> l, physical ::> p );`のような括弧付き
+        # n元end列（`naryEnds`）を先に判定する。`getTypedRuleContext`は
+        # ラベルを区別せず型だけで子ノードを検索するため、`naryEnds`が
+        # 一致した場合は無ラベルの`ctx.connectorEndPath()`もそのnaryEnds
+        # ノードを拾ってしまい、`len(ends) == 2`が誤って真になりうる
+        # （flowUsageのofMult/typeMultで発見した衝突と同型。2026-08-29、
+        # add_interfaceusage_nary_connect_form対応中に連鎖的に発見）。
+        nary_ends = ctx.naryEnds
+        if nary_ends:
+            connector_part = None
+            ends_field = [self.visit(e) for e in nary_ends]
+        else:
+            ends = ctx.connectorEndPath()
+            connector_part = self._binary_part("binary_connector_part", ends[0], ends[1]) if len(ends) == 2 else None
+            ends_field = None
         name_ctx = ctx.simpleName()
         type_ctx = ctx.ID()
         redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
@@ -2035,6 +2048,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
             "redefines": redefines,
             "connector_part": connector_part,
+            **({"ends": ends_field} if ends_field is not None else {}),
             "isAbstract": ctx.isAbstract is not None,
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }

@@ -928,12 +928,22 @@ interfaceUsage
 // ため受理できない。investigate_connectorend_coloncolonで実際に必要と
 // 確認）。connectUsage/interfaceUsageと同じパターンでこの規則専用に
 // connectorEndPathへ切り替える（2026-08-28、発見）。
+// `allocation allocation2 : Logical_to_Physical allocate ( logical ::>
+// l, physical ::> p );`（AllocationTest.sysml）のように、`allocate`節は
+// 2項の`A to B`形だけでなく、括弧で囲んだ3項以上のend列（connectUsage/
+// connectionUsage/interfaceUsageと同じ`naryEnds`設計）も取りうる
+// （2026-08-29、add_interfaceusage_nary_connect_form対応中に連鎖的に
+// 発見）。
 allocationUsage
     : isAbstract='abstract'? 'allocation' simpleName
       ( ':' ID )?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
-      ( 'allocate' connectorEndPath 'to' connectorEndPath )?
+      ( 'allocate'
+        ( connectorEndPath 'to' connectorEndPath
+        | '(' naryEnds+=connectorEndPath (',' naryEnds+=connectorEndPath)+ ')'
+        )
+      )?
       ( '{' partBodyElement* '}' | ';' )
     | 'allocate' connectorEndPath 'to' connectorEndPath ';'
     ;

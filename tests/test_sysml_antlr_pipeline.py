@@ -2604,6 +2604,39 @@ def test_antlr_interface_and_allocation_connect_colon_colon_and_body():
     assert allocation_node["connector_part"]["to_end"]["reference_subsetting"]["referenced_feature"] == "z::w"
 
 
+def test_antlr_allocationusage_nary_allocate_form():
+    """`allocation allocation2 : Logical_to_Physical allocate ( logical
+    ::> l, physical ::> p );`（AllocationTest.sysml L30-33）のように、
+    allocationUsageの`allocate`節は2項の`A to B`形だけでなく、括弧で
+    囲んだ3項以上のend列（connectUsage/connectionUsage/interfaceUsageで
+    既に対応済みのn項形）も取りうる。`getTypedRuleContext`がラベルを
+    区別せず型だけで子ノードを検索するため、無ラベルの
+    `ctx.connectorEndPath()`がn項形のnaryEndsノードも拾ってしまい
+    `len(ends) == 2`が誤って真になる回帰を防ぐため、naryEndsの有無を
+    先に判定する必要があった（flowUsageのofMult/typeMultで発見した
+    衝突と同型）。2026-08-29、
+    add_interfaceusage_nary_connect_form対応中に連鎖的に発見。"""
+    ast = parse_sysml_antlr(
+        "allocation def Logical_to_Physical; "
+        "allocation allocation2 : Logical_to_Physical allocate "
+        "( logical ::> l, physical ::> p );"
+    )
+    node = ast["children"][-1]
+    assert node["type"] == "allocation_usage"
+    assert node["connector_part"] is None
+    assert [e["declared_name"] for e in node["ends"]] == ["logical", "physical"]
+    assert [e["reference"] for e in node["ends"]] == ["l", "p"]
+
+    # 既存の2項`A to B`形が引き続き機能し、"ends"キーが付かないことを
+    # 確認する（回帰防止）。
+    binary_ast = parse_sysml_antlr(
+        "allocation allocation1 : Logical_to_Physical allocate l to p;"
+    )
+    binary_node = binary_ast["children"][0]
+    assert binary_node["connector_part"] is not None
+    assert "ends" not in binary_node
+
+
 def test_antlr_named_multiplicity_binding_connector():
     """d74_named_multiplicity_binding_connector_missing: ShapeItems.sysmlの
     `binding [1] bind [0..*] base.edges = [0..*] be;`（公式コーパス
