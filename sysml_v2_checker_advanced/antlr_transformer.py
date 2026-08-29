@@ -2009,6 +2009,14 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         direct_reference = (
             _namespace_path_text(ctx.directTarget) if ctx.directTarget is not None else None
         )
+        # `end item cart: ShoppingCart[1] crosses selectedProduct.inCart;`
+        # のように、型節・多重度の後に`crosses`節（対となる相方end側の
+        # フィーチャーチェーンパス）を置くこともある（2026-08-29、
+        # 連鎖的に発見）。既存のexact-equality辞書テストを壊さないよう、
+        # 無い場合はキー自体を省略する。
+        cross_target = (
+            _qualified_name_text(ctx.crossTarget) if ctx.crossTarget is not None else None
+        )
         return {
             "type": "connection_end_member",
             "name": inner_name or end_name,
@@ -2021,6 +2029,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "redefines": redefines,
             "prefixMetadata": prefix_metadata,
             "reference": direct_reference,
+            **({"crosses": cross_target} if cross_target is not None else {}),
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 

@@ -1013,6 +1013,13 @@ connectionEndMember
       innerName=simpleName?
       (':' conjugated='~'? ID)?
       multiplicitySpec?
+      // `end item cart: ShoppingCart[1] crosses selectedProduct.inCart;`
+      // （ProductSelection_UnownedEnds.sysml）のように、型節・多重度の後に
+      // `crosses`節（KerMLのCrossSubsetting、対となる相方end側の
+      // フィーチャーチェーンパスを参照）を置くこともある（2026-08-29、
+      // add_connectionendmember_leading_multiplicity対応中に連鎖的に
+      // 発見）。
+      ('crosses' crossTarget=qualifiedName)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       (directKind=('::>' | 'references') directTarget=namespacePath)?
       // `end ref end1 ::> d1 :> q;`（ConnectionTest.sysml L53）のように、

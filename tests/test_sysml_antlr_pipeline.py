@@ -6328,6 +6328,33 @@ def test_antlr_connectionendmember_leading_multiplicity_and_trailing_postkind():
     }
 
 
+def test_antlr_connectionendmember_crosses_clause():
+    """`end item cart: ShoppingCart[1] crosses selectedProduct.inCart;`
+    （ProductSelection_UnownedEnds.sysml L14-15）のように、
+    connectionEndMemberには型節・多重度の後に`crosses`節（KerMLの
+    CrossSubsetting、対となる相方end側のフィーチャーチェーンパスを
+    参照）を置くこともある（従来完全に未実装だった）。2026-08-29、
+    add_connectionendmember_leading_multiplicity対応中に連鎖的に発見。"""
+    ast = parse_sysml_antlr(
+        "connection def ProductSelection {\n"
+        "    end item cart: ShoppingCart[1] crosses selectedProduct.inCart;\n"
+        "    end item selectedProduct: Product[1] crosses cart.selectedProducts;\n"
+        "}"
+    )
+    cart, selected_product = ast["children"][0]["children"]
+    assert cart["type"] == "connection_end_member"
+    assert cart["name"] == "cart"
+    assert cart["crosses"] == "selectedProduct.inCart"
+    assert selected_product["name"] == "selectedProduct"
+    assert selected_product["crosses"] == "cart.selectedProducts"
+
+    # 既存のcrosses節無し形が引き続き機能し、"crosses"キー自体が無いことを
+    # 確認する（回帰防止、既存のexact-equality辞書テストとの共存）。
+    plain_ast = parse_sysml_antlr("connection def C { end a : PortA; }")
+    plain_node = plain_ast["children"][0]["children"][0]
+    assert "crosses" not in plain_node
+
+
 def test_antlr_flowusage_named_bare_from_to_form():
     """`flow publish_request from producerBehavior.publish.request to
     publicationPort.publish { attribute :>> isInstant = true; }`
