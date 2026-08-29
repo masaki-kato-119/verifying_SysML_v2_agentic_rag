@@ -588,12 +588,20 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 "prefixMetadata": prefix_metadata,
                 "children": children,
             }
+        # `connect [0..1] lugBoltJoints to [1] wheel.w.mountingHoles;`の
+        # ように、各エンドポイントの前に多重度が付くこともある
+        # （2026-08-29、連鎖的に発見）。既存のexact-equality辞書テストを
+        # 壊さないよう、無い場合はキー自体を省略する。
+        from_mult = self._multiplicity_dict(ctx.fromMult) if ctx.fromMult is not None else None
+        to_mult = self._multiplicity_dict(ctx.toMult) if ctx.toMult is not None else None
         return {
             "type": "connect_usage",
             "from_end": self.visit(ctx.fromEnd),
             "to_end": self.visit(ctx.toEnd),
             "ends": None,
             "prefixMetadata": prefix_metadata,
+            **({"from_multiplicity": from_mult} if from_mult is not None else {}),
+            **({"to_multiplicity": to_mult} if to_mult is not None else {}),
             "children": children,
         }
 

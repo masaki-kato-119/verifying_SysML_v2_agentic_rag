@@ -1786,9 +1786,14 @@ multiplicityBound
 // probability = 0.1; } }`（CauseAndEffectExample.sysml）のように、`;`
 // 終端だけでなくbody（`{ ... }`）も持ちうる（2026-08-28、発見。以前は
 // `;`終端のみだった）。
+// `connect [0..1] lugBoltJoints to [1] wheel.w.mountingHoles;`
+// （Connections Example.sysml）のように、各エンドポイントの前に多重度
+// を置くこともある（従来2項形にはエンドポイント側の多重度ラベルが
+// 無かった。2026-08-29、
+// add_connectionendmember_leading_multiplicity対応中に連鎖的に発見）。
 connectUsage
     : prefixMetadataAnnotation* 'connect'
-      ( fromEnd=connectorEndPath 'to' toEnd=connectorEndPath
+      ( fromMult=multiplicitySpec? fromEnd=connectorEndPath 'to' toMult=multiplicitySpec? toEnd=connectorEndPath
       | '(' naryEnds+=connectorEndPath (',' naryEnds+=connectorEndPath)+ ')'
       )
       ( '{' partBodyElement* '}' | ';' )

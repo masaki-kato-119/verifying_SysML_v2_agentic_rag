@@ -2066,6 +2066,31 @@ def test_antlr_flow_connect_endpoint_double_colon_mixed():
     }
 
 
+def test_antlr_connectusage_endpoint_multiplicity():
+    """`connect [0..1] lugBoltJoints to [1] wheel.w.mountingHoles;`
+    （Connections Example.sysml L38-39）のように、connectUsage（キー
+    ワード無し`connect`文）の各エンドポイントの前に多重度`[mult]`が
+    付くこともある（従来2項形にはエンドポイント側の多重度ラベルが
+    無かった）。2026-08-29、
+    add_connectionendmember_leading_multiplicity対応中に連鎖的に発見。"""
+    ast = parse_sysml_antlr(
+        "part def P { connect [0..1] lugBoltJoints to [1] wheel.w.mountingHoles; }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "connect_usage"
+    assert node["from_multiplicity"]["size"] == {"min": 0, "max": 1}
+    assert node["to_multiplicity"]["size"] == {"min": 1, "max": 1}
+    assert node["from_end"]["reference"] == "lugBoltJoints"
+    assert node["to_end"]["reference"] == "wheel::w::mountingHoles"
+
+    # 既存の多重度無し形が引き続き機能し、"from_multiplicity"/
+    # "to_multiplicity"キー自体が無いことを確認する（回帰防止）。
+    plain_ast = parse_sysml_antlr("part def P { connect a to b; }")
+    plain_node = plain_ast["children"][0]["children"][0]
+    assert "from_multiplicity" not in plain_node
+    assert "to_multiplicity" not in plain_node
+
+
 def test_antlr_flowusage_prekind_redefine_before_type_or_from_to():
     """`flow :>> publish_message: Transfers::MessageTransfer { ... }`・
     `flow :>> publish_message from producer... to server... { ... }`
