@@ -5712,3 +5712,29 @@ def test_antlr_partusage_and_inline_assign_in_statebodyelement():
     assert plain_children[0]["assign"] is None
     assert plain_children[1]["assign"] is None
     assert plain_children[1]["send"] is None
+
+
+def test_antlr_actionparameter_style_direction_in_statebodyelement():
+    """`state def VehicleStates { in operatingVehicle : Vehicle; }`
+    （State Actions.sysml）のように、`in`/`out`方向付きパラメータ宣言
+    （actionParameter）がstateBodyElementに登録されていなかった
+    （part/objective本体はpartBodyElement経由で既に対応済みで非対称
+    だった。add_partusage_in_statebodyelementと同根の不足）。2026-08-29、
+    235件パース失敗の要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "state def VehicleStates { in operatingVehicle : Vehicle; }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "param"
+    assert node["direction"] == "in"
+    assert node["name"] == "operatingVehicle"
+    assert node["type_name"] == "Vehicle"
+
+    # 既存の`out`方向・part/attribute等が同居する形が引き続き機能する
+    # ことを確認する。
+    mixed_ast = parse_sysml_antlr(
+        "state def S { in x : X; out y : Y; part p : P; }"
+    )
+    mixed_children = mixed_ast["children"][0]["children"]
+    assert [c["type"] for c in mixed_children] == ["param", "param", "part_instance"]
+    assert mixed_children[1]["direction"] == "out"

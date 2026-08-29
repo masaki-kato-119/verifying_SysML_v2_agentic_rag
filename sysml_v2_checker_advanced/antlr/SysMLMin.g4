@@ -2216,6 +2216,12 @@ stateBodyElement
     // 書ける（attributeUsage/featureUsage/actionUsageStmtは登録済みで
     // 非対称だった。2026-08-29、235件パース失敗の要因分析で発見）。
     | partUsage
+    // `state def VehicleStates { in operatingVehicle : Vehicle; }`
+    // （State Actions.sysml）のように、`in`/`out`方向付きパラメータ宣言
+    // （actionParameter）もstateBodyElement内に書ける（part/objective本体
+    // はpartBodyElement経由で既に対応済みで非対称だった。partUsageと
+    // 同根の不足。2026-08-29、235件パース失敗の要因分析で発見）。
+    | actionParameter
     ;
 
 // bodyにstateBodyElementの反復を許可し、`state On { entry action ...;
