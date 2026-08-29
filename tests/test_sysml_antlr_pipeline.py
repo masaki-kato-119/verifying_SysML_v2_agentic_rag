@@ -4134,6 +4134,55 @@ def test_antlr_successionusage_typed_first_then_form():
     assert plain_node["type_name"] is None
 
 
+def test_antlr_succession_first_if_then_shorthand():
+    """`public succession S first A1 if x == 0 then A2;`（DecisionTest.sysml）
+    のように、named successionUsage(first...then代替)はfirst側とthen側の
+    間にガード付き継続条件`if <cond>`を挟むこともある。`first focus if
+    focus.image.isWellFocused then shoot;`（Conditional Succession
+    Example-1.sysml）のように、bareFirstStmt（`first <name>;`単体形）も
+    区切りの`;`無しでガード付き継続節`if <cond> then <target>`を直接
+    続けることがある。`private first A3;`（DecisionTest.sysml、同ファイル
+    内で連鎖的に発見）のように、bareFirstStmtはvisibilityIndicatorも
+    伴いうる。2026-08-29、730件ベースライン154件エラー要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "action def D { action A1; action A2; "
+        "public succession S first A1 if x == 0 then A2; }"
+    )
+    node = ast["children"][0]["children"][-1]
+    assert node["type"] == "succession_usage"
+    assert node["guard"] == {
+        "type": "binary_expr", "op": "==",
+        "left": {"type": "name_ref", "reference": "x"},
+        "right": {"type": "literal", "literal_type": "int", "value": 0},
+    }
+
+    plain_ast = parse_sysml_antlr(
+        "part def P { part a; part b; succession first a then b; }"
+    )
+    plain_node = plain_ast["children"][0]["children"][-1]
+    assert "guard" not in plain_node
+
+    bare_ast = parse_sysml_antlr(
+        "action def D { action focus; action shoot; "
+        "first focus if focus.image.isWellFocused then shoot; }"
+    )
+    bare_node = bare_ast["children"][0]["children"][-1]
+    assert bare_node == {
+        "type": "first_stmt",
+        "name": "focus",
+        "guard": {"type": "name_ref", "reference": "focus.image.isWellFocused"},
+        "thenTarget": "shoot",
+    }
+
+    visibility_ast = parse_sysml_antlr("action def D { action A3; private first A3; }")
+    visibility_node = visibility_ast["children"][0]["children"][-1]
+    assert visibility_node == {"type": "first_stmt", "name": "A3", "visibility": "private"}
+
+    plain_bare_ast = parse_sysml_antlr("action def D { action A3; first A3; }")
+    plain_bare_node = plain_bare_ast["children"][0]["children"][-1]
+    assert plain_bare_node == {"type": "first_stmt", "name": "A3"}
+
+
 def test_antlr_succession_flow_composite_form():
     """`succession flow onOffCmdFlow from sendOnOffCmd.onOffCmd to
     produceDirectedLight.onOffCmd;`（FlashlightExample.sysml）のような、

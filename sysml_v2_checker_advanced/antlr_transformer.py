@@ -1536,11 +1536,36 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "firstEnd": self.visit(ctx.firstEnd),
             "thenMultiplicity": self._multiplicity_dict(ctx.thenMult),
             "thenEnd": self.visit(ctx.thenEnd),
+            # `public succession S first A1 if x == 0 then A2;`のように、
+            # first側とthen側の間にガード付き継続条件を挟むこともある
+            # （2026-08-29、730件ベースライン154件エラー要因分析で発見）。
+            # 既存のexact-equality辞書テストを壊さないよう、無い場合は
+            # キー自体を省略する。
+            **({"guard": self.visit(ctx.guard)} if ctx.guard is not None else {}),
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 
     def visitBareFirstStmt(self, ctx: SysMLMinParser.BareFirstStmtContext) -> Dict:
-        return {"type": "first_stmt", "name": _qualified_name_text(ctx.target)}
+        # `first focus if focus.image.isWellFocused then shoot;`のように、
+        # `first <name>`直後にガード付き継続節`if <cond> then <target>`が
+        # 直接続くこともある（2026-08-29、730件ベースライン154件エラー
+        # 要因分析で発見）。既存のexact-equality辞書テストを壊さないよう、
+        # 無い場合はキー自体を省略する。
+        visibility_ctx = ctx.visibilityIndicator()
+        return {
+            "type": "first_stmt",
+            "name": _qualified_name_text(ctx.target),
+            **(
+                {"guard": self.visit(ctx.guard), "thenTarget": _qualified_name_text(ctx.thenTarget)}
+                if ctx.guard is not None
+                else {}
+            ),
+            # `private first A3;`（DecisionTest.sysml）のように、
+            # visibilityIndicatorを伴うこともある（2026-08-29、連鎖的に
+            # 発見）。既存のexact-equality辞書テストを壊さないよう、無い
+            # 場合はキー自体を省略する。
+            **({"visibility": visibility_ctx.getText()} if visibility_ctx is not None else {}),
+        }
 
     def visitBareThenStmt(self, ctx: SysMLMinParser.BareThenStmtContext) -> Dict:
         return {"type": "then_stmt", "name": _qualified_name_text(ctx.target)}

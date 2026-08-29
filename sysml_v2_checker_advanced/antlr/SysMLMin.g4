@@ -2657,9 +2657,14 @@ successionStmt
 // 名前の後に型節（`: AB`）を置くこともある（従来この代替は型節を
 // 一切持たなかった。2026-08-29、
 // add_connectionendmember_leading_multiplicity対応中に連鎖的に発見）。
+// `public succession S first A1 if x == 0 then A2;`（DecisionTest.sysml）の
+// ように、`first`側と`then`側の間にガード付き継続条件`if <cond>`を
+// 挟むこともある（bareFirstStmtのguardedFirstThenと同じ理由。2026-08-29、
+// 730件ベースライン154件エラー要因分析で発見）。
 successionUsage
     : visibilityIndicator? 'succession' simpleName? (':' typeRef=ID)? multiplicitySpec?
       'first' firstMult=multiplicitySpec? firstEnd=connectorEnd
+      ('if' guard=expression)?
       'then' thenMult=multiplicitySpec? thenEnd=connectorEnd
       ( '{' partBodyElement* '}' | ';' )                                # successionUsageFirstThen
     // `succession flow x.p to a1.aa.receiver;`（PartTest.sysml）のように、
@@ -2681,8 +2686,16 @@ successionUsage
 // （`first start; then fork1; then X;`は「start→fork1」「fork1→X」という
 // 連鎖の意図だが、構文上は3つの独立した文で、連鎖の意味解釈はlinter.py側
 // の仕事であり本パーサーの範囲外）。
+// `first focus if focus.image.isWellFocused then shoot;`（Conditional
+// Succession Example-1.sysml）のように、`first <name>`直後に区切りの`;`を
+// 挟まず、ガード付き継続節`if <cond> then <target>`を直接続けることも
+// ある（従来この代替は無く、`first A;`単体形のみ受理していた。
+// 2026-08-29、730件ベースライン154件エラー要因分析で発見）。
+// `private first A3;`（DecisionTest.sysml）のように、visibilityIndicator
+// （private/public/protected）を伴うこともある（同ファイル内で連鎖的に
+// 発見）。
 bareFirstStmt
-    : 'first' target=qualifiedName ';'
+    : visibilityIndicator? 'first' target=qualifiedName ('if' guard=expression 'then' thenTarget=qualifiedName)? ';'
     ;
 
 bareThenStmt
