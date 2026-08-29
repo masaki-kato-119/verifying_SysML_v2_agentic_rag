@@ -5901,6 +5901,18 @@ def test_antlr_actorusage_namespacepath_type():
     assert plain_node["type_name"] == "RoadUser"
 
 
+def test_antlr_actorusage_at_package_level():
+    """`actor Doctor;`（EIT_System_Use_Cases.sysml L4）のように、
+    actorUsageはpackage直下（packageBodyElement）にも直接書けることが
+    ある（従来はpartBodyElementにのみ登録済みで、package直下は構文
+    エラーになっていた。2026-08-29、add_bare_include_shorthand対応中に
+    連鎖的に発見）。"""
+    ast = parse_sysml_antlr("package P { actor Doctor; }")
+    node = ast["children"][0]
+    assert node["type"] == "actor_usage"
+    assert node["name"] == "Doctor"
+
+
 def test_antlr_then_prefix_usecaseusage():
     """`then use case 'drive vehicle' { ... }`（Use Case Usage Example.sysml）
     のように、useCaseUsage自体に`then`前置が無かった（includeUseCaseUsage

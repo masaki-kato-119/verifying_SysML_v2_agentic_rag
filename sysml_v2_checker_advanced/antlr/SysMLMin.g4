@@ -127,6 +127,12 @@ packageBodyElement
     // （2026-08-28、730件回帰チェックで発見。これまでpartBodyElement内にしか
     // 登録されておらず、package直下では構文エラーになっていた）。
     | featureUsage
+    // `actor Doctor;`（EIT_System_Use_Cases.sysml）のように、actorUsageは
+    // package直下にも直接書けることがある（partBodyElement側のコメントで
+    // 「常に他のcase/analysis/requirement等定義の本体内にネストして使われ、
+    // 公式コーパスに例外なし」としていたが、この反例が見つかった。
+    // 2026-08-29、add_bare_include_shorthand対応中に連鎖的に発見）。
+    | actorUsage
     ;
 
 // --- dependency (8.2.2.3) ------------------------------------------------------
