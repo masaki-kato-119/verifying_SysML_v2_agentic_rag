@@ -2461,8 +2461,18 @@ initialTransitionMember
 // （The-SysMLv2-Book-DroneSystemModel-Example.sysml）のように、他のusage
 // 系規則と同じ`ref`修飾子が付きうる（2026-08-28、コーパス全体1件のみだが
 // 公式の書籍例で確認）。
+// `binding ab bind a = b;`・`binding ab1 : AB bind a = b;`
+// （ConnectionTest.sysml）のように、`'binding'`キーワード自体が明示的に
+// 付き、その後に実際の名前（+任意で型節）が続く形もある。従来
+// `simpleName?`は「常に'binding'という文字列そのものが名前」という
+// 前提（上記コメントの51件、いずれも`binding [mult] bind ...`で名前が
+// 続かない）で設計されていたが、この反例により`'binding'`キーワード
+// 自体を明示的な予約語として切り出す必要がある（切り出した後もキーワード
+// のみで名前が続かない51件の既存形は、キーワード+名前省略として引き続き
+// 正しく解釈できる）。2026-08-29、
+// add_connectionendmember_leading_multiplicity対応中に連鎖的に発見。
 bindingConnector
-    : isRef='ref'? simpleName? connMult=multiplicitySpec? 'bind'
+    : isRef='ref'? 'binding'? simpleName? (':' typeRef=ID)? connMult=multiplicitySpec? 'bind'
       leftMult=multiplicitySpec? leftEnd=connectorEndPath '='
       rightMult=multiplicitySpec? rightEnd=connectorEndPath
       ( '{' partBodyElement* '}' | ';' )

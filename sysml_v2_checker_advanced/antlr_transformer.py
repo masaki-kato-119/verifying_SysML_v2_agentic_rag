@@ -1396,9 +1396,13 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
     def visitBindingConnector(self, ctx: SysMLMinParser.BindingConnectorContext) -> Dict:
         # `binding [1] bind [0..*] base.edges = [0..*] be;`のように、名前・
         # コネクタ自体の多重度・各end側の多重度・bodyを持つ。
+        # `binding ab1 : AB bind a = b;`のように、`'binding'`キーワード付き
+        # 名前の後に型節を伴うこともある（2026-08-29、連鎖的に発見）。
+        type_ctx = ctx.typeRef
         return {
             "type": "binding_connector",
             "name": _optional_simple_name_text(ctx.simpleName()),
+            "type_name": type_ctx.text if type_ctx is not None else None,
             "multiplicity": self._multiplicity_dict(ctx.connMult),
             # `ref bind chargePort = battery.chargeInPort;`のような`ref`
             # 修飾子（2026-08-28、公式の書籍例で発見）。

@@ -2640,18 +2640,25 @@ def test_antlr_allocationusage_nary_allocate_form():
 def test_antlr_named_multiplicity_binding_connector():
     """d74_named_multiplicity_binding_connector_missing: ShapeItems.sysmlの
     `binding [1] bind [0..*] base.edges = [0..*] be;`（公式コーパス
-    全体で51件）のように、名前付き(常に`binding`固定)+自体の多重度
-    (常に`[1]`固定)+各end側の多重度を伴うbindingConnector形が一切
+    全体で51件）のように、`'binding'`キーワード（自体の多重度`[1]`を
+    伴う。名前は無し）+各end側の多重度を伴うbindingConnector形が一切
     未対応だった。既存の裸形（`bind a = b;`・body付き`bind a = b {
     ... }`）との共存も確認する。d99でleftEnd/rightEndの型を
     `connectorEnd`から`connectorEndPath`へ差し替えたため、出力は
-    区切り文字を常に`::`へ正規化する（d81の既存方針）。"""
+    区切り文字を常に`::`へ正規化する（d81の既存方針）。
+    2026-08-29、add_connectionendmember_leading_multiplicity対応中に
+    連鎖的に発見した`binding NAME bind ...;`（名前が'binding'とは別に
+    存在する形）への対応時に、従来`simpleName`が「常に'binding'という
+    文字列そのもの」という誤った前提だったことが判明し、`'binding'`を
+    独立した予約語として切り出した。それに伴い、この51件の形は名前が
+    無い（`name is None`）ものとして正しく解釈されるようになった
+    （従来は`name == "binding"`という誤った値を返していた）。"""
     named_ast = parse_sysml_antlr(
         "part def P { binding [1] bind [0..*] base.edges = [0..*] be; }"
     )
     named_node = named_ast["children"][0]["children"][0]
     assert named_node["type"] == "binding_connector"
-    assert named_node["name"] == "binding"
+    assert named_node["name"] is None
     assert named_node["multiplicity"]["size"] == {"min": 1, "max": 1}
     assert named_node["leftMultiplicity"]["size"] == {"min": 0, "max": "*"}
     assert named_node["leftEnd"]["reference"] == "base::edges"
@@ -2671,6 +2678,32 @@ def test_antlr_named_multiplicity_binding_connector():
     assert body_node["type"] == "binding_connector"
     assert len(body_node["children"]) == 1
     assert body_node["children"][0]["type"] == "documentation"
+
+
+def test_antlr_bindingconnector_named_binding_keyword_form():
+    """`binding ab bind a = b;`・`binding ab1 : AB bind a = b;`
+    （ConnectionTest.sysml L23-24）のように、bindingConnectorには
+    `'binding'`キーワード付きの名前付き（+任意で型節）形がある（従来
+    `simpleName?`は「常に'binding'という文字列そのものが名前」という
+    前提で設計されており、実際の別名が続く形を受理できなかった）。
+    2026-08-29、add_connectionendmember_leading_multiplicity対応中に
+    連鎖的に発見。"""
+    named_ast = parse_sysml_antlr(
+        "part def P { part a; part b; binding ab bind a = b; }"
+    )
+    named_node = named_ast["children"][0]["children"][-1]
+    assert named_node["type"] == "binding_connector"
+    assert named_node["name"] == "ab"
+    assert named_node["type_name"] is None
+    assert named_node["leftEnd"]["reference"] == "a"
+    assert named_node["rightEnd"]["reference"] == "b"
+
+    typed_ast = parse_sysml_antlr(
+        "part def P { part a; part b; binding ab1 : AB bind a = b; }"
+    )
+    typed_node = typed_ast["children"][0]["children"][-1]
+    assert typed_node["name"] == "ab1"
+    assert typed_node["type_name"] == "AB"
 
 
 def test_antlr_binding_connector_ref_modifier():
