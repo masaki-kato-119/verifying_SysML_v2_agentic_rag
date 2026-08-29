@@ -5583,6 +5583,30 @@ def test_antlr_event_usage_occurrence_keyword_omission():
     assert bare_node["redefines"] == []
 
 
+def test_antlr_event_occurrence_usage_dotted_name_and_multiplicity_before_redefine():
+    """`event producerBehavior.publish[1] :>> publish_source_event;`
+    （ServerSequenceOutsideRealization-3.sysml L127）のように、名前スロッ
+    トがドット区切りのフィーチャーチェーンパス（`producerBehavior.publish`）
+    を取る形が未対応だった（従来は単一`simpleName`のみ）。同じ行で多重度
+    `[1]`がredefine節`:>>`より先に置かれる語順（従来の規則はredefine節を
+    多重度より先に置く順序のみ対応）も併せて確認する。2026-08-29、
+    add_flowusage_named_bare_from_to_form対応中に連鎖的に発見。"""
+    ast = parse_sysml_antlr(
+        "action def A { event producerBehavior.publish[1] :>> publish_source_event; }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "event_occurrence_usage"
+    assert node["name"] == "producerBehavior.publish"
+    assert node["redefines"] == [
+        {"kind": "redefines", "target": "publish_source_event"}
+    ]
+
+    # 既存の単純名（ドット無し）が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr("event occurrence A;")
+    plain_node = plain_ast["children"][0]
+    assert plain_node["name"] == "A"
+
+
 def test_antlr_exhibitstateusagestmt_state_keyword_omission():
     """`exhibit vehicleStates { ... }`（State Exhibition Example.sysml）の
     ように、exhibitStateUsageStmtの`state`キーワードが省略できなかった

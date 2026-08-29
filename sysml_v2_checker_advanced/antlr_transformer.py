@@ -2709,7 +2709,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
         return {
             "type": "event_occurrence_usage",
-            "name": _optional_simple_name_text(ctx.simpleName()),
+            "name": _optional_qualified_name_text(ctx.qualifiedName()),
             "direction": direction_ctx.getText() if direction_ctx is not None else None,
             "type_name": _namespace_path_text(type_ctx) if type_ctx is not None else None,
             "defaultValue": self.visit(ctx.defaultValue) if ctx.defaultValue is not None else None,

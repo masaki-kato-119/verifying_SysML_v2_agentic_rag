@@ -177,10 +177,19 @@ dependencyStmt
 // `:>>`redefine節（値束縛リデファイン文と同型）と`=`値代入を同時に
 // 持つ形もあるため、redefine節・`=`値代入も併せて追加する
 // （2026-08-29、235件パース失敗の要因分析で発見）。
+// `event producerBehavior.publish[1] :>> publish_source_event;`
+// （ServerSequenceOutsideRealization-3.sysml）のように、名前スロットが
+// ドット区切りのフィーチャーチェーンパスを取ることがある（従来は単一
+// `simpleName`のみで、connect/flow等と同じ`qualifiedName`に揃える。
+// 2026-08-29、add_flowusage_named_bare_from_to_form対応中に連鎖的に発見）。
+// 同じ行で多重度`[1]`がredefine節`:>>`より先に置かれる（従来の規則は
+// redefine節を多重度より先に置く順序のみ対応しており、この語順を
+// 受理できなかった。名前のドット区切り対応と同時に発見した同一構文の
+// 語順ギャップのためこのタスクでまとめて対応する）。
 eventOccurrenceUsageStmt
-    : isThen='then'? direction? 'event' 'occurrence'? simpleName?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+    : isThen='then'? direction? 'event' 'occurrence'? qualifiedName?
       multiplicitySpec?
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       (':' namespacePath)?
       ( 'default' defaultValue=expression | '=' value=expression )?
       ( '{' partBodyElement* '}' | ';' )
