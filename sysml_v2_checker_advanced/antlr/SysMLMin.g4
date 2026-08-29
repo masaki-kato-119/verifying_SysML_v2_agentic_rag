@@ -986,16 +986,31 @@ connectionBodyElement
 // 同時に持つことがある（従来この2つは互いに排他的な代替として扱って
 // いたため未対応だった。directKindをpostKind節の後に続く任意節として
 // 統合する。2026-08-29、235件パース失敗の要因分析で発見）。
+// `end [1] item a : A { ... }`（ConnectionTest.sysml）のように、
+// `endName`を伴わずに多重度`[1]`だけが`'end'`直後・kindキーワードの
+// 前に現れることもある（従来`endMult`は`endName`とのペアでしか現れ
+// られなかった。2026-08-29、add_flow_end_member_triple_colon_gt_
+// operator対応中に連鎖的に発見）。
+// `end [1] part producer : PowerProducer;`（The-SysMLv2-Book-
+// DroneSystemModel-Example.sysml、Connections Example.sysml）のように、
+// kindキーワードは`occurrence`/`port`/`item`だけでなく`part`も取りうる
+// （leading multiplicity対応と同時に発見した同一行パターン）。
 connectionEndMember
     : 'end' prefixMetadataAnnotation*
-      (endName=simpleName endMult=multiplicitySpec?)?
-      kind=('occurrence' | 'port' | 'item')?
+      endName=simpleName? endMult=multiplicitySpec?
+      kind=('occurrence' | 'port' | 'item' | 'part')?
       isRef='ref'?
       innerName=simpleName?
       (':' conjugated='~'? ID)?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       (directKind=('::>' | 'references') directTarget=namespacePath)?
+      // `end ref end1 ::> d1 :> q;`（ConnectionTest.sysml L53）のように、
+      // `::>`直接参照の後にさらに`:>`subsets節が続くこともある（従来
+      // postKind*はdirectKind節より前にしか置けなかった。同じ行で
+      // 連鎖的に発見）。同じラベルに追記するだけなので既存の前置postKind
+      // と合算されて`redefines`に反映される。
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )
     ;
 

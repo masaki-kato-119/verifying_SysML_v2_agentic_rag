@@ -6129,6 +6129,61 @@ def test_antlr_connectionendmember_redefine_and_direct_reference_combined():
     assert named_node["reference"] is None
 
 
+def test_antlr_connectionendmember_leading_multiplicity_and_trailing_postkind():
+    """`end [1] item a : A { ... }`・`end ref end1 ::> d1 :> q;`
+    （ConnectionTest.sysml L68, L53）のように、connectionEndMemberでは
+    (1) `endName`を伴わずに多重度`[1]`だけが`'end'`直後・kindキーワード
+    （`item`）の前に現れることがある（従来`endMult`は`endName`との
+    ペアでしか現れられなかった）。(2) `::>`直接参照の後にさらに`:>`
+    subsets節が続くこともある（従来postKind*はdirectKind節より前にしか
+    置けなかった）。2026-08-29、
+    add_flow_end_member_triple_colon_gt_operator対応中に連鎖的に発見。"""
+    leading_mult_ast = parse_sysml_antlr(
+        "connection def C { end [1] item a : A { } }"
+    )
+    leading_mult_node = leading_mult_ast["children"][0]["children"][0]
+    assert leading_mult_node["type"] == "connection_end_member"
+    assert leading_mult_node["endName"] is None
+    assert leading_mult_node["endMultiplicity"] == {
+        "size": {"min": 1, "max": 1}, "is_ordered": False, "is_unique": True
+    }
+    assert leading_mult_node["kind"] == "item"
+    assert leading_mult_node["name"] == "a"
+    assert leading_mult_node["type_name"] == "A"
+
+    # `end [1] part producer : PowerProducer;`（The-SysMLv2-Book-
+    # DroneSystemModel-Example.sysml、Connections Example.sysml）のように、
+    # kindキーワードは`occurrence`/`port`/`item`だけでなく`part`も取りうる
+    # （leading multiplicity対応と同時に発見した同一行パターン）。
+    part_kind_ast = parse_sysml_antlr(
+        "connection def C { end [1] part producer : PowerProducer; }"
+    )
+    part_kind_node = part_kind_ast["children"][0]["children"][0]
+    assert part_kind_node["kind"] == "part"
+    assert part_kind_node["name"] == "producer"
+    assert part_kind_node["type_name"] == "PowerProducer"
+
+    trailing_postkind_ast = parse_sysml_antlr(
+        "connection { part q; end ref end1 ::> d1 :> q; }"
+    )
+    trailing_postkind_node = trailing_postkind_ast["children"][0]["children"][-1]
+    assert trailing_postkind_node["type"] == "connection_end_member"
+    assert trailing_postkind_node["reference"] == "d1"
+    assert trailing_postkind_node["redefines"] == [
+        {"kind": "subsets", "target": "q"}
+    ]
+
+    # 既存のendName+endMultペア形が引き続き機能することを確認する。
+    paired_ast = parse_sysml_antlr(
+        "connection def C { end theCauses [*] occurrence theCause; }"
+    )
+    paired_node = paired_ast["children"][0]["children"][0]
+    assert paired_node["endName"] == "theCauses"
+    assert paired_node["endMultiplicity"] == {
+        "size": {"min": "*", "max": "*"}, "is_ordered": False, "is_unique": True
+    }
+
+
 def test_antlr_flowusage_named_bare_from_to_form():
     """`flow publish_request from producerBehavior.publish.request to
     publicationPort.publish { attribute :>> isInstant = true; }`
