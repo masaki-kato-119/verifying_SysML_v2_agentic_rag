@@ -1075,11 +1075,49 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
 
     def visitIfActionStmt(self, ctx: SysMLMinParser.IfActionStmtContext) -> Dict:
         has_else = any(child.getText() == "else" for child in ctx.getChildren())
+        # `else if ...`のelse-if連鎖の場合、`elseElement`は空でネストした
+        # `elseIf`（ifActionStmt自体）が代わりに埋まる。単一要素の"else"
+        # リストとして表現する（2026-08-29、連鎖的に発見）。
+        if ctx.elseIf is not None:
+            else_body = [self.visit(ctx.elseIf)]
+        elif has_else:
+            else_body = [self.visit(el) for el in ctx.elseElement]
+        else:
+            else_body = None
         return {
             "type": "if_stmt",
             "condition": self.visit(ctx.condition),
             "then": [self.visit(el) for el in ctx.thenElement],
-            "else": [self.visit(el) for el in ctx.elseElement] if has_else else None,
+            "else": else_body,
+            **({"isThen": True} if ctx.isThen is not None else {}),
+        }
+
+    def visitForLoopActionStmt(self, ctx: SysMLMinParser.ForLoopActionStmtContext) -> Dict:
+        # `for n : ScalarValues::Integer in (1, 2, 3) { ... }`のように、
+        # ループ変数名・任意の型節・反復対象式・bodyを持つfor-loop
+        # アクション（2026-08-29、連鎖的に発見）。
+        type_ctx = ctx.typeRef
+        return {
+            "type": "for_loop_stmt",
+            "name": _simple_name_text(ctx.loopVar),
+            "type_name": _namespace_path_text(type_ctx) if type_ctx is not None else None,
+            "iterable": self.visit(ctx.iterable),
+            "children": [self.visit(el) for el in ctx.actionBodyElement()],
+            **({"isThen": True} if ctx.isThen is not None else {}),
+        }
+
+    def visitLoopActionStmt(self, ctx: SysMLMinParser.LoopActionStmtContext) -> Dict:
+        # `then while i > 0 { ... }`・`loop { ... } until b;`のように、
+        # `action`キーワード・名前を伴わない匿名のwhile/loopアクション
+        # （2026-08-29、連鎖的に発見）。
+        is_while = ctx.guard is not None
+        return {
+            "type": "loop_stmt",
+            "kind": "while" if is_while else "loop",
+            "guard": self.visit(ctx.guard) if ctx.guard is not None else None,
+            "untilGuard": self.visit(ctx.untilGuard) if ctx.untilGuard is not None else None,
+            "children": [self.visit(el) for el in ctx.actionBodyElement()],
+            **({"isThen": True} if ctx.isThen is not None else {}),
         }
 
     def visitActionUsageStmt(self, ctx: SysMLMinParser.ActionUsageStmtContext) -> Dict:
@@ -1117,6 +1155,15 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             # という`=`値代入。
             "value": self.visit(ctx.value) if ctx.value is not None else None,
             "guard": self.visit(ctx.guard) if ctx.guard is not None else None,
+            # `then action aLoop while i > 0 { ... } until b;`のように、
+            # body直後に継続条件`until <cond>`を持つこともある
+            # （2026-08-29、連鎖的に発見）。既存のexact-equality辞書
+            # テストを壊さないよう、無い場合はキー自体を省略する。
+            **({"untilGuard": self.visit(ctx.untilGuard)} if ctx.untilGuard is not None else {}),
+            # `loop action charging { ... } until ...;`のように、named
+            # action usage自体に`loop`前置修飾子が付くこともある
+            # （2026-08-29、連鎖的に発見）。
+            **({"isLoop": True} if ctx.isLoop is not None else {}),
             "isAbstract": ctx.isAbstract is not None,
             "isRef": ctx.isRef is not None,
             # `individual action a : AP1;`のようなプレフィックス修飾子
@@ -2211,6 +2258,16 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
     def visitRangeExpr(self, ctx: SysMLMinParser.RangeExprContext) -> Dict:
         # `(1..size(seq))`という範囲式（KerMLのRangeExpression、
         # `multiplicityBracket`の`..`とは別）。
+        return {
+            "type": "range_expr",
+            "lower": self.visit(ctx.lower),
+            "upper": self.visit(ctx.upper),
+            "children": [],
+        }
+
+    def visitBareRangeExpr(self, ctx: SysMLMinParser.BareRangeExprContext) -> Dict:
+        # `for i in 1..powerProfile->size()-1 { ... }`のように、括弧無しの
+        # 裸の範囲式もある。`rangeExpr`と同型（2026-08-29、連鎖的に発見）。
         return {
             "type": "range_expr",
             "lower": self.visit(ctx.lower),

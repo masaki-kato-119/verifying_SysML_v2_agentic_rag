@@ -484,6 +484,16 @@ class SysMLMinVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by SysMLMinParser#forLoopActionStmt.
+    def visitForLoopActionStmt(self, ctx:SysMLMinParser.ForLoopActionStmtContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by SysMLMinParser#loopActionStmt.
+    def visitLoopActionStmt(self, ctx:SysMLMinParser.LoopActionStmtContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by SysMLMinParser#actionParameter.
     def visitActionParameter(self, ctx:SysMLMinParser.ActionParameterContext):
         return self.visitChildren(ctx)
@@ -751,6 +761,11 @@ class SysMLMinVisitor(ParseTreeVisitor):
 
     # Visit a parse tree produced by SysMLMinParser#logicalAndExpr.
     def visitLogicalAndExpr(self, ctx:SysMLMinParser.LogicalAndExprContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by SysMLMinParser#bareRangeExpr.
+    def visitBareRangeExpr(self, ctx:SysMLMinParser.BareRangeExprContext):
         return self.visitChildren(ctx)
 
 

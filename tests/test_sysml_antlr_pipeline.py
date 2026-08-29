@@ -1150,6 +1150,145 @@ def test_antlr_if_without_else_has_none_else():
     assert if_stmt["else"] is None
 
 
+def test_antlr_ifactionstmt_else_if_chain_and_then_prefix():
+    """`if i < 0 { ... } else if i == 0 { ... } else { ... }`
+    （StructuredControlTest.sysml L9-13）のように、`else`直後に別の`if`を
+    続けるelse-if連鎖が未対応だった（従来elseElementは波括弧本体のみ）。
+    `then if monitor.charge < 100 { ... }`（Control Structures
+    Example.sysml L19）のように、先頭に裸`then`を持つこともある。
+    2026-08-29、730件ベースラインの154件エラー要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "action { if i < 0 { assign i := 0; } else if i == 0 "
+        "{ assign i := 1; } else { assign i := i + 1; } }"
+    )
+    outer_if = ast["children"][0]["children"][0]
+    assert outer_if["type"] == "if_stmt"
+    nested_if = outer_if["else"][0]
+    assert nested_if["type"] == "if_stmt"
+    assert nested_if["condition"]["op"] == "=="
+    assert nested_if["else"] == [
+        {"type": "assignment_stmt", "name": "i", "operator": ":=", "value": {
+            "type": "binary_expr", "op": "+",
+            "left": {"type": "name_ref", "reference": "i"},
+            "right": {"type": "literal", "literal_type": "int", "value": 1},
+        }}
+    ]
+
+    then_ast = parse_sysml_antlr("action { assign i := 0; then if i > 0 { assign i := 1; } }")
+    then_if = then_ast["children"][0]["children"][-1]
+    assert then_if["type"] == "if_stmt"
+    assert then_if["isThen"] is True
+
+
+def test_antlr_actionusagestmt_until_clause_and_loop_prefix():
+    """`then action aLoop while i > 0 { assign i := i - 1; } until b;`
+    （StructuredControlTest.sysml L19-22）のように、named action usageの
+    bodyの直後に継続条件`until <cond>`を持つことがある（従来この節が
+    無かった）。`loop action charging { ... } until ...;`（Control
+    Structures Example.sysml L14-24）のように、named action usage自体に
+    `loop`前置修飾子が付くこともある。2026-08-29、730件ベースラインの
+    154件エラー要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "action { then action aLoop while i > 0 { assign i := i - 1; } until b; }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "action_usage"
+    assert node["name"] == "aLoop"
+    assert node["guard"] == {"type": "binary_expr", "op": ">", "left": {"type": "name_ref", "reference": "i"}, "right": {"type": "literal", "literal_type": "int", "value": 0}}
+    assert node["untilGuard"] == {"type": "name_ref", "reference": "b"}
+    assert node["isThen"] is True
+
+    loop_ast = parse_sysml_antlr(
+        "action { loop action charging { assign i := i - 1; } until b; }"
+    )
+    loop_node = loop_ast["children"][0]["children"][0]
+    assert loop_node["type"] == "action_usage"
+    assert loop_node["name"] == "charging"
+    assert loop_node["isLoop"] is True
+    assert loop_node["untilGuard"] == {"type": "name_ref", "reference": "b"}
+
+    # 既存のwhileガードのみ（untilもloopも無い）形が引き続き機能し、
+    # 各キー自体が無いことを確認する（回帰防止）。
+    plain_ast = parse_sysml_antlr("action { action aLoop while i > 0 { assign i := i - 1; } }")
+    plain_node = plain_ast["children"][0]["children"][0]
+    assert "untilGuard" not in plain_node
+    assert "isLoop" not in plain_node
+
+
+def test_antlr_anonymous_while_and_loop_action_stmt():
+    """`then while i > 0 { assign i := i - 1; }`・`loop { assign i := i -
+    1; } until b;`（StructuredControlTest.sysml L24-30）のように、
+    `action`キーワード・名前を一切伴わない匿名のwhile/loopアクションが
+    未対応だった。2026-08-29、730件ベースラインの154件エラー要因分析で
+    発見。"""
+    while_ast = parse_sysml_antlr(
+        "action { then while i > 0 { assign i := i - 1; } }"
+    )
+    while_node = while_ast["children"][0]["children"][0]
+    assert while_node["type"] == "loop_stmt"
+    assert while_node["kind"] == "while"
+    assert while_node["guard"] == {"type": "binary_expr", "op": ">", "left": {"type": "name_ref", "reference": "i"}, "right": {"type": "literal", "literal_type": "int", "value": 0}}
+    assert while_node["untilGuard"] is None
+    assert while_node["isThen"] is True
+
+    loop_ast = parse_sysml_antlr("action { loop { assign i := i - 1; } until b; }")
+    loop_node = loop_ast["children"][0]["children"][0]
+    assert loop_node["type"] == "loop_stmt"
+    assert loop_node["kind"] == "loop"
+    assert loop_node["guard"] is None
+    assert loop_node["untilGuard"] == {"type": "name_ref", "reference": "b"}
+    assert "isThen" not in loop_node
+
+
+def test_antlr_forloop_action_stmt_and_bare_range_expression():
+    """`for n : ScalarValues::Integer in (1, 2, 3) { assign i := i * n; }`
+    （StructuredControlTest.sysml L32-34）のように、for-loopアクションが
+    一切未対応だった。`for i in 1..powerProfile->size()-1 { ... }`
+    （10d-Dynamics Analysis.sysml L65、型節省略）のように、括弧無しの
+    裸の範囲式`a..b`も反復対象として使われる（既存の`(a..b)`という
+    括弧付きrangeExprとは別に、加減算より弱く結合する位置に追加した）。
+    2026-08-29、730件ベースラインの154件エラー要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "action { for n : ScalarValues::Integer in (1, 2, 3) "
+        "{ assign i := i * n; } }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "for_loop_stmt"
+    assert node["name"] == "n"
+    assert node["type_name"] == "ScalarValues::Integer"
+    assert node["iterable"]["type"] == "sequence"
+    assert len(node["iterable"]["elements"]) == 3
+    assert len(node["children"]) == 1
+
+    # 型節省略形が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr("action { for vehiclePower in powerProfile { assign i := i - 1; } }")
+    plain_node = plain_ast["children"][0]["children"][0]
+    assert plain_node["type"] == "for_loop_stmt"
+    assert plain_node["name"] == "vehiclePower"
+    assert plain_node["type_name"] is None
+
+    # 括弧無しの裸の範囲式が反復対象として使われることを確認する。
+    range_ast = parse_sysml_antlr("action { for i in 1..n-1 { assign i := i - 1; } }")
+    range_node = range_ast["children"][0]["children"][0]
+    assert range_node["iterable"]["type"] == "range_expr"
+    assert range_node["iterable"]["lower"] == {"type": "literal", "literal_type": "int", "value": 1}
+    assert range_node["iterable"]["upper"] == {
+        "type": "binary_expr", "op": "-",
+        "left": {"type": "name_ref", "reference": "n"},
+        "right": {"type": "literal", "literal_type": "int", "value": 1},
+    }
+
+    # 既存の括弧付きrangeExprが引き続き機能することを確認する。
+    paren_ast = parse_sysml_antlr("part def P { attribute a = (1..5); }")
+    paren_value = paren_ast["children"][0]["children"][-1]["value"]
+    assert paren_value == {
+        "type": "range_expr",
+        "lower": {"type": "literal", "literal_type": "int", "value": 1},
+        "upper": {"type": "literal", "literal_type": "int", "value": 5},
+        "children": [],
+    }
+
+
 def test_antlr_bare_guarded_target_succession_if_then_else():
     """d96_bare_guarded_target_succession_if_then_else_missing: 実モデル
     （adas-sysmlv2-main）のADAS.sysmlの`if '前方衝突を警告する'.'警告灯'

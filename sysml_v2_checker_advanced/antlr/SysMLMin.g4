@@ -1384,6 +1384,14 @@ partBodyElement
     | constraintDef
     | itemUsage
     | actionUsageStmt
+    // `for i in 1..powerProfile->size()-1 { ... }`（10d-Dynamics
+    // Analysis.sysml、analysis def本体内）のように、ifActionStmt・
+    // 匿名while/loopアクション・for-loopアクションもactionUsageStmtと
+    // 同様にanalysis/calc/constraint def等の本体（partBodyElement経由）
+    // にネストして使われる（2026-08-29、連鎖的に発見）。
+    | ifActionStmt
+    | loopActionStmt
+    | forLoopActionStmt
     // `subject`/`objective`/`actor`/`stakeholder`は常に別のcase/analysis/
     // requirement/objective/concern定義の本体内にネストして使われる
     // （公式コーパスに例外なし）ため、partBodyElementのみに登録する。
@@ -1990,7 +1998,29 @@ actionBodyElement
     | guardedTargetSuccessionStmt
     | defaultTargetSuccessionStmt
     | actionFlowStmt
+    // `then while i > 0 { ... }`・`loop { ... } until b;`
+    // （StructuredControlTest.sysml）のように、`action`キーワード・名前を
+    // 一切伴わない匿名のwhile/loopアクションがある（named action usage
+    // の`while`ガード・`until`節とは別の、より単純な短縮形。2026-08-29、
+    // 730件ベースラインの154件エラー要因分析で発見）。
+    | loopActionStmt
+    // `for n : ScalarValues::Integer in (1, 2, 3) { ... }`
+    // （StructuredControlTest.sysml）・`for vehiclePower in powerProfile
+    // { ... }`（Assignment Example.sysml、型節省略）のように、for-loop
+    // アクションがある（従来は完全に未実装だった。2026-08-29、
+    // 730件ベースラインの154件エラー要因分析で発見）。
+    | forLoopActionStmt
     | partBodyElement
+    ;
+
+forLoopActionStmt
+    : isThen='then'? 'for' loopVar=simpleName (':' typeRef=namespacePath)? 'in' iterable=expression
+      '{' actionBodyElement* '}'
+    ;
+
+loopActionStmt
+    : isThen='then'? ( 'while' guard=expression | 'loop' ) '{' actionBodyElement* '}'
+      ( 'until' untilGuard=expression ';' )?
     ;
 
 // 公式コーパスには`in attribute domainValues [0..*];`・`in ref
@@ -2255,9 +2285,18 @@ messageUsage
 // --- if/else (Section 7.17 IfActionUsage) -------------------------------------
 // 参照: KerML.xtext / SysML.xtext の `IfActionUsage`。
 // bodyはactionBodyElementの反復を許可する（decision node等と同じ方針）。
+// `if i < 0 { ... } else if i == 0 { ... } else { ... }`
+// （StructuredControlTest.sysml）のように、`else`直後に別の`if`を続ける
+// else-if連鎖もある（従来elseElementは波括弧本体のみで、連鎖できな
+// かった。`elseIf`側でifActionStmt自体を再帰参照することで、追加の
+// 規則無しで任意段数の連鎖に対応する。2026-08-29、730件ベースラインの
+// 154件エラー要因分析で発見）。
+// `then if monitor.charge < 100 { ... }`（Control Structures Example.sysml）
+// のように、先頭に裸`then`を持つこともある（assignmentStmt/
+// performActionStmt等と同じ考え方。2026-08-29、連鎖的に発見）。
 ifActionStmt
-    : 'if' condition=expression '{' thenElement+=actionBodyElement* '}'
-      ( 'else' '{' elseElement+=actionBodyElement* '}' )?
+    : isThen='then'? 'if' condition=expression '{' thenElement+=actionBodyElement* '}'
+      ( 'else' ( elseIf=ifActionStmt | '{' elseElement+=actionBodyElement* '}' ) )?
     ;
 
 // `if '前方衝突を警告する'.'警告灯' then '前方衝突警告灯'::'警告灯を
@@ -2306,8 +2345,13 @@ defaultTargetSuccessionStmt
 // `variant action a1; variant action a2;`（VariabilityTest.sysml）のように、
 // Variability機能の先頭修飾子がここにも付く（partDefと同じ理由、
 // 2026-08-28）。
+// `loop action charging { ... } until charging.monitor.charge >= 100;`
+// （Control Structures Example.sysml）のように、named action usage
+// 自体に`loop`前置修飾子が付き、ループとして扱われることを示すことも
+// ある（body直後の`until`節は既存のuntilGuardで対応済み。2026-08-29、
+// 連鎖的に発見）。
 actionUsageStmt
-    : variability=('variation' | 'variant')? isThen='then'? visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? isRef='ref'? 'action' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
+    : variability=('variation' | 'variant')? isThen='then'? visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? isRef='ref'? isLoop='loop'? 'action' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       preMult=multiplicitySpec?
       // `action 'provide power': 'Provide Power'{ ... }`（3a-Function-based
@@ -2318,7 +2362,12 @@ actionUsageStmt
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ('=' value=expression)?
       ( 'while' guard=expression )?
-      ( '{' actionBodyElement* '}' | ';' )
+      // `then action aLoop while i > 0 { ... } until b;`
+      // （StructuredControlTest.sysml）のように、`while`ガード付きの
+      // named action usageは、body直後に継続条件`until <cond>`を
+      // 持つこともある（従来この節が無かった。2026-08-29、730件
+      // ベースラインの154件エラー要因分析で発見）。
+      ( '{' actionBodyElement* '}' ( 'until' untilGuard=expression ';' )? | ';' )
     ;
 
 // --- フェーズ2: requirement の doc (8.2.2.21) -------------------------------
@@ -2749,6 +2798,13 @@ expression
     | expression op='^' expression                              # powerExpr
     | expression op=('*'|'/') expression                       # mulDivExpr
     | expression op=('+'|'-') expression                       # addSubExpr
+    // `for i in 1..powerProfile->size()-1 { ... }`（10d-Dynamics
+    // Analysis.sysml）のように、括弧無しの裸の範囲式`a..b`もある
+    // （既存の`(a..b)`という括弧付き`rangeExpr`とは別に、加減算より弱く
+    // 結合する位置に置くことで、右辺の`->size()-1`が先に`..`より強く
+    // 結合してから範囲式全体を構成できるようにする。2026-08-29、
+    // 連鎖的に発見）。
+    | lower=expression '..' upper=expression                   # bareRangeExpr
     // `0 [m]`・`273.15 [K]`・`229835/900 [K]`（ShapeItems.sysml/SI.sysml/
     // USCustomaryUnits.sysml、4件）のように、数値リテラル（または算術式）に
     // 単位を角括弧で付与するquantity literal記法を持つ。単位は算術演算の
