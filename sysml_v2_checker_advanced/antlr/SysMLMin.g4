@@ -524,6 +524,18 @@ includeUseCaseUsage
       ( '{' partBodyElement* '}' | ';' )
     ;
 
+// `include uc2;`・`include system.uc1;`（UseCaseTest.sysml）・
+// `include 'add fuel'[0..*] { ... }`（Use Case Usage Example.sysml）の
+// ように、`use case`キーワードを完全に省略した裸の`include`短縮形も
+// ある（includeUseCaseUsageとは別の、より簡略な代替形。2026-08-29、
+// 235件パース失敗の要因分析で発見）。
+// `then include 'enter vehicle' { ... }`（18-Use Case.sysml）のように、
+// includeUseCaseUsageと同様`then`前置も持ちうる（2026-08-29、235件パース
+// 失敗の要因分析で発見）。
+bareIncludeStmt
+    : isThen='then'? 'include' ref=namespacePath multiplicitySpec? ( '{' partBodyElement* '}' | ';' )
+    ;
+
 // --- view / viewpoint / rendering (8.2.2.26) -----------------------------------
 // `view def <gv> GeneralView { ... }`のように、view defもShortName注釈を
 // 取りうる（公式コーパスで8件、`StandardViewDefinitions.sysml`）。
@@ -1395,6 +1407,10 @@ partBodyElement
     // packageBodyElementにしか登録されておらず未対応だった。2026-08-29、
     // 235件パース失敗の要因分析で発見）。
     | includeUseCaseUsage
+    // `include uc2;`（UseCaseTest.sysml）のように、`use case`キーワード
+    // を省略した裸のinclude短縮形もuse case def/usage本体（partBodyElement
+    // 経由）内に書ける（2026-08-29、235件パース失敗の要因分析で発見）。
+    | bareIncludeStmt
     // `frame concern ProfitabilityConcern;`（BusinessCaseOpsCon.sysml）・
     // `frame 'Reduce the number of special parts';`
     // （DontPanic-SysMLv2-Batmobile.sysml）のように、requirement/concern/

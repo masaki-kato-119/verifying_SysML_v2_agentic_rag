@@ -2751,6 +2751,22 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
         }
 
+    def visitBareIncludeStmt(self, ctx: SysMLMinParser.BareIncludeStmtContext) -> Dict:
+        # `include uc2;`・`include system.uc1;`（UseCaseTest.sysml）・
+        # `include 'add fuel'[0..*] { ... }`（Use Case Usage Example.sysml）
+        # のように、`use case`キーワードを完全に省略した裸のinclude短縮形
+        # （2026-08-29、235件パース失敗の要因分析で発見）。
+        return {
+            "type": "include_use_case_usage",
+            "name": _namespace_path_text(ctx.ref),
+            "type_name": None,
+            "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
+            "redefines": [],
+            "inheritance": None,
+            "children": [self.visit(el) for el in ctx.partBodyElement()],
+            **({"isThen": True} if ctx.isThen is not None else {}),
+        }
+
     def visitOccurrenceDef(self, ctx: SysMLMinParser.OccurrenceDefContext) -> Dict:
         children = [self.visit(el) for el in ctx.partBodyElement()]
         return {

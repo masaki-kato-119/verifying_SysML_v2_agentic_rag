@@ -169,6 +169,11 @@ class SysMLMinVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by SysMLMinParser#bareIncludeStmt.
+    def visitBareIncludeStmt(self, ctx:SysMLMinParser.BareIncludeStmtContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by SysMLMinParser#viewDef.
     def visitViewDef(self, ctx:SysMLMinParser.ViewDefContext):
         return self.visitChildren(ctx)

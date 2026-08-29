@@ -5814,3 +5814,36 @@ def test_antlr_then_prefix_usecaseusage():
     plain_node = plain_ast["children"][0]["children"][0]
     assert plain_node["type"] == "use_case_usage"
     assert "isThen" not in plain_node
+
+
+def test_antlr_bare_include_shorthand():
+    """`include uc2;`・`include system.uc1;`（UseCaseTest.sysml）・
+    `include 'add fuel'[0..*] { ... }`（Use Case Usage Example.sysml）・
+    `then include 'enter vehicle' { ... }`（18-Use Case.sysml）のように、
+    `use case`キーワードを完全に省略した裸のinclude短縮形が全く未実装
+    だった（`then`前置もincludeUseCaseUsageと同様に持ちうる）。
+    2026-08-29、235件パース失敗の要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "use case def X { include uc2; include system.uc1; }"
+    )
+    children = ast["children"][0]["children"]
+    assert children[0] == {
+        "type": "include_use_case_usage", "name": "uc2", "type_name": None,
+        "multiplicity": None, "redefines": [], "inheritance": None, "children": [],
+    }
+    assert children[1]["name"] == "system::uc1"
+
+    mult_ast = parse_sysml_antlr(
+        "use case def X { include 'add fuel'[0..*] { subject vehicle; } }"
+    )
+    mult_node = mult_ast["children"][0]["children"][0]
+    assert mult_node["name"] == "add fuel"
+    assert mult_node["multiplicity"]["size"] == {"min": 0, "max": "*"}
+    assert len(mult_node["children"]) == 1
+
+    then_ast = parse_sysml_antlr(
+        "use case def X { then include 'enter vehicle' { subject vehicle; } }"
+    )
+    then_node = then_ast["children"][0]["children"][0]
+    assert then_node["name"] == "enter vehicle"
+    assert then_node["isThen"] is True
