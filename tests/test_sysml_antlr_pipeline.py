@@ -5590,3 +5590,47 @@ def test_antlr_exhibitstateusagestmt_state_keyword_omission():
     assert keyworded_node["name"] == "vehicle states"
     assert keyworded_node["type_name"] == "Vehicle States"
     assert keyworded_node["redefines"] == []
+
+
+def test_antlr_then_prefix_include_use_case():
+    """`then include use case detectThreat : DetectThreat { ... }`
+    （UseCasesHull.sysml）のように、includeUseCaseUsageに`then`前置が
+    無かった（他の多くの規則（performActionStmt等）では既に対応済み）。
+    従来の規則自体も`'include' 'use' 'case' simpleName ';'`のみで型節・
+    多重度・redefine節・bodyすべて未対応かつpartBodyElementに未登録
+    だったため、useCaseUsageと同型のredefinition機能一式も併せて追加
+    する。既存の`include use case enterHome_a :> enterHome [1..5];`
+    （redefine節+多重度）が引き続き機能することも確認する。2026-08-29、
+    235件パース失敗の要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "use case def X { then include use case detectThreat : "
+        "DetectThreat { subject s; } }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "include_use_case_usage"
+    assert node["isThen"] is True
+    assert node["name"] == "detectThreat"
+    assert node["type_name"] == "DetectThreat"
+    assert len(node["children"]) == 1
+
+    redefine_ast = parse_sysml_antlr(
+        "use case def X { include use case enterHome_a :> enterHome [1..5]; }"
+    )
+    redefine_node = redefine_ast["children"][0]["children"][0]
+    assert redefine_node["type"] == "include_use_case_usage"
+    assert redefine_node.get("isThen") is None
+    assert redefine_node["redefines"] == [
+        {"kind": "subsets", "target": "enterHome"}
+    ]
+    assert redefine_node["multiplicity"] == {
+        "size": {"min": 1, "max": 5}, "is_ordered": False, "is_unique": True,
+    }
+
+    # 既存の裸形が引き続き機能することを確認する。
+    bare_ast = parse_sysml_antlr(
+        "use case def X { include use case startEngine; }"
+    )
+    bare_node = bare_ast["children"][0]["children"][0]
+    assert bare_node["type"] == "include_use_case_usage"
+    assert bare_node["name"] == "startEngine"
+    assert bare_node["type_name"] is None

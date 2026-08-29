@@ -2386,11 +2386,23 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return self._usage_keyword_node("use_case_usage", ctx, ctx.partBodyElement())
 
     def visitIncludeUseCaseUsage(self, ctx: SysMLMinParser.IncludeUseCaseUsageContext) -> Dict:
+        # `then include use case detectThreat : DetectThreat { ... }`
+        # （UseCasesHull.sysml）のように、`then`前置・型節・多重度・
+        # redefine節・bodyを持ちうる（useCaseUsageと同型。2026-08-29、
+        # 235件パース失敗の要因分析で発見）。
+        typeref_ctx = ctx.typeRef
+        redefines = self._redefine_list_namespace(ctx.preKind, ctx.preTarget) + self._redefine_list_namespace(
+            ctx.postKind, ctx.postTarget
+        )
         return {
             "type": "include_use_case_usage",
-            "name": _simple_name_text(ctx.simpleName()),
+            "name": _optional_simple_name_text(ctx.simpleName()),
+            "type_name": _unquote_text(typeref_ctx.text) if typeref_ctx is not None else None,
+            "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
+            "redefines": redefines,
             "inheritance": None,
-            "children": [],
+            "children": [self.visit(el) for el in ctx.partBodyElement()],
+            **({"isThen": True} if ctx.isThen is not None else {}),
         }
 
     def visitViewDef(self, ctx: SysMLMinParser.ViewDefContext) -> Dict:

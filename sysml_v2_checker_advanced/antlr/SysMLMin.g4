@@ -504,8 +504,20 @@ useCaseUsage
       ( '{' partBodyElement* '}' | ';' )
     ;
 
+// `then include use case detectThreat : DetectThreat { ... }`
+// （UseCasesHull.sysml）のように、他の多くの規則（performActionStmt等）
+// と同様に`then`前置を持ちうる。`include use case uc1 : UC1;`（型節）・
+// `include use case uc2 { ... }`（body）・`include use case enterHome_a
+// :> enterHome [1..5];`（redefine節+多重度、useCaseUsageと同型の順序）
+// もあるため、useCaseUsageと同じredefinition機能一式を持たせる
+// （2026-08-29、235件パース失敗の要因分析で発見）。
 includeUseCaseUsage
-    : 'include' 'use' 'case' simpleName ';'
+    : isThen='then'? 'include' 'use' 'case' simpleName?
+      (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (':' typeRef=(ID | QUOTED_NAME))?
+      multiplicitySpec?
+      (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      ( '{' partBodyElement* '}' | ';' )
     ;
 
 // --- view / viewpoint / rendering (8.2.2.26) -----------------------------------
@@ -1356,6 +1368,12 @@ partBodyElement
     // 書ける（2026-08-29、235件パース失敗の要因分析で発見。occurrenceDef
     // と同型のギャップ）。
     | requirementDef
+    // `use case def X { then include use case detectThreat : DetectThreat
+    // { ... } }`（UseCasesHull.sysml）のように、includeUseCaseUsage自体も
+    // use case def/usage本体（partBodyElement経由）内に書ける（従来は
+    // packageBodyElementにしか登録されておらず未対応だった。2026-08-29、
+    // 235件パース失敗の要因分析で発見）。
+    | includeUseCaseUsage
     // `frame concern ProfitabilityConcern;`（BusinessCaseOpsCon.sysml）・
     // `frame 'Reduce the number of special parts';`
     // （DontPanic-SysMLv2-Batmobile.sysml）のように、requirement/concern/
