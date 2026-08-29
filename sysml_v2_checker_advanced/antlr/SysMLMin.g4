@@ -1149,10 +1149,14 @@ stakeholderUsage
 // Example.sysml等）のように、`use case def`本体内で使われるactor宣言
 // （subjectUsageと同型の設計、2026-08-28、730件パース失敗の要因分析で
 // 発見）。
+// `actor hostileShip : Domain::HostileShip;`（UseCasesHull.sysml）のように、
+// 型節が`::`修飾名を取ることがある（従来は単一segmentのIDのみで、
+// stakeholderUsage（同型の姉妹規則）とも非対称だった。2026-08-29、
+// 235件パース失敗の要因分析で発見）。
 actorUsage
     : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'actor' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
-      (':' ID)?
+      (':' typeRef=namespacePath)?
       multiplicitySpec?
       ('=' value=expression)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*

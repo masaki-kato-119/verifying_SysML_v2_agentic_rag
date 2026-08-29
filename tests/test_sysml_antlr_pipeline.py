@@ -5773,3 +5773,22 @@ def test_antlr_visibility_modifier_on_toplevel_def_rules():
     # 既存のvisibility無し形が引き続き機能することを確認する。
     plain_ast = parse_sysml_antlr("part def P;")
     assert plain_ast["children"][0]["visibility"] is None
+
+
+def test_antlr_actorusage_namespacepath_type():
+    """`actor hostileShip : Domain::HostileShip;`（UseCasesHull.sysml）の
+    ように、actorUsageの型節が`::`修飾名（namespacePath）を受理できな
+    かった（従来は単一segmentのIDのみで、同型の姉妹規則stakeholderUsage
+    とも非対称だった）。2026-08-29、235件パース失敗の要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "use case def X { actor hostileShip : Domain::HostileShip; }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "actor_usage"
+    assert node["name"] == "hostileShip"
+    assert node["type_name"] == "Domain::HostileShip"
+
+    # 既存の単一segment型が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr("use case def X { actor driver : RoadUser; }")
+    plain_node = plain_ast["children"][0]["children"][0]
+    assert plain_node["type_name"] == "RoadUser"
