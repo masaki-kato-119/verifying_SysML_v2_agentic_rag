@@ -1784,49 +1784,43 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # `abstract interface interfaces: Interface[0..*] nonunique :>
         # connections { ... }`という、`connect`を伴わない裸のinterface
         # usage形（connection/allocation/message/flow等と同型）。
-        # 型付きconnect形（第1代替）は`simpleName`・`': ' ID`のいずれも
-        # 必須のため、どちらかが無ければ必ず第2代替（bare形）と判定できる。
-        # `ctx.partBodyElement()`は第1代替もbodyを持てるようになったため
-        # （2026-08-28、investigate_connectorend_coloncolonで発見）、もはや
-        # 判別材料として使えない（両代替でbodyがtruthyになりうる）。
-        if (
-            ctx.multiplicitySpec() is not None
-            or len(ctx.postKind) > 0
-            or ctx.simpleName() is None
-            or ctx.ID() is None
-        ):
-            id_ctx = ctx.ID()
-            redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
-            bare_ends = ctx.connectorEndPath()
-            bare_interface_part = (
-                self._binary_part("binary_interface_part", bare_ends[0], bare_ends[1])
-                if len(bare_ends) == 2 else None
-            )
+        # 第1代替（名前付き+型付き）は専用ラベル`typeRef`（namespacePath、
+        # 2026-08-29、235件パース失敗の要因分析で`::`修飾名対応のため
+        # ID単体から差し替え）を持つため、その有無で代替を判別する
+        # （無ラベル`ctx.ID()`は第2代替のみに残る）。
+        if ctx.typeRef is not None:
+            ends = ctx.connectorEndPath()
+            interface_part = self._binary_part("binary_interface_part", ends[0], ends[1]) if len(ends) == 2 else None
             return {
                 "type": "interface_usage",
-                "name": _optional_simple_name_text(ctx.simpleName()),
-                "type_name": id_ctx.getText() if id_ctx is not None else None,
-                "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
+                "name": _simple_name_text(ctx.simpleName()),
+                "type_name": _namespace_path_text(ctx.typeRef),
+                "interface_part": interface_part,
                 "isAbstract": ctx.isAbstract is not None,
-                "redefines": redefines,
-                # `interface : StagingInterface connect a.p to b.q;`のように、
-                # 名前省略の型付きinterface usage（この裸形分岐）も`connect`節を
-                # 持ちうる（2026-08-28、730件パース失敗の要因分析で発見）。
-                "interface_part": bare_interface_part,
+                # `interface X: Y connect a::b to c::d { ... }`（VehicleModel.sysml）
+                # のように本体を持つこともある（2026-08-28、
+                # investigate_connectorend_coloncolonで発見。以前は`;`終端のみ
+                # だった）。
                 "children": [self.visit(el) for el in ctx.partBodyElement()],
             }
-        ends = ctx.connectorEndPath()
-        interface_part = self._binary_part("binary_interface_part", ends[0], ends[1]) if len(ends) == 2 else None
+        id_ctx = ctx.ID()
+        redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
+        bare_ends = ctx.connectorEndPath()
+        bare_interface_part = (
+            self._binary_part("binary_interface_part", bare_ends[0], bare_ends[1])
+            if len(bare_ends) == 2 else None
+        )
         return {
             "type": "interface_usage",
-            "name": _simple_name_text(ctx.simpleName()),
-            "type_name": ctx.ID().getText(),
-            "interface_part": interface_part,
+            "name": _optional_simple_name_text(ctx.simpleName()),
+            "type_name": id_ctx.getText() if id_ctx is not None else None,
+            "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
             "isAbstract": ctx.isAbstract is not None,
-            # `interface X: Y connect a::b to c::d { ... }`（VehicleModel.sysml）
-            # のように本体を持つこともある（2026-08-28、
-            # investigate_connectorend_coloncolonで発見。以前は`;`終端のみ
-            # だった）。
+            "redefines": redefines,
+            # `interface : StagingInterface connect a.p to b.q;`のように、
+            # 名前省略の型付きinterface usage（この裸形分岐）も`connect`節を
+            # 持ちうる（2026-08-28、730件パース失敗の要因分析で発見）。
+            "interface_part": bare_interface_part,
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 

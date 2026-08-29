@@ -844,8 +844,14 @@ requireUsage
 // 共有connectorEnd自体は変更せず、connectUsage/bindingConnectorと同じ
 // パターンでこの規則専用にconnectorEndPathへ切り替える
 // （2026-08-28、investigate_connectorend_coloncolonで発見）。
+// `interface APIS_transfer_interface : Interfaces::APIS_transfer_interface_def
+// connect ...;`（AHFSequences.sysml）のように、名前付き代替（第1代替）の
+// 型節が`::`修飾名を取ることがある（従来は単一segmentのIDのみだった。
+// 2026-08-29、235件パース失敗の要因分析で発見）。`typeRef`という専用
+// ラベルを使うことで、第2代替（無ラベル`ID`のみ）との判別が
+// `ctx.typeRef`の有無で明確にできる。
 interfaceUsage
-    : isAbstract='abstract'? 'interface' simpleName ':' ID ( 'connect' connectorEndPath 'to' connectorEndPath )? ( '{' partBodyElement* '}' | ';' )
+    : isAbstract='abstract'? 'interface' simpleName ':' typeRef=namespacePath ( 'connect' connectorEndPath 'to' connectorEndPath )? ( '{' partBodyElement* '}' | ';' )
     // `abstract interface interfaces: Interface[0..*] nonunique :>
     // connections { doc ... }`（Interfaces.sysml）のように、`connect`を
     // 伴わない裸のinterface usage形（connection/allocation/message/flow等と

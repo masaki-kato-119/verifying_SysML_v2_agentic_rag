@@ -5868,3 +5868,36 @@ def test_antlr_nested_interfacedef_in_partbody():
     assert nested["children"][0]["type"] == "connection_end_member"
     assert nested["children"][0]["name"] == "source"
     assert nested["children"][0]["type_name"] == "DataPort"
+
+
+def test_antlr_interfaceusage_named_type_namespacepath():
+    """`interface APIS_transfer_interface : Interfaces::APIS_transfer_interface_def
+    connect ...;`（AHFSequences.sysml）のように、interfaceUsageの名前付き
+    代替（第1代替）の型節が`::`修飾名（namespacePath）を受理できなかった
+    （従来は単一segmentのIDのみ）。fix_portusage_conjugated_type_
+    namespacepath/add_actorusage_namespacepath_typeと同型のギャップ。
+    2026-08-29、235件パース失敗の要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "part def X { interface APIS_transfer_interface : "
+        "Interfaces::APIS_transfer_interface_def connect a.p to b.q; }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "interface_usage"
+    assert node["name"] == "APIS_transfer_interface"
+    assert node["type_name"] == "Interfaces::APIS_transfer_interface_def"
+    assert node["interface_part"] is not None
+
+    # 既存の単一segment型が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr(
+        "part def X { interface named : Type connect a.p to b.q; }"
+    )
+    plain_node = plain_ast["children"][0]["children"][0]
+    assert plain_node["type_name"] == "Type"
+
+    # 既存の名前省略の裸形（第2代替）が引き続き機能することを確認する。
+    bare_ast = parse_sysml_antlr(
+        "part def X { interface : StagingInterface connect a.p to b.q; }"
+    )
+    bare_node = bare_ast["children"][0]["children"][0]
+    assert bare_node["name"] is None
+    assert bare_node["type_name"] == "StagingInterface"
