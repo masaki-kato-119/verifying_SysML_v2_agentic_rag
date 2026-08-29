@@ -839,11 +839,16 @@ interfaceUsage
     // 型付きinterface usageへの`connect`節も第1代替では受理できない
     // （simpleNameが必須のため）ので、この第2代替にも`connect`節を追加する
     // （2026-08-28、730件パース失敗の要因分析で発見）。
+    // `interface producer_2.publicationPort to server_2.publicationPort;`
+    // （ServerSequenceOutsideRealization-2.sysml）のように、名前・型節・
+    // `connect`キーワードすべてを省略した最小形（ドット区切りパス同士を
+    // 直接`to`で接続）もある。`connect`キーワード自体を任意化することで
+    // 対応する（2026-08-29、235件パース失敗の要因分析で発見）。
     | isAbstract='abstract'? 'interface' simpleName?
       (':' ID)?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
-      ( 'connect' connectorEndPath 'to' connectorEndPath )?
+      ( 'connect'? connectorEndPath 'to' connectorEndPath )?
       ( '{' partBodyElement* '}' | ';' )
     ;
 

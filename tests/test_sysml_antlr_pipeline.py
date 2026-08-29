@@ -5634,3 +5634,42 @@ def test_antlr_then_prefix_include_use_case():
     assert bare_node["type"] == "include_use_case_usage"
     assert bare_node["name"] == "startEngine"
     assert bare_node["type_name"] is None
+
+
+def test_antlr_minimal_bare_interfaceusage_connect_form():
+    """`interface producer_2.publicationPort to server_2.publicationPort;`
+    （ServerSequenceOutsideRealization-2.sysml）のように、名前・型節・
+    `connect`キーワードすべてを省略した最小形interfaceUsage（ドット区切り
+    パス同士を直接`to`で接続）が未対応だった。`connect`キーワードを任意化
+    することで対応する。既存の`connect`キーワード付き形（名前付き・名前
+    省略の両方）が引き続き機能することも確認する。2026-08-29、235件
+    パース失敗の要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "part def X { interface producer_2.publicationPort to "
+        "server_2.publicationPort; }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "interface_usage"
+    assert node["name"] is None
+    assert node["type_name"] is None
+    assert node["interface_part"]["from_end"]["reference_subsetting"]["referenced_feature"] == "producer_2::publicationPort"
+    assert node["interface_part"]["to_end"]["reference_subsetting"]["referenced_feature"] == "server_2::publicationPort"
+
+    # 既存の`connect`キーワード付き形（名前省略の型付き）が引き続き機能
+    # することを確認する。
+    typed_ast = parse_sysml_antlr(
+        "part def X { interface : StagingInterface connect a.p to b.q; }"
+    )
+    typed_node = typed_ast["children"][0]["children"][0]
+    assert typed_node["type_name"] == "StagingInterface"
+    assert typed_node["interface_part"] is not None
+
+    # 既存の`connect`無し裸形（redefine節のみ）が引き続き機能することを
+    # 確認する。
+    plain_ast = parse_sysml_antlr(
+        "part def X { abstract interface interfaces: Interface[0..*] "
+        "nonunique :> connections; }"
+    )
+    plain_node = plain_ast["children"][0]["children"][0]
+    assert plain_node["type_name"] == "Interface"
+    assert plain_node["interface_part"] is None
