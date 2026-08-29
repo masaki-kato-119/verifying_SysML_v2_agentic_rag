@@ -5473,3 +5473,30 @@ def test_antlr_frame_statement():
     assert vp_usage_frame["type"] == "frame_statement"
     assert vp_usage_frame["isConcern"] is True
     assert vp_usage_frame["name"] == "c1"
+
+
+def test_antlr_portusage_conjugated_type_namespacepath():
+    """`port controlPort : ~Domain::PodPort;`（MiningFrigate.sysml）の
+    ように、portUsageの共役（`~`）修飾型節が`::`修飾名（namespacePath）を
+    受理できなかった（従来は単一segmentのIDのみで、fix_p0_1の
+    namespacePath全面置換漏れだった）。既存のカンマ区切り複数型形
+    （`port p: pd1, pd2;`）が引き続き機能することも確認する。2026-08-29、
+    235件パース失敗の要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "part def X { port controlPort : ~Domain::PodPort; }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "port_usage"
+    assert node["type_name"] == "~Domain::PodPort"
+
+    multi_ast = parse_sysml_antlr(
+        "part def X { port two_port_def_types: pd1, pd2; }"
+    )
+    multi_node = multi_ast["children"][0]["children"][0]
+    assert multi_node["type_name"] == "pd1"
+    assert multi_node["type_names"] == ["pd1", "pd2"]
+
+    # 既存の共役無し単純型が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr("part def X { port p2 : SimpleType; }")
+    plain_node = plain_ast["children"][0]["children"][0]
+    assert plain_node["type_name"] == "SimpleType"

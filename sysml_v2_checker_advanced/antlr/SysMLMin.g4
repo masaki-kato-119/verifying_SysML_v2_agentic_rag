@@ -2614,12 +2614,16 @@ portDef
 // `port two_port_def_types: pd1, pd2 { ... }`（PortUsage_Invalid.sysml）の
 // ように、型節がカンマ区切りの複数型を取ることがある（calculationUsageと
 // 同じ理由。2026-08-28、730件パース失敗の要因分析で発見）。
+// `port controlPort : ~Domain::PodPort;`（MiningFrigate.sysml）のように、
+// 共役（`~`）修飾型節が`::`修飾名を取ることがある（従来は単一segment
+// のIDのみで、namespacePathへの全面置換漏れだった。2026-08-29、235件
+// パース失敗の要因分析で発見）。
 portUsage
     : variability=('variation' | 'variant')? prefixMetadataAnnotation* visibilityIndicator? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
       'port' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       preMult=multiplicitySpec?
-      (':' conjugated='~'? ID (',' extraTypeRefs+=ID)*)?
+      (':' conjugated='~'? typeRefs+=namespacePath (',' typeRefs+=namespacePath)*)?
       postMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )

@@ -1618,19 +1618,23 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # partUsageと同様のredefinition機能一式（visibility・ref・名前省略・
         # redefine節）とbodyを持つ。
         # `port two_port_def_types: pd1, pd2 { ... }`のように型節がカンマ
-        # 区切りの複数型を取ることがある（`ctx.ID()`は無ラベル分+
-        # `extraTypeRefs`分合わせたリストを返す。2026-08-28、730件パース
-        # 失敗の要因分析で発見）。
-        id_ctxs = ctx.ID()
+        # 区切りの複数型を取ることがある（`typeRefs`ラベルのリスト）。
+        # `port controlPort : ~Domain::PodPort;`（MiningFrigate.sysml）の
+        # ように`::`修飾名も取りうるため、ID単一segmentではなく
+        # namespacePathを使う（2026-08-29、235件パース失敗の要因分析で
+        # 発見。fix_p0_1のnamespacePath全面置換漏れ）。
+        typeref_ctxs = ctx.typeRefs
         # `port xxx : ~xxxx;`という共役ポート参照。linter.py
         # （_check_conjugated_port_typing）はtype_nameが`~`始まりであることを
         # 前提に意味チェックするため、ここで`~`を先頭に合成する
         # （最初の型のみ、複数型時の2件目以降には適用しない）。
         type_names = []
-        if id_ctxs:
+        if typeref_ctxs:
             type_names = [
-                ("~" + id_ctxs[0].getText()) if ctx.conjugated is not None else id_ctxs[0].getText()
-            ] + [t.getText() for t in id_ctxs[1:]]
+                ("~" + _namespace_path_text(typeref_ctxs[0]))
+                if ctx.conjugated is not None
+                else _namespace_path_text(typeref_ctxs[0])
+            ] + [_namespace_path_text(t) for t in typeref_ctxs[1:]]
         type_name = type_names[0] if type_names else None
         # redefinesは常にリスト（0件含む）。
         redefines = self._redefine_list_namespace(ctx.preKind, ctx.preTarget) + self._redefine_list_namespace(
