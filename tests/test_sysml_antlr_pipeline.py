@@ -1351,6 +1351,21 @@ def test_antlr_nested_part_def_in_part_body():
     assert inner["children"][-1]["type"] == "part_instance"
 
 
+def test_antlr_nested_package_def_in_part_body():
+    """`part def B { package P { } }`（PartTest.sysml L23）のように、
+    packageDef自体もpartDef/occurrenceDef/requirementDef/interfaceDefと
+    同型にpartBodyElement内へネストして書ける（2026-08-29、
+    add_direction_prefix_to_featureusage対応中に連鎖的に発見）。"""
+    ast = parse_sysml_antlr("part def B { package P { } }")
+    outer = ast["children"][-1]
+    assert outer["type"] == "part_def"
+    assert outer["name"] == "B"
+    inner = outer["children"][-1]
+    assert inner["type"] == "package"
+    assert inner["name"] == "P"
+    assert inner["children"] == []
+
+
 def test_antlr_part_usage_multiplicity_before_type_and_default():
     """`part missions[1..*] : Mission;`（CoSMAPackage.sysml）のように、
     partUsageも名前直後の多重度→型節という順序（portUsageのpreMult/

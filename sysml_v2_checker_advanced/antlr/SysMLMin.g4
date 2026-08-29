@@ -1440,6 +1440,11 @@ partBodyElement
     // connectionEndMember経由で既に対応済み。2026-08-29、235件パース
     // 失敗の要因分析で発見）。
     | interfaceDef
+    // `part def B { package P { } }`（PartTest.sysml）のように、packageDef
+    // 自体もpartDef/occurrenceDef/requirementDef/interfaceDefと同型に
+    // partBodyElement内へネストして書ける（2026-08-29、
+    // add_direction_prefix_to_featureusage対応中に連鎖的に発見）。
+    | packageDef
     ;
 
 // `frame`文（FramedConcernMembership）。requirement/concern/viewpoint
