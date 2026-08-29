@@ -2423,10 +2423,14 @@ actionFlowStmt
 // doActionMemberの`do send ...`と同型のインライン代入アクションも
 // 単独のentry-actionメンバーとして書ける（2026-08-29、235件パース失敗の
 // 要因分析で発見）。
+// `entry performSelfTest{ in vehicle = operatingVehicle; }`
+// （State Actions.sysml）のように、参照直後に`;`終端の代わりに
+// `{ actionBodyElement* }`本体を持つこともある（2026-08-29、235件
+// パース失敗の要因分析で発見）。
 entryActionMember
     : 'entry' ('action')? qualifiedName? (':' ID)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
-      ';'
+      ( '{' actionBodyElement* '}' | ';' )
     | 'entry' assign=assignmentStmt
     ;
 
@@ -2437,18 +2441,24 @@ entryActionMember
 // `do assign counter.count := counter.count + 1;`（AssignmentTest.sysml）
 // のように、entryActionMemberと同型のインライン代入アクションも
 // doActionMemberで書ける（2026-08-29、235件パース失敗の要因分析で発見）。
+// `do action providePower { ... }`（State Actions.sysml）のように、
+// 参照直後に`;`終端の代わりに`{ actionBodyElement* }`本体を持つことも
+// ある（2026-08-29、235件パース失敗の要因分析で発見）。
 doActionMember
     : 'do' ('action')? qualifiedName? (':' ID)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
-      ';'
+      ( '{' actionBodyElement* '}' | ';' )
     | 'do' 'send' payload=expression ( 'to' sendTarget=namespacePath | 'via' sendVia=namespacePath )? ';'
     | 'do' assign=assignmentStmt
     ;
 
+// `exit action applyParkingBrake { ... }`（State Actions.sysml）のように、
+// 参照直後に`;`終端の代わりに`{ actionBodyElement* }`本体を持つことも
+// ある（2026-08-29、235件パース失敗の要因分析で発見）。
 exitActionMember
     : 'exit' ('action')? qualifiedName? (':' ID)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
-      ';'
+      ( '{' actionBodyElement* '}' | ';' )
     ;
 
 // --- transition (8.2.2.18) -------------------------------------------------------

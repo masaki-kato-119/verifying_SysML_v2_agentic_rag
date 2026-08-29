@@ -5997,3 +5997,38 @@ def test_antlr_then_prefix_stateusage():
     plain_node = children[2]
     assert plain_node["type"] == "state_usage"
     assert "isThen" not in plain_node
+
+
+def test_antlr_entry_do_exit_actionmember_body():
+    """`entry performSelfTest{ in vehicle = operatingVehicle; }` /
+    `do action providePower { ... }` / `exit action applyParkingBrake
+    { ... }`（State Actions.sysml）のように、entryActionMember/
+    doActionMember/exitActionMemberのいずれも参照直後に`;`終端の代わりに
+    `{ actionBodyElement* }`本体を持てなかった（従来`;`終端のみ）。
+    既存の`;`終端形が引き続き機能することも確認する。2026-08-29、235件
+    パース失敗の要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "state on { entry performSelfTest{ in vehicle = operatingVehicle; } "
+        "do action providePower { } exit action applyParkingBrake { } }"
+    )
+    entry, do, exit_ = ast["children"][0]["children"]
+    assert entry["type"] == "entry_action"
+    assert entry["action_reference"] == "performSelfTest"
+    assert len(entry["children"]) == 1
+    assert do["type"] == "do_action"
+    assert do["action_reference"] == "providePower"
+    assert do["children"] == []
+    assert exit_["type"] == "exit_action"
+    assert exit_["action_reference"] == "applyParkingBrake"
+    assert exit_["children"] == []
+
+    # 既存の`;`終端形が引き続き機能することを確認する。
+    semi_ast = parse_sysml_antlr(
+        "state on { entry action entryAction :>> 'entry'; "
+        "do action doAction: Action :>> 'do'; "
+        "exit action exitAction: Action :>> 'exit'; }"
+    )
+    semi_entry, semi_do, semi_exit = semi_ast["children"][0]["children"]
+    assert semi_entry["children"] == []
+    assert semi_do["children"] == []
+    assert semi_exit["children"] == []

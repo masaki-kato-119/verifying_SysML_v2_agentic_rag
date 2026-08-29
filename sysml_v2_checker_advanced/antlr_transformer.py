@@ -1469,7 +1469,10 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             }
         # `entry action entryAction :>> 'entry';`（States.sysml）のように
         # 型節・redefine節も持つ（対象は`entry`自体が予約語のためQUOTED_NAME
-        # で囲む）。
+        # で囲む）。`entry performSelfTest{ in vehicle = operatingVehicle; }`
+        # （State Actions.sysml）のように、`;`終端の代わりに
+        # `{ actionBodyElement* }`本体を持つこともある（2026-08-29、235件
+        # パース失敗の要因分析で発見）。
         id_ctx = ctx.ID()
         return {
             "type": "entry_action",
@@ -1478,7 +1481,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "type_name": id_ctx.getText() if id_ctx is not None else None,
             "redefines": self._redefine_list_namespace(ctx.postKind, ctx.postTarget),
             "assign": None,
-            "children": [],
+            "children": [self.visit(el) for el in ctx.actionBodyElement()],
         }
 
     # --- フェーズ2続き: state の do / exit --------------------------------------
@@ -1528,7 +1531,10 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "redefines": self._redefine_list_namespace(ctx.postKind, ctx.postTarget),
             "send": None,
             "assign": None,
-            "children": [],
+            # `do action providePower { ... }`（State Actions.sysml）のように、
+            # `;`終端の代わりに`{ actionBodyElement* }`本体を持つことも
+            # ある（2026-08-29、235件パース失敗の要因分析で発見）。
+            "children": [self.visit(el) for el in ctx.actionBodyElement()],
         }
 
     def visitExitActionMember(self, ctx: SysMLMinParser.ExitActionMemberContext) -> Dict:
@@ -1539,7 +1545,10 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "action_reference": _optional_qualified_name_text(ctx.qualifiedName()),
             "type_name": id_ctx.getText() if id_ctx is not None else None,
             "redefines": self._redefine_list_namespace(ctx.postKind, ctx.postTarget),
-            "children": [],
+            # `exit action applyParkingBrake { ... }`（State Actions.sysml）
+            # のように、`;`終端の代わりに`{ actionBodyElement* }`本体を
+            # 持つこともある（2026-08-29、235件パース失敗の要因分析で発見）。
+            "children": [self.visit(el) for el in ctx.actionBodyElement()],
         }
 
     # --- フェーズ2続き: transition ---------------------------------------------------
