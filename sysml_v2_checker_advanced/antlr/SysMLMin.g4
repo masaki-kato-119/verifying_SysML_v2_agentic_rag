@@ -471,10 +471,13 @@ analysisCaseDef
 // `variation analysis a1;`（VariabilityTest.sysml）のように、Variability
 // 機能の先頭修飾子がここにも付く（2026-08-28、730件パース失敗の要因分析
 // で発見）。
+// `analysis ac2: AC1, AC2;`（CaseUsage_Invalid.sysml）のように、型節が
+// カンマ区切りの複数型を取ることがある（caseUsageと同じ理由。2026-08-29、
+// add_bare_include_shorthand対応中に連鎖的に発見）。
 analysisCaseUsage
     : variability=('variation' | 'variant')? visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'analysis' simpleName?
       (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
-      (':' ID)?
+      (':' ID (',' extraTypeRefs+=ID)*)?
       multiplicitySpec?
       (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )
@@ -512,10 +515,14 @@ useCaseDef
 // のように、`then`前置を持ちうる（includeUseCaseUsage等の多くの規則
 // では既に`isThen`対応済みで非対称だった。2026-08-29、235件パース失敗
 // の要因分析で発見）。
+// `use case uc2: UC1, UC2;`（CaseUsage_Invalid.sysml）のように、型節が
+// カンマ区切りの複数型を取ることがある（caseUsage/analysisCaseUsageと
+// 同じ理由。2026-08-29、add_analysiscaseusage_multitype対応中に連鎖的に
+// 発見。同一ファイルの並列テストケースで発覚）。
 useCaseUsage
     : variability=('variation' | 'variant')? isThen='then'? visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'use' 'case' simpleName?
       (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
-      (':' typeRef=(ID | QUOTED_NAME))?
+      (':' typeRef=(ID | QUOTED_NAME) (',' extraTypeRefs+=(ID | QUOTED_NAME))*)?
       multiplicitySpec?
       (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )

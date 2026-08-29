@@ -4586,6 +4586,25 @@ def test_antlr_comma_separated_multi_type_declaration():
     assert case_node["type_name"] == "C1"
     assert case_node["type_names"] == ["C1", "C2"]
 
+    # `analysis ac2: AC1, AC2;`（CaseUsage_Invalid.sysml L26）・
+    # `use case uc2: UC1, UC2;`（同ファイルL38、同一投稿の並列テストケースで
+    # 連鎖的に発見）のように、analysisCaseUsage/useCaseUsageもcaseUsageと
+    # 同型のカンマ区切り複数型を取れる（2026-08-29、
+    # add_bare_include_shorthand対応中に連鎖的に発見）。
+    analysis_ast = parse_sysml_antlr(
+        "analysis def AC1;\nanalysis def AC2;\nanalysis ac2: AC1, AC2;\n"
+    )
+    analysis_node = analysis_ast["children"][-1]
+    assert analysis_node["type_name"] == "AC1"
+    assert analysis_node["type_names"] == ["AC1", "AC2"]
+
+    use_case_ast = parse_sysml_antlr(
+        "use case def UC1;\nuse case def UC2;\nuse case uc2: UC1, UC2;\n"
+    )
+    use_case_node = use_case_ast["children"][-1]
+    assert use_case_node["type_name"] == "UC1"
+    assert use_case_node["type_names"] == ["UC1", "UC2"]
+
     constraint_ast = parse_sysml_antlr(
         "constraint def AConstraint;\nconstraint def ABlock;\n"
         "assert constraint two_types : AConstraint, ABlock;\n"
