@@ -5847,3 +5847,24 @@ def test_antlr_bare_include_shorthand():
     then_node = then_ast["children"][0]["children"][0]
     assert then_node["name"] == "enter vehicle"
     assert then_node["isThen"] is True
+
+
+def test_antlr_nested_interfacedef_in_partbody():
+    """`part def Module { interface def SensorLink { end source :
+    DataPort; end target : DataPort; } }`（synthetic-100.sysml）のように、
+    interfaceDef自体もpartDef等と同型にpartBodyElement内へネストして
+    書ける（従来packageBodyElementにしか登録されておらず未対応
+    だった）。同ファイルの`end`メンバー宣言自体は既存の
+    connectionEndMember経由で既に対応済みであることも確認する。
+    2026-08-29、235件パース失敗の要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "part def Module { interface def SensorLink { "
+        "end source : DataPort; end target : DataPort; } }"
+    )
+    nested = ast["children"][0]["children"][0]
+    assert nested["type"] == "interface_def"
+    assert nested["name"] == "SensorLink"
+    assert len(nested["children"]) == 2
+    assert nested["children"][0]["type"] == "connection_end_member"
+    assert nested["children"][0]["name"] == "source"
+    assert nested["children"][0]["type_name"] == "DataPort"

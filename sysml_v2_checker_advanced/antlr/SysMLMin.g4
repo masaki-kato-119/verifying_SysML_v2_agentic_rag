@@ -1417,6 +1417,14 @@ partBodyElement
     // viewpoint定義本体内でframed concern参照を宣言する`frame`文が完全に
     // 未実装だった（2026-08-29、235件パース失敗の要因分析で発見）。
     | frameStatement
+    // `part def Module { interface def SensorLink { end source :
+    // DataPort; end target : DataPort; } }`（synthetic-100.sysml）の
+    // ように、interfaceDef自体もpartDef等と同型にpartBodyElement内へ
+    // ネストして書ける（従来packageBodyElementにしか登録されておらず
+    // 未対応だった。同ファイルの`end`メンバー宣言自体は既存の
+    // connectionEndMember経由で既に対応済み。2026-08-29、235件パース
+    // 失敗の要因分析で発見）。
+    | interfaceDef
     ;
 
 // `frame`文（FramedConcernMembership）。requirement/concern/viewpoint
