@@ -2944,8 +2944,15 @@ portUsage
 // 再帰ワイルドカード`::**`（パッケージ自身に加えその配下の入れ子パッケージの
 // メンバまでインポートする形）に対応する（2026-08-28、730件パース失敗の
 // 要因分析で発見。`**`はレキサー上`*`トークン2つの並びとして扱われる）。
+// `Pkg211::*::**;`（ImportTest.sysml）のように、ワイルドカード段が複数
+// 連なる多段形もある（`('::' '*' '*'?)*`で0回以上に一般化）。
+// `public import vehicle::**[@Safety and (as Safety).isMandatory];`
+// （Filtering Example-2.sysml）のように、ワイルドカードの直後に
+// ブラケット付きインラインフィルタ式（`@Type`メタデータ参照式・
+// `and`/`or`論理結合）が続くこともある（2026-08-29、730件ベースラインの
+// 154件エラー要因分析で発見）。
 importStmt
-    : visibilityIndicator? 'import' namespacePath ('::' '*' '*'?)? ';'
+    : visibilityIndicator? 'import' namespacePath ('::' '*' '*'?)* ('[' filterExpr=expression ']')? ';'
     ;
 
 visibilityIndicator
@@ -2996,8 +3003,13 @@ namespacePathList
 // ワイルドカードに対応する（2026-08-28、importStmtと同じ理由で追加）。
 // exposeノードは{"type":"special_stmt","children":[{"type":
 // "expose",...}]}という入れ子で返す。
+// `expose vehicle::*::**;`・`expose SystemModel::vehicle::**[@SysML::PartUsage];`
+// （11b-Safety and Security Feature Views.sysml、11a-View-Viewpoint.sysml）
+// のように、importStmtと同じく多段ワイルドカード・ブラケット付き
+// インラインフィルタ式に対応する（2026-08-29、730件ベースラインの154件
+// エラー要因分析で発見）。
 exposeStmt
-    : 'expose' namespacePath ('::' '*' '*'?)? ';'
+    : 'expose' namespacePath ('::' '*' '*'?)* ('[' filterExpr=expression ']')? ';'
     ;
 
 // `filter @SysML::PartUsage or @SysML::PartDefinition or

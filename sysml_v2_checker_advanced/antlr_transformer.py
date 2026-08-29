@@ -1916,10 +1916,16 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # exposeノードは{"type": "special_stmt", "children": [{"type":
         # "expose", ...}]}という入れ子で返す。
         is_wildcard = any(child.getText() == "*" for child in ctx.getChildren())
+        # `expose vehicle::**[@Safety and ...];`のように、ワイルドカード
+        # 直後にブラケット付きインラインフィルタ式が続くこともある
+        # （2026-08-29、連鎖的に発見）。既存のexact-equality辞書テストを
+        # 壊さないよう、無い場合はキー自体を省略する。
+        filter_expr = self.visit(ctx.filterExpr) if ctx.filterExpr is not None else None
         expose_node = {
             "type": "expose",
             "qualified_name": _namespace_path_text(ctx.namespacePath()),
             "wildcard": is_wildcard,
+            **({"filter": filter_expr} if filter_expr is not None else {}),
             "children": [],
         }
         return {"type": "special_stmt", "children": [expose_node]}
@@ -2740,11 +2746,17 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
     def visitImportStmt(self, ctx: SysMLMinParser.ImportStmtContext) -> Dict:
         is_wildcard = any(child.getText() == "*" for child in ctx.getChildren())
         visibility_ctx = ctx.visibilityIndicator()
+        # `import vehicle::**[@Safety and ...];`のように、ワイルドカード
+        # 直後にブラケット付きインラインフィルタ式が続くこともある
+        # （2026-08-29、連鎖的に発見）。既存のexact-equality辞書テストを
+        # 壊さないよう、無い場合はキー自体を省略する。
+        filter_expr = self.visit(ctx.filterExpr) if ctx.filterExpr is not None else None
         return {
             "type": "import",
             "name": _namespace_path_text(ctx.namespacePath()),
             "wildcard": is_wildcard,
             "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
+            **({"filter": filter_expr} if filter_expr is not None else {}),
             "children": [],
         }
 

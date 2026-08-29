@@ -4221,6 +4221,48 @@ def test_antlr_recursive_wildcard_import():
     assert expose_node["children"][0]["type"] == "expose"
 
 
+def test_antlr_import_expose_multilevel_wildcard_and_bracket_filter():
+    """`private import Pkg211::*::**;`（ImportTest.sysml）のように、
+    ワイルドカード段が複数連なる多段形が未対応だった（従来は`::`+`*`
+    +任意で追加の`*`という1段のみ）。`public import
+    vehicle::**[@Safety and ...];`（Filtering Example-2.sysml、
+    13b-Safety and Security Features Element Group-2.sysml、
+    ElementFilter.sysml(xpect)）・`expose vehicle::*::**;`、
+    `expose SystemModel::vehicle::**[@SysML::PartUsage];`
+    （11a/11b-...View...sysml）のように、ワイルドカード直後に
+    ブラケット付きインラインフィルタ式が続く形も未対応だった。
+    2026-08-29、730件ベースラインの154件エラー要因分析で発見。"""
+    multilevel_ast = parse_sysml_antlr("private import Pkg211::*::**;")
+    multilevel_node = multilevel_ast["children"][0]
+    assert multilevel_node["type"] == "import"
+    assert multilevel_node["name"] == "Pkg211"
+    assert multilevel_node["wildcard"] is True
+
+    bracket_ast = parse_sysml_antlr(
+        "package P { part vehicle; public import vehicle::**[@Safety]; }"
+    )
+    bracket_node = bracket_ast["children"][-1]
+    assert bracket_node["type"] == "import"
+    assert bracket_node["wildcard"] is True
+    assert bracket_node["filter"] == {"type": "metadata_ref", "reference": "Safety"}
+
+    expose_multilevel_ast = parse_sysml_antlr("expose vehicle::*::**;")
+    assert expose_multilevel_ast["children"][0]["children"][0]["type"] == "expose"
+
+    expose_bracket_ast = parse_sysml_antlr(
+        "expose SystemModel::vehicle::**[@SysML::PartUsage];"
+    )
+    expose_bracket_node = expose_bracket_ast["children"][0]["children"][0]
+    assert expose_bracket_node["qualified_name"] == "SystemModel::vehicle"
+    assert expose_bracket_node["filter"] == {"type": "metadata_ref", "reference": "SysML::PartUsage"}
+
+    # 既存の単一ワイルドカード・ブラケット無し形が引き続き機能し、
+    # "filter"キー自体が無いことを確認する（回帰防止）。
+    plain_ast = parse_sysml_antlr("import TechnicalRequirementsPackage::*;")
+    plain_node = plain_ast["children"][0]
+    assert "filter" not in plain_node
+
+
 def test_antlr_interface_usage_unnamed_typed_inline_connect():
     """`interface : StagingInterface connect a.p to b.q;`のように、名前を
     省略した型付きinterface usageへのインライン`connect...to...`が
