@@ -2661,6 +2661,20 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         node["value"] = self.visit(ctx.value) if ctx.value is not None else None
         return node
 
+    def visitRenderStmt(self, ctx: SysMLMinParser.RenderStmtContext) -> Dict:
+        # `render rendering r1: R[0..1];`・`render r;`・`render
+        # asElementTable { ... }`（ViewTest.sysml他）。`rendering`キーワードは
+        # 新規rendering usageのインライン宣言か、既存/ライブラリ組み込み
+        # renderingへの単純な参照かを区別するフラグとして残す。
+        return {
+            "type": "render_stmt",
+            "name": _namespace_path_text(ctx.ref),
+            "isRendering": ctx.isRendering is not None,
+            "type_name": _unquote_text(ctx.typeRef.text) if ctx.typeRef is not None else None,
+            "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
+            "children": [self.visit(el) for el in ctx.partBodyElement()],
+        }
+
     def visitMetadataDef(self, ctx: SysMLMinParser.MetadataDefContext) -> Dict:
         return self._named_simple_node("metadata_def", ctx)
 

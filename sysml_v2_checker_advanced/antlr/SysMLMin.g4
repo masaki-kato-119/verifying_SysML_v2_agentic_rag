@@ -618,6 +618,19 @@ renderingUsage
       ( '{' partBodyElement* '}' | ';' )
     ;
 
+// `render rendering r1: R[0..1];`・`render r;`・`render r [0..*];`・
+// `render asElementTable { view :>> columnView[1] { render
+// asTextualNotation; } }`（ViewTest.sysml、11a-View-Viewpoint.sysml、
+// Views Example.sysml他）のように、`render`はview/viewpoint定義本体で
+// 使用するrendering usageを選択・参照する専用文（`renderingUsage`の宣言
+// キーワード`rendering`とは別物）。`rendering`キーワード付きは新規
+// rendering usageのインライン宣言、省略形はライブラリ組み込み
+// （asTreeDiagram等）・既存宣言済みrenderingへの単純な参照。
+// 2026-08-29、730件ベースライン154件エラー要因分析で発見。
+renderStmt
+    : 'render' isRendering='rendering'? ref=namespacePath (':' typeRef=ID)? multiplicitySpec? ( '{' partBodyElement* '}' | ';' )
+    ;
+
 // --- metadata (8.2.2.27) --------------------------------------------------------
 // `_check_metadata_usage`（linter.py:2091）はnameかusage_declaration.type_spec
 // のどちらかがあればよいが、ここではnameのみ実装する（typeSpecは未対応）。
@@ -1410,6 +1423,7 @@ partBodyElement
     | viewUsage
     | viewpointUsage
     | renderingUsage
+    | renderStmt
     // `in ref :>> alternatives = studyAlternatives;`（TradeStudies.sysml）
     // のように、direction付きのパラメータ宣言がobjective/subject usage
     // 本体にネストして使われる。

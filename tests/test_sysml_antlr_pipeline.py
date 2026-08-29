@@ -3801,6 +3801,63 @@ def test_antlr_rendering_usage_redefine_with_equals_value():
     assert node["value"] == {"type": "name_ref", "reference": "columnView.viewRendering"}
 
 
+def test_antlr_render_stmt_variants():
+    """`render rendering r1: R[0..1]; render r;`（ViewTest.sysml）・
+    `render asElementTable { view :>> columnView[1] { render
+    asTextualNotation; } }`（11a-View-Viewpoint.sysml）のように、`render`
+    は`rendering`宣言のインライン形・既存/ライブラリ組み込みrenderingへの
+    単純参照形のいずれも受理する専用文（従来一切未実装だった）。
+    2026-08-29、730件ベースライン154件エラー要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "view def V { render rendering r1: R[0..1]; render r; }"
+    )
+    view_node = ast["children"][0]
+    assert view_node["type"] == "view_def"
+    decl_node = view_node["children"][0]
+    assert decl_node == {
+        "type": "render_stmt",
+        "name": "r1",
+        "isRendering": True,
+        "type_name": "R",
+        "multiplicity": {"size": {"min": 0, "max": 1}, "is_ordered": False, "is_unique": True},
+        "children": [],
+    }
+    ref_node = view_node["children"][1]
+    assert ref_node == {
+        "type": "render_stmt",
+        "name": "r",
+        "isRendering": False,
+        "type_name": None,
+        "multiplicity": None,
+        "children": [],
+    }
+
+    # 多重度付きの単純参照形（`renderingUsage`は無し）。
+    mult_ast = parse_sysml_antlr("view v : V { render r [0..*]; }")
+    mult_node = mult_ast["children"][0]["children"][0]
+    assert mult_node["type"] == "render_stmt"
+    assert mult_node["multiplicity"] == {"size": {"min": 0, "max": "*"}, "is_ordered": False, "is_unique": True}
+
+    # 本体付きの単純参照形（ネストしたview usage内でさらにrenderを使う）。
+    body_ast = parse_sysml_antlr(
+        "view def V { render asElementTable { view :>> columnView[1] { render asTextualNotation; } } }"
+    )
+    outer_render = body_ast["children"][0]["children"][0]
+    assert outer_render["type"] == "render_stmt"
+    assert outer_render["name"] == "asElementTable"
+    assert len(outer_render["children"]) == 1
+    inner_view = outer_render["children"][0]
+    assert inner_view["type"] == "view_usage"
+    inner_render = inner_view["children"][0]
+    assert inner_render["type"] == "render_stmt"
+    assert inner_render["name"] == "asTextualNotation"
+
+    # `::`区切りの修飾参照形（DontPanic-SysMLv2-Batmobile.sysml）。
+    qualified_ast = parse_sysml_antlr("view def V { render Views::asElementTable; }")
+    qualified_node = qualified_ast["children"][0]["children"][0]
+    assert qualified_node["name"] == "Views::asElementTable"
+
+
 def test_antlr_item_usage_redefine_with_equals_value():
     """d65_item_usage_equals_value: ShapeItems.sysmlの`item :>> vertices
     [*] = edges.vertices;`のように、itemUsage規則に`=`値代入

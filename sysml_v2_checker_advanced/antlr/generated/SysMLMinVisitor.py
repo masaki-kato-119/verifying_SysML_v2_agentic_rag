@@ -204,6 +204,11 @@ class SysMLMinVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by SysMLMinParser#renderStmt.
+    def visitRenderStmt(self, ctx:SysMLMinParser.RenderStmtContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by SysMLMinParser#metadataDef.
     def visitMetadataDef(self, ctx:SysMLMinParser.MetadataDefContext):
         return self.visitChildren(ctx)
