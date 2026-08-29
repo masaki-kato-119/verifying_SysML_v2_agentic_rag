@@ -1913,13 +1913,25 @@ actionBodyElement
 // （Verification Case Definition Example.sysml）のように、kind節に
 // `part`も現れる（従来item/attribute/ref/calc/actionのみで`part`が
 // 抜けていた。2026-08-29、235件パース失敗の要因分析で発見）。
+// `private in ref y: A, B;`（ItemTest.sysml）のように、visibilityIndicator
+// が方向修飾子の前に付くことがある（従来actionParameterには一切登録
+// されていなかった。featureUsage側にdirectionを追加する案は、
+// featureUsageがpartBodyElement/stateBodyElement等でactionParameterより
+// 先に登録されているため`in x : Type;`のような裸形の判別が曖昧になり
+// 既存の多数のテストを壊した。actionParameter自体は`direction`が
+// 必須のため、こちらにvisibilityIndicator?を足す方が安全。2026-08-29、
+// 235件パース失敗の要因分析で発見）。
 actionParameter
-    : (direction | dirReturn='return')
+    : visibilityIndicator? (direction | dirReturn='return')
       kind=('item' | 'attribute' | 'ref' | 'part' | 'calc' | 'action')?
       simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       preMult=multiplicitySpec?
-      (':' conjugated='~'? namespacePath)?
+      // `private in ref y: A, B;`（ItemTest.sysml）のように、型節が
+      // カンマ区切りの複数型を取ることがある（caseUsage等と同じ
+      // extraTypeRefsパターン。2026-08-29、235件パース失敗の要因分析で
+      // 発見）。
+      (':' conjugated='~'? typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
       postMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       // `in whileTest default {true} { doc ... }`（Actions.sysml、2件）

@@ -826,23 +826,37 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         direction_ctx = ctx.direction()
         direction_text = direction_ctx.getText() if direction_ctx is not None else ctx.dirReturn.text
         kind_text = ctx.kind.text if ctx.kind is not None else None
-        type_ctx = ctx.namespacePath()
+        # `private in ref y: A, B;`（ItemTest.sysml）のように、型節が
+        # カンマ区切りの複数型を取ることがあるため、`typeRef`という専用
+        # ラベル（`extraTypeRefs`と合わせて2箇所目のnamespacePathが増えた
+        # ため、無ラベル`ctx.namespacePath()`はもはや使えない）を使う
+        # （2026-08-29、235件パース失敗の要因分析で発見）。
+        type_ctx = ctx.typeRef
         type_name = _namespace_path_text(type_ctx) if type_ctx is not None else None
         # `out xxx : ~xxxx;`のような共役ポート参照。portUsageと同じ
         # `~`合成規則（linter.pyのtype_name.startswith("~")前提）を適用する。
         if type_name is not None and ctx.conjugated is not None:
             type_name = "~" + type_name
+        type_names = ([type_name] if type_name is not None else []) + [
+            _namespace_path_text(t) for t in ctx.extraTypeRefs
+        ]
         redefines = self._redefine_list_namespace(ctx.preKind, ctx.preTarget) + self._redefine_list_namespace(
             ctx.postKind, ctx.postTarget
         )
+        # `private in ref y: A, B;`（ItemTest.sysml）のように、
+        # visibilityIndicatorが方向修飾子の前に付くことがある（2026-08-29、
+        # 235件パース失敗の要因分析で発見）。
+        visibility_ctx = ctx.visibilityIndicator()
         return {
             "type": "param",
             "direction": direction_text,
             "is_item": kind_text == "item",
             "kind": kind_text,
+            "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
             "name": _optional_simple_name_text(ctx.simpleName()),
             "type_spec": {"name": type_name} if type_name is not None else None,
             "type_name": type_name,
+            **({"type_names": type_names} if len(type_names) > 1 else {}),
             # 多重度は型節の前(`preMult`、逆順)・後(`postMult`、通常順)の
             # どちらか一方にのみ現れる（両方同時に現れる実例は無い）。
             "multiplicity": self._multiplicity_dict(ctx.preMult if ctx.preMult is not None else ctx.postMult),

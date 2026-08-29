@@ -1022,6 +1022,7 @@ def test_antlr_action_def_separates_params_from_control_flow_children():
             "direction": "in",
             "is_item": True,
             "kind": "item",
+            "visibility": None,
             "name": "x",
             "type_spec": {"name": "T"},
             "type_name": "T",
@@ -3358,6 +3359,7 @@ def test_antlr_interaction_def_separates_params_from_children():
             "direction": "in",
             "is_item": False,
             "kind": None,
+            "visibility": None,
             "name": "a",
             "type_spec": {"name": "Boolean"},
             "type_name": "Boolean",
@@ -4804,6 +4806,7 @@ def test_antlr_perform_bare_reference_with_body():
             "direction": "out",
             "is_item": False,
             "kind": None,
+            "visibility": None,
             "name": "onOffCmd",
             "type_spec": None,
             "type_name": None,
@@ -6032,3 +6035,30 @@ def test_antlr_entry_do_exit_actionmember_body():
     assert semi_entry["children"] == []
     assert semi_do["children"] == []
     assert semi_exit["children"] == []
+
+
+def test_antlr_visibility_prefix_on_actionparameter():
+    """`private in ref y: A, B;`（ItemTest.sysml）のように、
+    visibilityIndicatorが方向修飾子の前に付くことがある（従来
+    actionParameterには一切登録されていなかった）。型節がカンマ区切り
+    の複数型（`A, B`）を取ることも併せて確認する。当初featureUsage側に
+    directionを追加する案を試したが、featureUsageはpartBodyElement/
+    stateBodyElement等でactionParameterより先に登録されており、
+    `in x : Type;`のような裸形の判別が曖昧になって既存の多数のテストを
+    壊したため、actionParameter自体にvisibilityIndicator?を足す設計に
+    変更した。2026-08-29、235件パース失敗の要因分析で発見。"""
+    ast = parse_sysml_antlr("action def A { private in ref y: A, B; }")
+    param = ast["children"][0]["params"][0]
+    assert param["type"] == "param"
+    assert param["visibility"] == "private"
+    assert param["direction"] == "in"
+    assert param["kind"] == "ref"
+    assert param["name"] == "y"
+    assert param["type_names"] == ["A", "B"]
+
+    # 既存のvisibility無し形が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr("action def A { in x : T; }")
+    plain_param = plain_ast["children"][0]["params"][0]
+    assert plain_param["visibility"] is None
+    assert plain_param["type_name"] == "T"
+    assert "type_names" not in plain_param
