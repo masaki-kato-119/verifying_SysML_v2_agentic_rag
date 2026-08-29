@@ -1342,6 +1342,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "isParallel": ctx.isParallel is not None,
             "redefines": redefines,
             "children": children,
+            **({"isThen": True} if ctx.isThen is not None else {}),
         }
 
     # --- binding connector / succession (8.2.2.13) ------------------------------

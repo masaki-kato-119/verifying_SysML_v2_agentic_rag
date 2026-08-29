@@ -5977,3 +5977,23 @@ def test_antlr_flowusage_named_bare_from_to_form():
     assert def_node["name"] == "flows"
     assert def_node["type_name"] == "Flow"
     assert def_node["isAbstract"] is True
+
+
+def test_antlr_then_prefix_stateusage():
+    """`then state wait;`（AssignmentTest.sysml）のように、stateUsage自体
+    に`then`前置が無かった（他の多くの規則（performActionStmt等）では
+    既に`isThen`対応済みで非対称だった）。2026-08-29、235件パース失敗の
+    要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "state def Counting { entry; then state wait; state wait; }"
+    )
+    children = ast["children"][0]["children"]
+    then_node = children[1]
+    assert then_node["type"] == "state_usage"
+    assert then_node["name"] == "wait"
+    assert then_node["isThen"] is True
+
+    # 既存の`then`無し形が引き続き機能することを確認する。
+    plain_node = children[2]
+    assert plain_node["type"] == "state_usage"
+    assert "isThen" not in plain_node

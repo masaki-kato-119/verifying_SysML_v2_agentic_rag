@@ -2299,8 +2299,11 @@ stateBodyElement
 // `state 'vehicle states': 'Vehicle States' parallel { ... }`
 // （5-State-based Behavior-1.sysml）のように、型節がQUOTED_NAMEを取る
 // ことがある（2026-08-28、730件パース失敗の要因分析で発見）。
+// `then state wait;`（AssignmentTest.sysml）のように、`then`前置を持ち
+// うる（他の多くの規則（performActionStmt等）では既に`isThen`対応済み
+// で非対称だった。2026-08-29、235件パース失敗の要因分析で発見）。
 stateUsage
-    : isAbstract='abstract'? isRef='ref'? 'state' simpleName?
+    : isThen='then'? isAbstract='abstract'? isRef='ref'? 'state' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       (':' typeRef=(ID | QUOTED_NAME))?
       multiplicitySpec?
