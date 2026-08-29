@@ -495,8 +495,12 @@ useCaseDef
 // 含む名前の引用形）を取ることがある（従来はIDのみだった。`typeRef`と
 // いう専用ラベルを使うことで、`_usage_keyword_node`の既存のToken対応
 // パスがそのまま使える。2026-08-28、730件パース失敗の要因分析で発見）。
+// `then use case 'drive vehicle' { ... }`（Use Case Usage Example.sysml）
+// のように、`then`前置を持ちうる（includeUseCaseUsage等の多くの規則
+// では既に`isThen`対応済みで非対称だった。2026-08-29、235件パース失敗
+// の要因分析で発見）。
 useCaseUsage
-    : variability=('variation' | 'variant')? visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'use' 'case' simpleName?
+    : variability=('variation' | 'variant')? isThen='then'? visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'use' 'case' simpleName?
       (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       (':' typeRef=(ID | QUOTED_NAME))?
       multiplicitySpec?

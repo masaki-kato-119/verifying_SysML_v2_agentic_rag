@@ -5792,3 +5792,25 @@ def test_antlr_actorusage_namespacepath_type():
     plain_ast = parse_sysml_antlr("use case def X { actor driver : RoadUser; }")
     plain_node = plain_ast["children"][0]["children"][0]
     assert plain_node["type_name"] == "RoadUser"
+
+
+def test_antlr_then_prefix_usecaseusage():
+    """`then use case 'drive vehicle' { ... }`（Use Case Usage Example.sysml）
+    のように、useCaseUsage自体に`then`前置が無かった（includeUseCaseUsage
+    等の多くの規則では既に`isThen`対応済みで非対称だった）。2026-08-29、
+    235件パース失敗の要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "use case def X { first start; then use case 'drive vehicle' "
+        "{ subject vehicle; } }"
+    )
+    node = ast["children"][0]["children"][1]
+    assert node["type"] == "use_case_usage"
+    assert node["isThen"] is True
+    assert node["name"] == "drive vehicle"
+    assert len(node["children"]) == 1
+
+    # 既存の`then`無し形が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr("use case def X { use case uc1 : UC1; }")
+    plain_node = plain_ast["children"][0]["children"][0]
+    assert plain_node["type"] == "use_case_usage"
+    assert "isThen" not in plain_node

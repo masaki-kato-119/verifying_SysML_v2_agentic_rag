@@ -1169,6 +1169,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # 失敗の要因分析で発見）。
         extra_type_refs = getattr(ctx, "extraTypeRefs", None) or []
         type_names = ([type_name] if type_name is not None else []) + [t.text for t in extra_type_refs]
+        # `then use case 'drive vehicle' { ... }`のように`then`前置を持つ
+        # 規則が一部にしかない（今のところuseCaseUsageのみ）ため、
+        # getattrで安全に読む（variability/prefixMetadataと同じ方針。
+        # 2026-08-29、235件パース失敗の要因分析で発見）。
+        is_then_token = getattr(ctx, "isThen", None)
         return {
             "type": node_type,
             "name": _optional_simple_name_text(ctx.simpleName()),
@@ -1183,6 +1188,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "prefixMetadata": prefix_metadata,
             "children": [self.visit(el) for el in children_ctxs],
             **({"variability": variability_token.text} if variability_token is not None else {}),
+            **({"isThen": True} if is_then_token is not None else {}),
         }
 
     def visitVerifyRequirementUsage(self, ctx: SysMLMinParser.VerifyRequirementUsageContext) -> Dict:
