@@ -1895,10 +1895,22 @@ qualifiedName
 // redefineターゲットを置く形、attributeUsage等と同型）も取りうる
 // （2026-08-29、add_flow_end_member_triple_colon_gt_operator対応中に
 // 連鎖的に発見）。
+// `flow call_getItems of CallGiveItems[1] from tlu.cll to apsph.cll;`
+// （AHFSequences.sysml）のように、`of`型の直後に多重度`[1]`が付くことも
+// ある。`ofMult`という専用ラベルを使う必要がある。無ラベルの
+// `multiplicitySpec`のままだと個数はリストにならない（`?`なので単一
+// 参照のまま）が、`getTypedRuleContext`は代替（ラベル）を区別せず型
+// だけで子ノードを検索するため、第2代替側の無ラベル`ctx.
+// multiplicitySpec()`が誤って第1代替の`ofMult`ノードを拾ってしまう
+// （両代替は同じFlowUsageContextを共有するため）。この衝突を避ける
+// ため、第2代替側の多重度にも`typeMult`という専用ラベルを付ける
+// （`ofType`/`typeRef`と同じ設計思想だが、今回は`getTypedRuleContext`
+// の型ベース検索という別の衝突パターン。2026-08-29、
+// add_interfaceusage_nary_connect_form対応中に連鎖的に発見）。
 flowUsage
     : 'flow' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
-      ( 'of' ofType=ID )?
+      ( 'of' ofType=ID ofMult=multiplicitySpec? )?
       ( 'from' fromEnd=namespacePath 'to' toEnd=namespacePath
       | fromEnd=namespacePath 'to' toEnd=namespacePath
       )?
@@ -1910,7 +1922,7 @@ flowUsage
       // `namespacePath`を使う（同じ行の反例のため、preKind対応と同時に
       // 発見・対応）。
       (':' typeRef=namespacePath)?
-      multiplicitySpec?
+      typeMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )
     ;

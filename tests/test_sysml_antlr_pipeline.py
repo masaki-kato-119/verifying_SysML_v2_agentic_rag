@@ -6256,6 +6256,51 @@ def test_antlr_flowusage_named_bare_from_to_form():
     assert def_node["isAbstract"] is True
 
 
+def test_antlr_flowusage_of_type_multiplicity():
+    """`flow call_getItems of CallGiveItems[1] from tlu.cll to
+    apsph.cll;`（AHFSequences.sysml L89）のように、flowUsageの第1代替の
+    `of`型の直後に多重度`[1]`が付くことがある（従来`ofType=ID`のみで
+    multiplicitySpecが無かった）。`ofMult`という専用ラベルを使う必要が
+    あった（無ラベルのままだと`getTypedRuleContext`が代替を区別せず
+    型だけで検索するため、第2代替（型定義形）の判別ロジックが誤って
+    このofMultノードを拾ってしまい、第2代替として誤分類される回帰が
+    あった。その回帰を防ぐため第2代替の多重度にも`typeMult`という専用
+    ラベルを付けた）。2026-08-29、
+    add_interfaceusage_nary_connect_form対応中に連鎖的に発見。"""
+    ast = parse_sysml_antlr(
+        "flow call_getItems of CallGiveItems[1] from tlu.cll to apsph.cll;"
+    )
+    node = ast["children"][0]
+    assert node["type"] == "flow_usage"
+    assert node["name"] == "call_getItems"
+    assert node["item_type"] == "CallGiveItems"
+    assert node["from_end"] == "tlu::cll"
+    assert node["to_end"] == "apsph::cll"
+    assert node["item_multiplicity"] == {
+        "size": {"min": 1, "max": 1}, "is_ordered": False, "is_unique": True
+    }
+
+    # 既存の多重度無し`of`型が引き続き機能することを確認する
+    # （"item_multiplicity"キー自体が無いことも確認する）。
+    plain_ast = parse_sysml_antlr("part def X { flow of X from a to b; }")
+    plain_node = plain_ast["children"][0]["children"][0]
+    assert plain_node["item_type"] == "X"
+    assert "item_multiplicity" not in plain_node
+
+    # 既存の型定義形（第2代替）が誤分類されないことを確認する
+    # （typeMultラベル分離の回帰防止）。
+    def_ast = parse_sysml_antlr(
+        "part def P { abstract flow flows: Flow[0..*] "
+        "nonunique :> messages, flowTransfers { } }"
+    )
+    def_node = def_ast["children"][0]["children"][0]
+    assert def_node["type_name"] == "Flow"
+    assert def_node["multiplicity"] == {
+        "size": {"min": 0, "max": "*"}, "is_ordered": False, "is_unique": False
+    }
+    assert "item_type" not in def_node
+
+
 def test_antlr_then_prefix_stateusage():
     """`then state wait;`（AssignmentTest.sysml）のように、stateUsage自体
     に`then`前置が無かった（他の多くの規則（performActionStmt等）では

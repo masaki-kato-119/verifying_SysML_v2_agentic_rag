@@ -720,7 +720,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # bodyを持てるようになったため、`partBodyElement()`はもはや
         # 判別材料として使えない。2026-08-29、235件パース失敗の要因分析
         # で発見）。
-        if ctx.typeRef is not None or ctx.multiplicitySpec() is not None or len(ctx.postKind) > 0 or ctx.isAbstract is not None:
+        # `typeMult`（第2代替専用ラベル）で判別する。無ラベルの
+        # `ctx.multiplicitySpec()`は代替を区別せず型だけで子ノードを
+        # 検索するため、第1代替の`ofMult`ノードも拾ってしまい判別に
+        # 使えない（2026-08-29、add_interfaceusage_nary_connect_form
+        # 対応中に連鎖的に発見）。
+        if ctx.typeRef is not None or ctx.typeMult is not None or len(ctx.postKind) > 0 or ctx.isAbstract is not None:
             # `flow :>> publish_message: Transfers::MessageTransfer { ... }`
             # のように、preKind（名前の代わりに型節前に置くredefine）も
             # 持ちうる（2026-08-29、連鎖的に発見）。
@@ -731,7 +736,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 "type": "flow_usage",
                 "name": _optional_simple_name_text(ctx.simpleName()),
                 "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
-                "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
+                "multiplicity": self._multiplicity_dict(ctx.typeMult),
                 "isAbstract": ctx.isAbstract is not None,
                 "redefines": redefines,
                 "children": [self.visit(el) for el in ctx.partBodyElement()],
@@ -754,6 +759,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "from_end": from_end,
             "to_end": to_end,
             **({"redefines": bare_redefines} if bare_redefines else {}),
+            # `flow call_getItems of CallGiveItems[1] from tlu.cll to
+            # apsph.cll;`（AHFSequences.sysml）のように、`of`型の直後に
+            # 多重度が付くことがある（2026-08-29、連鎖的に発見）。既存の
+            # exact-equality辞書テストを壊さないよう、無い場合はキー自体を
+            # 省略する。
+            **({"item_multiplicity": self._multiplicity_dict(ctx.ofMult)} if ctx.ofMult is not None else {}),
             # `flow NAME from A to B { attribute :>> isInstant = true; }`
             # （ServerSequenceOutsideRealization-3.sysml）のように、`;`
             # 終端の代わりに本体を持つこともある（2026-08-29、235件パース
