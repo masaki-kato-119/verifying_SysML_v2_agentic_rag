@@ -3752,6 +3752,30 @@ def test_antlr_succession_usage_leading_multiplicity_no_name():
     assert node["thenMultiplicity"]["size"] == {"min": 0, "max": 1}
 
 
+def test_antlr_successionusage_typed_first_then_form():
+    """`succession s1 : AB first a then b;`（ConnectionTest.sysml L28）の
+    ように、successionUsageの`first...then`代替は名前の後に型節
+    （`: AB`）を置くこともある（従来この代替は型節を一切持たなかった）。
+    2026-08-29、add_connectionendmember_leading_multiplicity対応中に
+    連鎖的に発見。"""
+    ast = parse_sysml_antlr(
+        "part def P { part a; part b; succession s1 : AB first a then b; }"
+    )
+    node = ast["children"][0]["children"][-1]
+    assert node["type"] == "succession_usage"
+    assert node["name"] == "s1"
+    assert node["type_name"] == "AB"
+    assert node["firstEnd"]["reference"] == "a"
+    assert node["thenEnd"]["reference"] == "b"
+
+    # 既存の型節無し形が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr(
+        "part def P { part a; part b; succession first a then b; }"
+    )
+    plain_node = plain_ast["children"][0]["children"][-1]
+    assert plain_node["type_name"] is None
+
+
 def test_antlr_succession_flow_composite_form():
     """`succession flow onOffCmdFlow from sendOnOffCmd.onOffCmd to
     produceDirectedLight.onOffCmd;`（FlashlightExample.sysml）のような、

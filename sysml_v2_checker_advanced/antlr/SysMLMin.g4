@@ -2498,8 +2498,12 @@ successionStmt
 // ある。`first`/`then`形とは終端の書き方が異なる（`from`/`to` +
 // namespacePath、connectorEndではない）ため、別代替として持つ
 // （2026-08-28、参照実装比較レポートP2-2で発見）。
+// `succession s1 : AB first a then b;`（ConnectionTest.sysml）のように、
+// 名前の後に型節（`: AB`）を置くこともある（従来この代替は型節を
+// 一切持たなかった。2026-08-29、
+// add_connectionendmember_leading_multiplicity対応中に連鎖的に発見）。
 successionUsage
-    : visibilityIndicator? 'succession' simpleName? multiplicitySpec?
+    : visibilityIndicator? 'succession' simpleName? (':' typeRef=ID)? multiplicitySpec?
       'first' firstMult=multiplicitySpec? firstEnd=connectorEnd
       'then' thenMult=multiplicitySpec? thenEnd=connectorEnd
       ( '{' partBodyElement* '}' | ';' )                                # successionUsageFirstThen

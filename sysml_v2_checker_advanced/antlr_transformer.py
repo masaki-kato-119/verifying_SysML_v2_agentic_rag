@@ -1457,6 +1457,9 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "name": _optional_simple_name_text(ctx.simpleName()),
             "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
             "isFlow": False,
+            # `succession s1 : AB first a then b;`のように、名前の後に型節
+            # を置くこともある（2026-08-29、連鎖的に発見）。
+            "type_name": ctx.typeRef.text if ctx.typeRef is not None else None,
             "multiplicity": self._multiplicity_dict(leading_mult_ctx),
             "firstMultiplicity": self._multiplicity_dict(ctx.firstMult),
             "firstEnd": self.visit(ctx.firstEnd),
