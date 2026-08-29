@@ -2524,8 +2524,13 @@ transitionEffect
 // 遷移先（target）に`;`終端だけでなく`{ doc ... }`という本体も付く
 // ことがある（lambdaParamと同型のdocのみ本体。2026-08-29、235件パース
 // 失敗の要因分析で発見）。
+// `transition initial then off;`（5-State-based Behavior-1.sysml）の
+// ように、名前（`initial`）はあるが`first source`節が完全に省略される
+// ことがある（初期遷移相当の短縮形。`transition`自体が固有のキーワード
+// のため他規則との曖昧性は生じない。2026-08-29、235件パース失敗の
+// 要因分析で発見）。
 transitionStmt
-    : 'transition' simpleName? 'first' source=namespacePath
+    : 'transition' simpleName? ( 'first' source=namespacePath )?
       ( 'accept' transitionTrigger )?
       ( 'if' guard=expression )?
       ( 'do' transitionEffect )?

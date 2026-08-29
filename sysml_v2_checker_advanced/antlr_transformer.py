@@ -1635,10 +1635,15 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 (SysMLMinParser.DocumentationStmtContext, SysMLMinParser.BareDocCommentContext),
             )
         ]
+        # `transition initial then off;`（5-State-based Behavior-1.sysml）
+        # のように、名前はあるが`first source`節が完全に省略されることが
+        # ある（`_check_transition`はsource=Noneならチェックをスキップする
+        # 既存の仕様、initialTransitionMemberと同じ扱い。2026-08-29、235件
+        # パース失敗の要因分析で発見）。
         return {
             "type": "transition",
             "name": _simple_name_text(ctx.simpleName()) if ctx.simpleName() is not None else None,
-            "source": _namespace_path_text(ctx.source),
+            "source": _namespace_path_text(ctx.source) if ctx.source is not None else None,
             "target": _namespace_path_text(ctx.target),
             "trigger": trigger,
             "guard": guard,

@@ -658,6 +658,22 @@ def test_antlr_transition_minimal_source_and_target():
     assert lint_ast(ast) == []
 
 
+def test_antlr_transition_omitted_source_initial_pseudostate_form():
+    """`transition initial then off;`（5-State-based Behavior-1.sysml L77,136,171）は
+    初期疑似状態からの遷移を表す省略形で、`first source`節を持たない。
+    source=Noneとしてパースされ、_check_transitionはsourceチェックをスキップする。
+    """
+    ast = parse_sysml_antlr(
+        "state def S { state off; transition initial then off; }"
+    )
+    transition = ast["children"][0]["children"][1]
+    assert transition["type"] == "transition"
+    assert transition["name"] == "initial"
+    assert transition["source"] is None
+    assert transition["target"] == "off"
+    assert lint_ast(ast) == []
+
+
 def test_antlr_transition_full_form_with_trigger_guard_effect():
     ast = parse_sysml_antlr(
         "state def S { state def A; state def B; "
