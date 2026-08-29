@@ -5901,3 +5901,34 @@ def test_antlr_interfaceusage_named_type_namespacepath():
     bare_node = bare_ast["children"][0]["children"][0]
     assert bare_node["name"] is None
     assert bare_node["type_name"] == "StagingInterface"
+
+
+def test_antlr_connectionendmember_redefine_and_direct_reference_combined():
+    """`end :>> source ::> producer.publicationPort;`
+    （ServerSequenceOutsideRealization-2.sysml）のように、
+    connectionEndMemberが名前を伴わない`:>>`redefine節（postKind）と
+    直後の`::>`直接参照（directKind）を同時に持つことがある（従来この
+    2つは互いに排他的な代替として扱われており未対応だった）。既存の
+    `directKind`単独形（`end #cause ::> a;`）・通常の名前付き形
+    （`end p1: P;`）が引き続き機能することも確認する。2026-08-29、
+    235件パース失敗の要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "connection a: A { end :>> source ::> producer.publicationPort; }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "connection_end_member"
+    assert node["redefines"] == [{"kind": "redefines", "target": "source"}]
+    assert node["reference"] == "producer::publicationPort"
+
+    # 既存のdirectKind単独形が引き続き機能することを確認する。
+    direct_only_ast = parse_sysml_antlr("connection a: A { end #cause ::> a; }")
+    direct_only_node = direct_only_ast["children"][0]["children"][0]
+    assert direct_only_node["reference"] == "a"
+    assert direct_only_node["redefines"] == []
+
+    # 既存の通常の名前付き形が引き続き機能することを確認する。
+    named_ast = parse_sysml_antlr("connection a: A { end p1: P; }")
+    named_node = named_ast["children"][0]["children"][0]
+    assert named_node["name"] == "p1"
+    assert named_node["type_name"] == "P"
+    assert named_node["reference"] is None

@@ -940,17 +940,22 @@ connectionBodyElement
 // `end #cause ::> a;`（CauseAndEffectExample.sysml）のように、名前・型節を
 // 一切伴わず、`#Type`プレフィックス直後に`::>`（`references`の記号形
 // 同義語）+参照先のみで構成される代替形もある（2026-08-28、発見）。
+// `end :>> source ::> producer.publicationPort;`
+// （ServerSequenceOutsideRealization-2.sysml）のように、名前を伴わない
+// `:>>`redefine節（postKind）と直後の`::>`直接参照（directKind）を
+// 同時に持つことがある（従来この2つは互いに排他的な代替として扱って
+// いたため未対応だった。directKindをpostKind節の後に続く任意節として
+// 統合する。2026-08-29、235件パース失敗の要因分析で発見）。
 connectionEndMember
     : 'end' prefixMetadataAnnotation*
-      ( (endName=simpleName endMult=multiplicitySpec?)?
-        kind=('occurrence' | 'port' | 'item')?
-        isRef='ref'?
-        innerName=simpleName?
-        (':' conjugated='~'? ID)?
-        multiplicitySpec?
-        (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
-      | directKind=('::>' | 'references') directTarget=namespacePath
-      )
+      (endName=simpleName endMult=multiplicitySpec?)?
+      kind=('occurrence' | 'port' | 'item')?
+      isRef='ref'?
+      innerName=simpleName?
+      (':' conjugated='~'? ID)?
+      multiplicitySpec?
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (directKind=('::>' | 'references') directTarget=namespacePath)?
       ( '{' partBodyElement* '}' | ';' )
     ;
 
