@@ -133,6 +133,11 @@ packageBodyElement
     // 公式コーパスに例外なし」としていたが、この反例が見つかった。
     // 2026-08-29、add_bare_include_shorthand対応中に連鎖的に発見）。
     | actorUsage
+    // `package 'Safety Features' { public import vehicle::**; filter @Safety; }`
+    // （Filtering Example-1.sysml）のように、`filterStmt`はview/viewpoint
+    // 本体（partBodyElement経由）だけでなく、パッケージ本体直下にも単独で
+    // 書ける（2026-08-29、730件ベースライン154件エラー要因分析で発見）。
+    | filterStmt
     ;
 
 // --- dependency (8.2.2.3) ------------------------------------------------------

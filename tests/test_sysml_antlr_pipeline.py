@@ -5508,6 +5508,36 @@ def test_antlr_view_expose_and_filter():
     }
 
 
+def test_antlr_packagebodyelement_bare_filter_stmt():
+    """`package 'Safety Features' { public import vehicle::**; filter
+    @Safety; }`（Filtering Example-1.sysml）のように、`filterStmt`は
+    view/viewpoint本体（partBodyElement経由）だけでなく、パッケージ本体
+    直下にも単独で書ける（従来packageBodyElementに未登録だった）。
+    2026-08-29、730件ベースライン154件エラー要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "package Outer {\n"
+        "    package 'Safety Features' {\n"
+        "        public import vehicle::**;\n"
+        "        filter @Safety;\n"
+        "    }\n"
+        "}\n"
+    )
+    inner_pkg = ast["children"][0]
+    assert inner_pkg["type"] == "package"
+    assert inner_pkg["name"] == "Safety Features"
+    filter_node = inner_pkg["children"][1]
+    assert filter_node == {
+        "type": "special_stmt",
+        "children": [
+            {
+                "type": "filter",
+                "expression": {"type": "metadata_ref", "reference": "Safety"},
+                "children": [],
+            },
+        ],
+    }
+
+
 def test_antlr_bracket_multiplicity_after_type_clause():
     """`timeslice asPresident : Person [0..*] { ... }`（型節の後に多重度）・
     `timeslice item UnitedStatesWhenJohnIsPresident[*] : UnitedStates
