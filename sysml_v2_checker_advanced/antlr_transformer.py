@@ -1426,6 +1426,19 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return {"type": "flow_stmt", "children": [flow_node]}
 
     def visitEntryActionMember(self, ctx: SysMLMinParser.EntryActionMemberContext) -> Dict:
+        # `entry assign counter.count := 0;`というインライン代入アクション
+        # （doActionMemberの`do send ...`と同型、2026-08-29、235件パース
+        # 失敗の要因分析で発見）。
+        if ctx.assign is not None:
+            return {
+                "type": "entry_action",
+                "kind": "entry",
+                "action_reference": None,
+                "type_name": None,
+                "redefines": [],
+                "assign": self.visit(ctx.assign),
+                "children": [],
+            }
         # `entry action entryAction :>> 'entry';`（States.sysml）のように
         # 型節・redefine節も持つ（対象は`entry`自体が予約語のためQUOTED_NAME
         # で囲む）。
@@ -1436,6 +1449,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "action_reference": _optional_qualified_name_text(ctx.qualifiedName()),
             "type_name": id_ctx.getText() if id_ctx is not None else None,
             "redefines": self._redefine_list_namespace(ctx.postKind, ctx.postTarget),
+            "assign": None,
             "children": [],
         }
 
@@ -1460,6 +1474,21 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                     "to": _namespace_path_text(ctx.sendTarget) if ctx.sendTarget is not None else None,
                     "via": _namespace_path_text(ctx.sendVia) if ctx.sendVia is not None else None,
                 },
+                "assign": None,
+                "children": [],
+            }
+        # `do assign counter.count := counter.count + 1;`という
+        # インライン代入アクション（entryActionMemberと同型、2026-08-29、
+        # 235件パース失敗の要因分析で発見）。
+        if ctx.assign is not None:
+            return {
+                "type": "do_action",
+                "kind": "do",
+                "action_reference": None,
+                "type_name": None,
+                "redefines": [],
+                "send": None,
+                "assign": self.visit(ctx.assign),
                 "children": [],
             }
         id_ctx = ctx.ID()
@@ -1470,6 +1499,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "type_name": id_ctx.getText() if id_ctx is not None else None,
             "redefines": self._redefine_list_namespace(ctx.postKind, ctx.postTarget),
             "send": None,
+            "assign": None,
             "children": [],
         }
 

@@ -641,7 +641,7 @@ def test_antlr_entry_do_exit_action_have_correct_kind_and_pass_lint():
 def test_antlr_bare_entry_action_without_reference():
     ast = parse_sysml_antlr("state def S { entry; }")
     entry = ast["children"][0]["children"][0]
-    assert entry == {"type": "entry_action", "kind": "entry", "action_reference": None, "type_name": None, "redefines": [], "children": []}
+    assert entry == {"type": "entry_action", "kind": "entry", "action_reference": None, "type_name": None, "redefines": [], "assign": None, "children": []}
 
 
 def test_antlr_transition_minimal_source_and_target():
@@ -1751,7 +1751,7 @@ def test_antlr_initial_transition_shorthand():
     扱い、既存の_check_transitionが安全に処理できるようにする。"""
     ast = parse_sysml_antlr("state def S { entry; then Off; state Off; }")
     children = ast["children"][0]["children"]
-    assert children[0] == {"type": "entry_action", "kind": "entry", "action_reference": None, "type_name": None, "redefines": [], "children": []}
+    assert children[0] == {"type": "entry_action", "kind": "entry", "action_reference": None, "type_name": None, "redefines": [], "assign": None, "children": []}
     assert children[1] == {
         "type": "transition",
         "name": None,
@@ -1838,11 +1838,13 @@ def test_antlr_entry_do_exit_action_member_type_and_redefine():
     entry, do, exit_ = ast["children"][0]["children"]
     assert entry == {
         "type": "entry_action", "kind": "entry", "action_reference": "entryAction",
-        "type_name": None, "redefines": [{"kind": "redefines", "target": "entry"}], "children": [],
+        "type_name": None, "redefines": [{"kind": "redefines", "target": "entry"}],
+        "assign": None, "children": [],
     }
     assert do == {
         "type": "do_action", "kind": "do", "action_reference": "doAction",
-        "type_name": "Action", "redefines": [{"kind": "redefines", "target": "do"}], "send": None, "children": [],
+        "type_name": "Action", "redefines": [{"kind": "redefines", "target": "do"}],
+        "send": None, "assign": None, "children": [],
     }
     assert exit_ == {
         "type": "exit_action", "kind": "exit", "action_reference": "exitAction",
@@ -5673,3 +5675,40 @@ def test_antlr_minimal_bare_interfaceusage_connect_form():
     plain_node = plain_ast["children"][0]["children"][0]
     assert plain_node["type_name"] == "Interface"
     assert plain_node["interface_part"] is None
+
+
+def test_antlr_partusage_and_inline_assign_in_statebodyelement():
+    """`state def Counting { part counter : Counter; entry assign
+    counter.count := 0; ... state increment { do assign counter.count :=
+    counter.count + 1; } }`（AssignmentTest.sysml）のように、partUsageが
+    stateBodyElementに登録されておらず（attributeUsage/featureUsage/
+    actionUsageStmtは登録済みで非対称）、かつentry/doに続くインライン
+    代入アクション（`entry assign ...;`・`do assign ...;`、doActionMember
+    の既存の`do send ...`と同型）も未対応だった。2026-08-29、235件パース
+    失敗の要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "state def Counting { part counter : Counter; "
+        "entry assign counter.count := 0; "
+        "state increment { do assign counter.count := counter.count + 1; } }"
+    )
+    children = ast["children"][0]["children"]
+    part_node = children[0]
+    assert part_node["type"] == "part_instance"
+    assert part_node["name"] == "counter"
+    assert part_node["type_name"] == "Counter"
+
+    entry_node = children[1]
+    assert entry_node["type"] == "entry_action"
+    assert entry_node["assign"]["type"] == "assignment_stmt"
+    assert entry_node["assign"]["operator"] == ":="
+
+    nested_do = children[2]["children"][0]
+    assert nested_do["type"] == "do_action"
+    assert nested_do["assign"]["type"] == "assignment_stmt"
+
+    # 既存の参照形（アクション参照のみ）が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr("state def S { entry; do x; }")
+    plain_children = plain_ast["children"][0]["children"]
+    assert plain_children[0]["assign"] is None
+    assert plain_children[1]["assign"] is None
+    assert plain_children[1]["send"] is None

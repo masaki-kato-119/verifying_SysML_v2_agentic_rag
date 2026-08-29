@@ -2211,6 +2211,11 @@ stateBodyElement
     // `accept s : Sig do action D then S2;`のような、`transition ...
     // first`を伴わない暗黙遷移形（2026-08-28、730件回帰チェックで発見）。
     | implicitTransitionStmt
+    // `state def Counting { part counter : Counter; ... }`
+    // （AssignmentTest.sysml）のように、partUsageもstateBodyElement内に
+    // 書ける（attributeUsage/featureUsage/actionUsageStmtは登録済みで
+    // 非対称だった。2026-08-29、235件パース失敗の要因分析で発見）。
+    | partUsage
     ;
 
 // bodyにstateBodyElementの反復を許可し、`state On { entry action ...;
@@ -2343,21 +2348,30 @@ actionFlowStmt
 // :>> 'do';`・`exit action exitAction: Action :>> 'exit';`（States.sysml）
 // のように、型節（`: Action`）・redefine節（`:>>`、対象は`entry`/`do`/
 // `exit`自体が予約語のためQUOTED_NAMEで囲む）も持つ。
+// `entry assign counter.count := 0;`（AssignmentTest.sysml）のように、
+// doActionMemberの`do send ...`と同型のインライン代入アクションも
+// 単独のentry-actionメンバーとして書ける（2026-08-29、235件パース失敗の
+// 要因分析で発見）。
 entryActionMember
     : 'entry' ('action')? qualifiedName? (':' ID)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ';'
+    | 'entry' assign=assignmentStmt
     ;
 
 // `do send new Sig(T.s.x) to p;`（StateTest.sysml、公式xpectテスト）のように、
 // transitionStmt/implicitTransitionStmtの`do`節と同じインラインsend
 // アクションを、単独のdo-actionメンバーとしても書ける（2026-08-28、
 // 730件回帰チェックで発見。実コーパスでも10件超）。
+// `do assign counter.count := counter.count + 1;`（AssignmentTest.sysml）
+// のように、entryActionMemberと同型のインライン代入アクションも
+// doActionMemberで書ける（2026-08-29、235件パース失敗の要因分析で発見）。
 doActionMember
     : 'do' ('action')? qualifiedName? (':' ID)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ';'
     | 'do' 'send' payload=expression ( 'to' sendTarget=namespacePath | 'via' sendVia=namespacePath )? ';'
+    | 'do' assign=assignmentStmt
     ;
 
 exitActionMember
