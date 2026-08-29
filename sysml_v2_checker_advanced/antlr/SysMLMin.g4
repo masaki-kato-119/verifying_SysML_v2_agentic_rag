@@ -876,8 +876,20 @@ requireUsage
 // 2026-08-29、235件パース失敗の要因分析で発見）。`typeRef`という専用
 // ラベルを使うことで、第2代替（無ラベル`ID`のみ）との判別が
 // `ctx.typeRef`の有無で明確にできる。
+// `interface APIS_transfer_interface : Interfaces::Interface connect
+// (tlu ::> ..., apsph ::> ..., apspm ::> ...);`（AHFSequences.sysml）の
+// ように、`connect`節は2項の`A to B`形だけでなく、括弧で囲んだ3項以上の
+// end列（n元connect、connectUsage/connectionUsageで既に対応済みの
+// `naryEnds`と同じ設計）も取りうる（2026-08-29、
+// add_interfaceusage_named_type_namespacepath対応中に連鎖的に発見）。
 interfaceUsage
-    : isAbstract='abstract'? 'interface' simpleName ':' typeRef=namespacePath ( 'connect' connectorEndPath 'to' connectorEndPath )? ( '{' partBodyElement* '}' | ';' )
+    : isAbstract='abstract'? 'interface' simpleName ':' typeRef=namespacePath
+      ( 'connect'
+        ( connectorEndPath 'to' connectorEndPath
+        | '(' naryEnds+=connectorEndPath (',' naryEnds+=connectorEndPath)+ ')'
+        )
+      )?
+      ( '{' partBodyElement* '}' | ';' )
     // `abstract interface interfaces: Interface[0..*] nonunique :>
     // connections { doc ... }`（Interfaces.sysml）のように、`connect`を
     // 伴わない裸のinterface usage形（connection/allocation/message/flow等と
@@ -896,7 +908,9 @@ interfaceUsage
       (':' ID)?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
-      ( 'connect'? connectorEndPath 'to' connectorEndPath )?
+      ( 'connect'? connectorEndPath 'to' connectorEndPath
+      | 'connect' '(' naryEnds+=connectorEndPath (',' naryEnds+=connectorEndPath)+ ')'
+      )?
       ( '{' partBodyElement* '}' | ';' )
     ;
 

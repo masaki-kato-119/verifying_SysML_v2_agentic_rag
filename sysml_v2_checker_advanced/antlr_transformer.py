@@ -1835,6 +1835,14 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # 2026-08-29、235件パース失敗の要因分析で`::`修飾名対応のため
         # ID単体から差し替え）を持つため、その有無で代替を判別する
         # （無ラベル`ctx.ID()`は第2代替のみに残る）。
+        # `interface APIS_transfer_interface : Interfaces::Interface connect
+        # (tlu ::> ..., apsph ::> ..., apspm ::> ...);`のように、括弧で
+        # 囲んだn元end列（`naryEnds`）も取りうる（connectUsage/
+        # connectionUsageと同じ設計。interface_partは2項形のみのため
+        # Noneのまま、別途"ends"フィールドに入れる。2026-08-29、
+        # add_interfaceusage_named_type_namespacepath対応中に連鎖的に
+        # 発見）。
+        nary_ends = ctx.naryEnds
         if ctx.typeRef is not None:
             ends = ctx.connectorEndPath()
             interface_part = self._binary_part("binary_interface_part", ends[0], ends[1]) if len(ends) == 2 else None
@@ -1843,6 +1851,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 "name": _simple_name_text(ctx.simpleName()),
                 "type_name": _namespace_path_text(ctx.typeRef),
                 "interface_part": interface_part,
+                **({"ends": [self.visit(e) for e in nary_ends]} if nary_ends else {}),
                 "isAbstract": ctx.isAbstract is not None,
                 # `interface X: Y connect a::b to c::d { ... }`（VehicleModel.sysml）
                 # のように本体を持つこともある（2026-08-28、
@@ -1868,6 +1877,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             # 名前省略の型付きinterface usage（この裸形分岐）も`connect`節を
             # 持ちうる（2026-08-28、730件パース失敗の要因分析で発見）。
             "interface_part": bare_interface_part,
+            **({"ends": [self.visit(e) for e in nary_ends]} if nary_ends else {}),
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 

@@ -6022,6 +6022,42 @@ def test_antlr_interfaceusage_named_type_namespacepath():
     assert bare_node["type_name"] == "StagingInterface"
 
 
+def test_antlr_interfaceusage_nary_connect_form():
+    """`interface APIS_transfer_interface : Interfaces::Interface connect
+    (tlu ::> ..., apsph ::> ..., apspm ::> ...);`（AHFSequences.sysml
+    L77-81）のように、interfaceUsageの`connect`節は2項の`A to B`形だけ
+    でなく、括弧で囲んだ3項以上のend列（connectUsage/connectionUsageで
+    既に対応済みのn項形）も取りうる（従来は2項形のみだった）。名前省略の
+    裸形（第2代替）でも同じn項形を受理できることも併せて確認する。
+    2026-08-29、add_interfaceusage_named_type_namespacepath対応中に
+    連鎖的に発見。"""
+    ast = parse_sysml_antlr(
+        "part def X { interface APIS_transfer_interface : Interfaces::Interface "
+        "connect (tlu ::> a, apsph ::> b, apspm ::> c); }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "interface_usage"
+    assert node["interface_part"] is None
+    assert [e["declared_name"] for e in node["ends"]] == ["tlu", "apsph", "apspm"]
+    assert [e["reference"] for e in node["ends"]] == ["a", "b", "c"]
+
+    # 既存の2項`A to B`形が引き続き機能することを確認する。
+    binary_ast = parse_sysml_antlr(
+        "part def X { interface named : Type connect a.p to b.q; }"
+    )
+    binary_node = binary_ast["children"][0]["children"][0]
+    assert binary_node["interface_part"] is not None
+    assert "ends" not in binary_node
+
+    # 名前省略の裸形（第2代替）でも同じn項形を受理できることを確認する。
+    bare_ast = parse_sysml_antlr(
+        "part def X { interface : StagingInterface connect (a.p, b.q, c.r); }"
+    )
+    bare_node = bare_ast["children"][0]["children"][0]
+    assert [e["declared_name"] for e in bare_node["ends"]] == [None, None, None]
+    assert [e["reference"] for e in bare_node["ends"]] == ["a::p", "b::q", "c::r"]
+
+
 def test_antlr_connectionendmember_redefine_and_direct_reference_combined():
     """`end :>> source ::> producer.publicationPort;`
     （ServerSequenceOutsideRealization-2.sysml）のように、
