@@ -486,8 +486,14 @@ caseUsage
 // （AnalysisIndividualExample.sysml）のように、`individual`先頭修飾子も
 // 持ちうる（occurrenceDef/partDef等と同じ設計。2026-08-29、730件
 // ベースライン154件エラー要因分析で発見）。
+// `analysis def MassAnalysisCase { ... vehicle.mass }`（10a-Analysis.sysml、
+// AnalysisTest.sysml）のように、本体末尾に`;`無しの裸の戻り値式
+// （resultExpressionMember、calculationDef/constraintDefと同型）を
+// 持ちうる。calcBodyElementはpartBodyElementを含む上位互換のため、
+// bodyの要素種別をcalcBodyElementへ差し替える（2026-08-29、730件
+// ベースライン154件エラー要因分析で発見）。
 analysisCaseDef
-    : isIndividual='individual'? isAbstract='abstract'? 'analysis' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : isIndividual='individual'? isAbstract='abstract'? 'analysis' 'def' simpleName inheritanceClause? ( '{' calcBodyElement* '}' | ';' )
     ;
 
 // `variation analysis a1;`（VariabilityTest.sysml）のように、Variability
@@ -499,17 +505,26 @@ analysisCaseDef
 // `individual analysis fuelEconomyAnalysis_1 : FuelEconomyAnalysis_1 { ... }`
 // （AnalysisIndividualExample.sysml）のように、`individual`先頭修飾子も
 // 持ちうる（2026-08-29、730件ベースライン154件エラー要因分析で発見）。
+// `analysis analysisCase : AnalysisCase { ... vehicle.mass }`のように、
+// analysisCaseDefと同じく本体末尾に裸の戻り値式（resultExpressionMember）
+// を持ちうるため、bodyの要素種別をcalcBodyElementへ差し替える
+// （2026-08-29、730件ベースライン154件エラー要因分析で発見）。
 analysisCaseUsage
     : variability=('variation' | 'variant')? visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? isRef='ref'? 'analysis' simpleName?
       (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       (':' ID (',' extraTypeRefs+=ID)*)?
       multiplicitySpec?
       (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
-      ( '{' partBodyElement* '}' | ';' )
+      ( '{' calcBodyElement* '}' | ';' )
     ;
 
+// `verification def VerificationCase { ... VerificationCases::PassIf(v.m
+// == 0) }`（VerificationTest.sysml）のように、analysisCaseDefと同じく
+// 本体末尾に裸の戻り値式（resultExpressionMember）を持ちうるため、
+// bodyの要素種別をcalcBodyElementへ差し替える（2026-08-29、730件
+// ベースライン154件エラー要因分析で発見）。
 verificationCaseDef
-    : isAbstract='abstract'? 'verification' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : isAbstract='abstract'? 'verification' 'def' simpleName inheritanceClause? ( '{' calcBodyElement* '}' | ';' )
     ;
 
 // `variation verification v1;`（VariabilityTest.sysml）のように、
@@ -521,7 +536,7 @@ verificationCaseUsage
       (':' ID)?
       multiplicitySpec?
       (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
-      ( '{' partBodyElement* '}' | ';' )
+      ( '{' calcBodyElement* '}' | ';' )
     ;
 
 useCaseDef

@@ -2617,6 +2617,15 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # 既存のexact-equality辞書テストを壊さないよう、無い場合はキー
         # 自体を省略する（isThen/isLoopと同じ方針）。
         is_individual_attr = getattr(ctx, "isIndividual", None)
+        # `analysis def MassAnalysisCase { ... vehicle.mass }`（10a-Analysis.
+        # sysml）・`verification def VerificationCase { ...
+        # VerificationCases::PassIf(v.m == 0) }`（VerificationTest.sysml）の
+        # ように、analysisCaseDef/verificationCaseDefのみ本体末尾に裸の
+        # 戻り値式（resultExpressionMember）を持ちうるため、body要素種別が
+        # calcBodyElement（今のところこの2規則のみ）と、他13規則の
+        # partBodyElementとで異なる。hasattrで判別する（2026-08-29、730件
+        # ベースライン154件エラー要因分析で発見）。
+        body_ctxs = ctx.calcBodyElement() if hasattr(ctx, "calcBodyElement") else ctx.partBodyElement()
         return {
             "type": node_type,
             "name": _simple_name_text(ctx.simpleName()),
@@ -2625,7 +2634,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "isAbstract": ctx.isAbstract is not None,
             "prefixMetadata": prefix_metadata,
             **({"isIndividual": True} if is_individual_attr is not None else {}),
-            "children": [self.visit(el) for el in ctx.partBodyElement()],
+            "children": [self.visit(el) for el in body_ctxs],
         }
 
     def visitCaseDef(self, ctx: SysMLMinParser.CaseDefContext) -> Dict:
@@ -2643,13 +2652,19 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return self._named_simple_node("analysis_case_def", ctx)
 
     def visitAnalysisCaseUsage(self, ctx: SysMLMinParser.AnalysisCaseUsageContext) -> Dict:
-        return self._usage_keyword_node("analysis_case_usage", ctx, ctx.partBodyElement())
+        # `analysis analysisCase : AnalysisCase { ... vehicle.mass }`のように
+        # 本体末尾に裸の戻り値式（resultExpressionMember）を持ちうるため、
+        # body要素種別はcalcBodyElement（2026-08-29、730件ベースライン
+        # 154件エラー要因分析で発見）。
+        return self._usage_keyword_node("analysis_case_usage", ctx, ctx.calcBodyElement())
 
     def visitVerificationCaseDef(self, ctx: SysMLMinParser.VerificationCaseDefContext) -> Dict:
         return self._named_simple_node("verification_case_def", ctx)
 
     def visitVerificationCaseUsage(self, ctx: SysMLMinParser.VerificationCaseUsageContext) -> Dict:
-        return self._usage_keyword_node("verification_case_usage", ctx, ctx.partBodyElement())
+        # analysisCaseUsageと同じ理由でbody要素種別はcalcBodyElement
+        # （2026-08-29、730件ベースライン154件エラー要因分析で発見）。
+        return self._usage_keyword_node("verification_case_usage", ctx, ctx.calcBodyElement())
 
     def visitUseCaseDef(self, ctx: SysMLMinParser.UseCaseDefContext) -> Dict:
         return self._named_simple_node("use_case_def", ctx)

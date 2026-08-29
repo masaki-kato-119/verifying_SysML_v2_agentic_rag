@@ -5100,6 +5100,68 @@ def test_antlr_individual_prefix_propagation():
     assert usage_node["type_name"] == "FuelEconomyAnalysis_1"
 
 
+def test_antlr_analysiscase_verificationcase_bare_result_expr():
+    """`analysis def MassAnalysisCase { subject vehicle : Vehicle; ...
+    vehicle.mass }`（10a-Analysis.sysml、AnalysisTest.sysml）・
+    `verification def VerificationCase { ... VerificationCases::PassIf
+    (v.m == 0) }`（VerificationTest.sysml）のように、calculationDef/
+    constraintDefと同じ、本体末尾に`;`無しの裸の戻り値式
+    （resultExpressionMember）を、analysisCaseDef/analysisCaseUsage/
+    verificationCaseDef/verificationCaseUsageの本体も受理できる必要が
+    あった（従来body要素種別がpartBodyElementのみで、これを含まな
+    かった）。2026-08-29、730件ベースライン154件エラー要因分析で発見。"""
+    def_ast = parse_sysml_antlr(
+        "part def V { }\n"
+        "analysis def AnalysisCase {\n"
+        "    subject v : V;\n"
+        "    v.m\n"
+        "}\n"
+    )
+    def_node = def_ast["children"][-1]
+    assert def_node["type"] == "analysis_case_def"
+    result_node = def_node["children"][-1]
+    assert result_node == {
+        "type": "result_expression_member",
+        "expression": {"type": "name_ref", "reference": "v.m"},
+    }
+
+    usage_ast = parse_sysml_antlr(
+        "analysis def AnalysisCase; part def P {\n"
+        "    analysis analysisCase : AnalysisCase { vehicle.mass }\n"
+        "}\n"
+    )
+    usage_node = usage_ast["children"][-1]["children"][0]
+    assert usage_node["type"] == "analysis_case_usage"
+    usage_result = usage_node["children"][-1]
+    assert usage_result == {
+        "type": "result_expression_member",
+        "expression": {"type": "name_ref", "reference": "vehicle.mass"},
+    }
+
+    verif_def_ast = parse_sysml_antlr(
+        "part def V { }\n"
+        "verification def VerificationCase {\n"
+        "    subject v : V;\n"
+        "    PassIf(v.m == 0)\n"
+        "}\n"
+    )
+    verif_def_node = verif_def_ast["children"][-1]
+    assert verif_def_node["type"] == "verification_case_def"
+    verif_result = verif_def_node["children"][-1]
+    assert verif_result["type"] == "result_expression_member"
+    assert verif_result["expression"]["type"] == "function_call"
+    assert verif_result["expression"]["name"] == "PassIf"
+
+    verif_usage_ast = parse_sysml_antlr(
+        "verification def VerificationCase; part def P {\n"
+        "    verification verificationCase : VerificationCase { PassIf(v.m == 0) }\n"
+        "}\n"
+    )
+    verif_usage_node = verif_usage_ast["children"][-1]["children"][0]
+    assert verif_usage_node["type"] == "verification_case_usage"
+    assert verif_usage_node["children"][-1]["type"] == "result_expression_member"
+
+
 def test_antlr_mult_before_type_extended_to_more_usage_kinds():
     """`fix_partusage_actionusage_mult_before_type_order_and_default`
     （過去完了）で対応した「名前の直後に多重度、その後に型節」という順序を、
