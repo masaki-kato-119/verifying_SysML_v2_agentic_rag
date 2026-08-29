@@ -248,7 +248,11 @@ portionUsageStmt
     // { ... }`（JohnIndividualExample.sysml）のように、`snapshot`/
     // `timeslice`キーワードの直後に`item`等のusage種別キーワードが続く
     // ことがある（2026-08-28、730件パース失敗の要因分析で発見）。
-    : isThen='then'? kind=('snapshot' | 'timeslice') subKind=('item' | 'part' | 'action' | 'attribute' | 'state')? simpleName?
+    // `individual snapshot s : Ind;`・`individual timeslice t3 :> ind;`
+    // （OccurrenceTest.sysml）のように、`individual`先頭修飾子も持ちうる
+    // （occurrenceDef/partDef等と同じ設計。2026-08-29、730件ベースライン
+    // 154件エラー要因分析で発見）。
+    : isThen='then'? isIndividual='individual'? kind=('snapshot' | 'timeslice') subKind=('item' | 'part' | 'action' | 'attribute' | 'state')? simpleName?
       preMult=multiplicitySpec?
       // `snapshot missionSystemAtIngress :> apollo11MissionSystem { ... }`
       // （Apollo11MissionExecutionPackage.sysml）のように、occurrenceUsage
@@ -305,8 +309,11 @@ occurrenceDef
 // `occurrence twoTypes: PartDef, Real;`（OccurrenceUsage_invalid.sysml）の
 // ように、型節がカンマ区切りの複数型を取ることがある（calculationUsageと
 // 同じ理由。2026-08-28、730件パース失敗の要因分析で発見）。
+// `individual occurrence ind : Ind, Occ { ... }`（OccurrenceTest.sysml）の
+// ように、`individual`先頭修飾子も持ちうる（occurrenceDef/partDef等と
+// 同じ設計。2026-08-29、730件ベースライン154件エラー要因分析で発見）。
 occurrenceUsage
-    : direction? isAbstract='abstract'? isConstant='constant'? isRef='ref'? 'occurrence' simpleName?
+    : direction? isIndividual='individual'? isAbstract='abstract'? isConstant='constant'? isRef='ref'? 'occurrence' simpleName?
       (':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
@@ -475,8 +482,12 @@ caseUsage
       ( '{' partBodyElement* '}' | ';' )
     ;
 
+// `individual analysis def FuelEconomyAnalysis_1 :> FuelEconomyAnalysis;`
+// （AnalysisIndividualExample.sysml）のように、`individual`先頭修飾子も
+// 持ちうる（occurrenceDef/partDef等と同じ設計。2026-08-29、730件
+// ベースライン154件エラー要因分析で発見）。
 analysisCaseDef
-    : isAbstract='abstract'? 'analysis' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : isIndividual='individual'? isAbstract='abstract'? 'analysis' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // `variation analysis a1;`（VariabilityTest.sysml）のように、Variability
@@ -485,8 +496,11 @@ analysisCaseDef
 // `analysis ac2: AC1, AC2;`（CaseUsage_Invalid.sysml）のように、型節が
 // カンマ区切りの複数型を取ることがある（caseUsageと同じ理由。2026-08-29、
 // add_bare_include_shorthand対応中に連鎖的に発見）。
+// `individual analysis fuelEconomyAnalysis_1 : FuelEconomyAnalysis_1 { ... }`
+// （AnalysisIndividualExample.sysml）のように、`individual`先頭修飾子も
+// 持ちうる（2026-08-29、730件ベースライン154件エラー要因分析で発見）。
 analysisCaseUsage
-    : variability=('variation' | 'variant')? visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'analysis' simpleName?
+    : variability=('variation' | 'variant')? visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? isRef='ref'? 'analysis' simpleName?
       (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       (':' ID (',' extraTypeRefs+=ID)*)?
       multiplicitySpec?

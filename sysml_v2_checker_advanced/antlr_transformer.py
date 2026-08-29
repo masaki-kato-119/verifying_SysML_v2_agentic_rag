@@ -1291,6 +1291,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # getattrで安全に読む（variability/prefixMetadataと同じ方針。
         # 2026-08-29、235件パース失敗の要因分析で発見）。
         is_then_token = getattr(ctx, "isThen", None)
+        # `individual analysis fuelEconomyAnalysis_1 : FuelEconomyAnalysis_1
+        # { ... }`（AnalysisIndividualExample.sysml）のように、`individual`
+        # 先頭修飾子を持つ規則（今のところanalysisCaseUsageのみ）にしか
+        # 無いため、variability/isThenと同じくgetattrで安全に読む。
+        is_individual_token = getattr(ctx, "isIndividual", None)
         return {
             "type": node_type,
             "name": _optional_simple_name_text(ctx.simpleName()),
@@ -1306,6 +1311,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "children": [self.visit(el) for el in children_ctxs],
             **({"variability": variability_token.text} if variability_token is not None else {}),
             **({"isThen": True} if is_then_token is not None else {}),
+            **({"isIndividual": True} if is_individual_token is not None else {}),
         }
 
     def visitVerifyRequirementUsage(self, ctx: SysMLMinParser.VerifyRequirementUsageContext) -> Dict:
@@ -2594,6 +2600,13 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             if prefix_annotation_method is not None
             else []
         )
+        # `individual analysis def FuelEconomyAnalysis_1 :> FuelEconomyAnalysis;`
+        # （AnalysisIndividualExample.sysml）のように、`individual`先頭
+        # 修飾子を持つ規則（今のところanalysisCaseDefのみ）と持たない規則が
+        # 混在するため、shortName/prefixMetadataと同じくgetattrで安全に読む。
+        # 既存のexact-equality辞書テストを壊さないよう、無い場合はキー
+        # 自体を省略する（isThen/isLoopと同じ方針）。
+        is_individual_attr = getattr(ctx, "isIndividual", None)
         return {
             "type": node_type,
             "name": _simple_name_text(ctx.simpleName()),
@@ -2601,6 +2614,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "inheritance": self._inheritance_dict(ctx),
             "isAbstract": ctx.isAbstract is not None,
             "prefixMetadata": prefix_metadata,
+            **({"isIndividual": True} if is_individual_attr is not None else {}),
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 
@@ -2946,6 +2960,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "subKind": ctx.subKind.text if ctx.subKind is not None else None,
             "name": _optional_simple_name_text(ctx.simpleName()),
             "isThen": ctx.isThen is not None,
+            # `individual snapshot s : Ind;`・`individual timeslice t3 :>
+            # ind;`（OccurrenceTest.sysml）のように、`individual`先頭修飾子も
+            # 持ちうる（2026-08-29、730件ベースライン154件エラー要因分析で
+            # 発見）。
+            "isIndividual": ctx.isIndividual is not None,
             "value": self.visit(ctx.value) if ctx.value is not None else None,
             # `timeslice asPresident : Person [0..*] { ... }`のように、型節の
             # 前(`preMult`)・後(`postMult`)のどちらか一方にのみ多重度が現れる
@@ -3016,6 +3035,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "name": _optional_simple_name_text(ctx.simpleName()),
             "isPortion": False,
             "portionKind": None,
+            # `individual occurrence ind : Ind, Occ { ... }`（OccurrenceTest.sysml）
+            # のように、`individual`先頭修飾子も持ちうる（occurrenceDefと
+            # 同じ設計。2026-08-29、730件ベースライン154件エラー要因分析で
+            # 発見）。
+            "isIndividual": ctx.isIndividual is not None,
             "isAbstract": ctx.isAbstract is not None,
             "isConstant": ctx.isConstant is not None,
             "isRef": ctx.isRef is not None,

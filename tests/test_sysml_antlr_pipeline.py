@@ -3438,6 +3438,7 @@ def test_antlr_portion_usage_snapshot_and_timeslice():
     timeslice = parse_sysml_antlr("timeslice A;")
     base = {
         "isThen": False,
+        "isIndividual": False,
         "value": None,
         "multiplicity": None,
         "redefines": [],
@@ -3540,6 +3541,7 @@ def test_antlr_occurrence_usage_is_new_clean_shape():
         "name": "A",
         "isPortion": False,
         "portionKind": None,
+        "isIndividual": False,
         "isAbstract": False,
         "isConstant": False,
         "isRef": False,
@@ -5013,6 +5015,56 @@ def test_antlr_occurrence_usage_type_clause():
     assert situations["multiplicity"] == {
         "size": {"min": "*", "max": "*"}, "is_ordered": False, "is_unique": False
     }
+
+
+def test_antlr_individual_prefix_propagation():
+    """`individual occurrence ind : Ind, Occ { ... }`・`individual timeslice
+    t3 :> ind;`・`individual snapshot s4 : Ind;`（OccurrenceTest.sysml）・
+    `individual analysis def FuelEconomyAnalysis_1 :> FuelEconomyAnalysis;`・
+    `individual analysis fuelEconomyAnalysis_1 : FuelEconomyAnalysis_1
+    { ... }`（AnalysisIndividualExample.sysml）のように、occurrenceDef/
+    partDef/actionDef等には既にある`individual`先頭修飾子が、
+    occurrenceUsage・portionUsageStmt（snapshot/timeslice）・
+    analysisCaseDef・analysisCaseUsageには無かった。2026-08-29、730件
+    ベースライン154件エラー要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "occurrence def Ind; occurrence def Occ; part def P {\n"
+        "    individual occurrence ind : Ind, Occ {\n"
+        "        snapshot s3;\n"
+        "        individual timeslice t3 :> ind;\n"
+        "        individual snapshot s4 : Ind;\n"
+        "    }\n"
+        "}\n"
+    )
+    ind_node = ast["children"][-1]["children"][0]
+    assert ind_node["type"] == "occurrence_usage"
+    assert ind_node["isIndividual"] is True
+    s3_node, t3_node, s4_node = ind_node["children"]
+    assert s3_node["isIndividual"] is False
+    assert t3_node["isIndividual"] is True
+    assert t3_node["redefines"] == [{"kind": "subsets", "target": "ind"}]
+    assert s4_node["isIndividual"] is True
+    assert s4_node["type_name"] == "Ind"
+
+    def_ast = parse_sysml_antlr(
+        "analysis def FuelEconomyAnalysis; "
+        "individual analysis def FuelEconomyAnalysis_1 :> FuelEconomyAnalysis;"
+    )
+    plain_def, individual_def = def_ast["children"]
+    assert plain_def["type"] == "analysis_case_def"
+    assert "isIndividual" not in plain_def
+    assert individual_def["isIndividual"] is True
+    assert individual_def["inheritance"] == {"type": "inheritance", "kind": "subsets", "base": "FuelEconomyAnalysis"}
+
+    usage_ast = parse_sysml_antlr(
+        "analysis def FuelEconomyAnalysis_1; part def P {\n"
+        "    individual analysis fuelEconomyAnalysis_1 : FuelEconomyAnalysis_1 { }\n"
+        "}\n"
+    )
+    usage_node = usage_ast["children"][-1]["children"][0]
+    assert usage_node["type"] == "analysis_case_usage"
+    assert usage_node["isIndividual"] is True
+    assert usage_node["type_name"] == "FuelEconomyAnalysis_1"
 
 
 def test_antlr_mult_before_type_extended_to_more_usage_kinds():
