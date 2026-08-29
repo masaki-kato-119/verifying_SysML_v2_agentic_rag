@@ -993,8 +993,13 @@ inheritanceClause
 // `variant`（variation本体内で選択肢として使われることを表す）という
 // 先頭修飾子が、複数のdef/usage系規則に広く付きうる（2026-08-28、730件
 // パース失敗の要因分析で発見）。isIndividualと同じ設計で先頭に追加する。
+// `public abstract part def Vehicle { ... }`（comprehensive_data_loss.sysml）・
+// `private part def Automobile;`（Package Example.sysml）のように、
+// visibilityIndicator（public/private/protected）が付くことがある
+// （calculationDef/constraintDefは既に対応済みで非対称だった。
+// 2026-08-29、235件パース失敗の要因分析で発見）。
 partDef
-    : variability=('variation' | 'variant')? prefixMetadataAnnotation* isIndividual='individual'? isAbstract='abstract'? 'part' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : visibilityIndicator? variability=('variation' | 'variant')? prefixMetadataAnnotation* isIndividual='individual'? isAbstract='abstract'? 'part' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // 参照: SysML.xtext の `ItemDefinition`（`OccurrenceDefinitionPrefix
@@ -1006,8 +1011,11 @@ partDef
 // `individual item def II1 { ... }`（IndividualTest.sysml）のように、
 // `individual`はitem defのプレフィックス修飾子としても使われる
 // （2026-08-28、参照実装比較レポートP0-3で発見。occurrenceDef参照）。
+// `public item def A { ... }`（ItemTest.sysml）のように、
+// visibilityIndicatorが付くことがある（partDefと同型のギャップ。
+// 2026-08-29、235件パース失敗の要因分析で発見）。
 itemDef
-    : isIndividual='individual'? isAbstract='abstract'? 'item' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? 'item' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // `ref item :>> localClock : Clock[1] default Time::universalClock { ... }`
@@ -2654,8 +2662,11 @@ newArgument
 // ConjugatedPortDefinitionMember（暗黙の共役ポート）は未対応。
 // `#service port def ServiceDiscovery { ... }`（AHFCoreLib.sysml）のような
 // `#Type`プレフィックス注釈（2026-08-28、730件回帰チェックで発見）。
+// `private port def C { ... }`（PartTest.sysml）のように、
+// visibilityIndicatorが付くことがある（partDefと同型のギャップ。
+// 2026-08-29、235件パース失敗の要因分析で発見）。
 portDef
-    : prefixMetadataAnnotation* isAbstract='abstract'? 'port' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : visibilityIndicator? prefixMetadataAnnotation* isAbstract='abstract'? 'port' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // partUsageと同じredefinition機能一式（visibility・ref・名前省略・型節

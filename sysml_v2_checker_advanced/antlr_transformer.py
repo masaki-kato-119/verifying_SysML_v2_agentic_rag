@@ -160,6 +160,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return self.visit(ctx.getChild(0))
 
     def visitPartDef(self, ctx: SysMLMinParser.PartDefContext) -> Dict:
+        # `public abstract part def Vehicle { ... }`（comprehensive_data_loss.sysml）・
+        # `private part def Automobile;`（Package Example.sysml）のように
+        # visibilityIndicatorを持ちうる（2026-08-29、235件パース失敗の
+        # 要因分析で発見）。
+        visibility_ctx = ctx.visibilityIndicator()
         children = [self.visit(el) for el in ctx.partBodyElement()]
         return {
             "type": "part_def",
@@ -169,6 +174,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "inheritance": self._inheritance_dict(ctx),
             "isAbstract": ctx.isAbstract is not None,
             "isIndividual": ctx.isIndividual is not None,
+            "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
             # `variation part def V { ... }`のようなVariability機能の先頭
             # 修飾子（2026-08-28、730件パース失敗の要因分析で発見）。
             "variability": ctx.variability.text if ctx.variability is not None else None,
@@ -211,6 +217,10 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
 
     def visitItemDef(self, ctx: SysMLMinParser.ItemDefContext) -> Dict:
         # ItemDefinitionはPartDefinitionと完全に同型（公式文法確認済み）。
+        # `public item def A { ... }`（ItemTest.sysml）のようにvisibility
+        # Indicatorを持ちうる（2026-08-29、235件パース失敗の要因分析で
+        # 発見）。
+        visibility_ctx = ctx.visibilityIndicator()
         children = [self.visit(el) for el in ctx.partBodyElement()]
         return {
             "type": "item_def",
@@ -220,6 +230,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "inheritance": self._inheritance_dict(ctx),
             "isAbstract": ctx.isAbstract is not None,
             "isIndividual": ctx.isIndividual is not None,
+            "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
             "children": children,
         }
 
@@ -1631,6 +1642,10 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
     # --- フェーズ2続き: port def / port usage ------------------------------------
 
     def visitPortDef(self, ctx: SysMLMinParser.PortDefContext) -> Dict:
+        # `private port def C { ... }`（PartTest.sysml）のように
+        # visibilityIndicatorを持ちうる（2026-08-29、235件パース失敗の
+        # 要因分析で発見）。
+        visibility_ctx = ctx.visibilityIndicator()
         children = [self.visit(el) for el in ctx.partBodyElement()]
         prefix_metadata = [
             _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
@@ -1640,6 +1655,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "name": _simple_name_text(ctx.simpleName()),
             "inheritance": self._inheritance_dict(ctx),
             "isAbstract": ctx.isAbstract is not None,
+            "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
             "prefixMetadata": prefix_metadata,
             "children": children,
         }

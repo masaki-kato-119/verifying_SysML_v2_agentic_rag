@@ -160,6 +160,7 @@ def test_antlr_single_non_package_element_still_wraps_in_root():
                 "inheritance": None,
                 "isAbstract": False,
                 "isIndividual": False,
+                "visibility": None,
                 "variability": None,
                 "children": [],
             }
@@ -5738,3 +5739,37 @@ def test_antlr_actionparameter_style_direction_in_statebodyelement():
     mixed_children = mixed_ast["children"][0]["children"]
     assert [c["type"] for c in mixed_children] == ["param", "param", "part_instance"]
     assert mixed_children[1]["direction"] == "out"
+
+
+def test_antlr_visibility_modifier_on_toplevel_def_rules():
+    """`public item def A { ... }`（ItemTest.sysml）・`private part def
+    Automobile;`（Package Example.sysml）・`public abstract part def
+    Vehicle { ... }`（comprehensive_data_loss.sysml）・`private port def
+    C { ... }`（PartTest.sysml）のように、partDef/itemDef/portDefに
+    visibilityIndicator（public/private/protected）が付いていなかった
+    （calculationDef/constraintDefは既に対応済みで非対称だった）。
+    コーパス調査の結果、これら3規則以外に実例が無いことを確認済み。
+    2026-08-29、235件パース失敗の要因分析で発見。"""
+    item_ast = parse_sysml_antlr("public item def A;")
+    item_node = item_ast["children"][0]
+    assert item_node["type"] == "item_def"
+    assert item_node["visibility"] == "public"
+
+    part_ast = parse_sysml_antlr("private part def Automobile;")
+    part_node = part_ast["children"][0]
+    assert part_node["type"] == "part_def"
+    assert part_node["visibility"] == "private"
+
+    abstract_part_ast = parse_sysml_antlr("public abstract part def Vehicle;")
+    abstract_part_node = abstract_part_ast["children"][0]
+    assert abstract_part_node["visibility"] == "public"
+    assert abstract_part_node["isAbstract"] is True
+
+    port_ast = parse_sysml_antlr("private port def C;")
+    port_node = port_ast["children"][0]
+    assert port_node["type"] == "port_def"
+    assert port_node["visibility"] == "private"
+
+    # 既存のvisibility無し形が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr("part def P;")
+    assert plain_ast["children"][0]["visibility"] is None
