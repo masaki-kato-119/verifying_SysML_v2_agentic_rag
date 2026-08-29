@@ -924,6 +924,16 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             **({"isThen": True} if ctx.isThen is not None else {}),
         }
 
+    def visitTerminateActionStmt(self, ctx: SysMLMinParser.TerminateActionStmtContext) -> Dict:
+        # `then terminate;`・`terminate processor.workflowProcess;`
+        # （ActionTest.sysml、Terminate Actions Example-2.sysml）。
+        return {
+            "type": "terminate_stmt",
+            "target": _namespace_path_text(ctx.target) if ctx.target is not None else None,
+            "children": [],
+            **({"isThen": True} if ctx.isThen is not None else {}),
+        }
+
     def visitAssignmentStmt(self, ctx: SysMLMinParser.AssignmentStmtContext) -> Dict:
         visibility_ctx = ctx.visibilityIndicator()
         return {
@@ -1130,6 +1140,10 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 params.append(node)
             else:
                 children.append(node)
+        # `action stop terminate;`（Terminate Actions Example-1.sysml）の
+        # ように、本体が波括弧無しの`terminate;`単体であることもある。
+        if ctx.terminateActionStmt() is not None:
+            children.append(self.visit(ctx.terminateActionStmt()))
         # `abstract ref action performedActions: Action[0..*] :> actions,
         # enactedPerformances { ... }`（Parts.sysml）のように、他のusage
         # キーワード規則と同型のredefinition機能一式を持つ。

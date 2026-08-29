@@ -2018,6 +2018,7 @@ actionDef
 // 先に置いて既存の`flow_stmt`出力を優先させる必要がある）。
 actionBodyElement
     : flowControlNode
+    | terminateActionStmt
     | assignmentStmt
     | sendActionStmt
     | acceptActionStmt
@@ -2158,6 +2159,20 @@ direction
 // パース失敗の直接原因）。
 flowControlNode
     : isThen='then'? kind=('decide' | 'fork' | 'join' | 'merge') simpleName? ( '{' actionBodyElement* '}' | ';' )
+    ;
+
+// --- terminate action (Section 7.17 TerminateActionUsage) --------------------
+// 参照: KerML.xtext/SysML-textual-bnf.kebnf の`TerminateActionUsage`
+// （'terminate' <target>? ';'）。`then terminate;`（ActionTest.sysml）の
+// ように、succession先としてインライン宣言する形は他のcontrol node
+// （flowControlNode）と同じ`isThen`先頭修飾子を持つ。`terminate
+// processor.workflowProcess;`（Terminate Actions Example-2.sysml）のように、
+// 対象は`.`/`::`区切りの参照式（namespacePath）。`action stop terminate;`
+// （Terminate Actions Example-1.sysml）のように、named action usage自体の
+// 本体（波括弧無し）としても使われるため、actionUsageStmtのbody節にも
+// 登録する（2026-08-29、730件ベースライン154件エラー要因分析で発見）。
+terminateActionStmt
+    : isThen='then'? 'terminate' target=namespacePath? ';'
     ;
 
 // --- 代入文 (Section 7.17 AssignmentActionUsage) -----------------------------
@@ -2397,7 +2412,10 @@ actionUsageStmt
       // named action usageは、body直後に継続条件`until <cond>`を
       // 持つこともある（従来この節が無かった。2026-08-29、730件
       // ベースラインの154件エラー要因分析で発見）。
-      ( '{' actionBodyElement* '}' ( 'until' untilGuard=expression ';' )? | ';' )
+      // `action stop terminate;`（Terminate Actions Example-1.sysml）の
+      // ように、named action usage自体の本体が波括弧無しの`terminate;`
+      // 単体であることもある（2026-08-29、連鎖的に発見）。
+      ( '{' actionBodyElement* '}' ( 'until' untilGuard=expression ';' )? | terminateActionStmt | ';' )
     ;
 
 // --- フェーズ2: requirement の doc (8.2.2.21) -------------------------------

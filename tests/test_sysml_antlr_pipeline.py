@@ -955,6 +955,38 @@ def test_antlr_fork_join_merge_bare():
     assert all(c["name"] is None and c["children"] == [] for c in children)
 
 
+def test_antlr_terminate_action_statement():
+    """`terminate c1;`（ActionTest.sysml）・`then terminate;`（同、
+    flowControlNodeと同じ`isThen`前置修飾子）・`terminate
+    processor.workflowProcess;`・`terminate processor;`（Terminate Actions
+    Example-2.sysml）・`action stop terminate;`（Terminate Actions
+    Example-1.sysml、named action usage自体の本体が波括弧無しの
+    `terminate;`単体）のように、TerminateActionUsage文が従来一切
+    未実装だった。2026-08-29、730件ベースライン154件エラー要因分析で
+    発見。"""
+    ast = parse_sysml_antlr(
+        "action def c { first start; then action c1 { terminate c1; } then terminate; }"
+    )
+    c1_node = ast["children"][0]["children"][-2]
+    assert c1_node["name"] == "c1"
+    assert c1_node["children"] == [{"type": "terminate_stmt", "target": "c1", "children": []}]
+    then_terminate = ast["children"][0]["children"][-1]
+    assert then_terminate == {"type": "terminate_stmt", "target": None, "children": [], "isThen": True}
+
+    target_ast = parse_sysml_antlr(
+        "action terminateProcessing { terminate processor.workflowProcess; terminate processor; }"
+    )
+    target_nodes = target_ast["children"][0]["children"]
+    assert target_nodes[0]["target"] == "processor::workflowProcess"
+    assert target_nodes[1]["target"] == "processor"
+
+    bare_body_ast = parse_sysml_antlr("action def MonitoredActivity { action stop terminate; }")
+    stop_node = bare_body_ast["children"][0]["children"][0]
+    assert stop_node["type"] == "action_usage"
+    assert stop_node["name"] == "stop"
+    assert stop_node["children"] == [{"type": "terminate_stmt", "target": None, "children": []}]
+
+
 def test_antlr_decision_with_nested_body():
     """control nodeのbodyはactionBodyElementの反復を許可し、代入・send action
     をネストできる（旧Lark実装のflow_node_bodyより実用上広い。AST_SCHEMA.md参照）。"""

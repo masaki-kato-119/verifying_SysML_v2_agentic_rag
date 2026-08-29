@@ -514,6 +514,11 @@ class SysMLMinVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by SysMLMinParser#terminateActionStmt.
+    def visitTerminateActionStmt(self, ctx:SysMLMinParser.TerminateActionStmtContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by SysMLMinParser#assignmentStmt.
     def visitAssignmentStmt(self, ctx:SysMLMinParser.AssignmentStmtContext):
         return self.visitChildren(ctx)
