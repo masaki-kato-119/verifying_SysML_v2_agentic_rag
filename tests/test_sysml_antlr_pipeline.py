@@ -6062,3 +6062,20 @@ def test_antlr_visibility_prefix_on_actionparameter():
     assert plain_param["visibility"] is None
     assert plain_param["type_name"] == "T"
     assert "type_names" not in plain_param
+
+
+def test_antlr_visibility_modifier_on_aliasstmt():
+    """`public alias X for Y;`（Package Example.sysml）のように、
+    aliasStmtにvisibilityIndicator（public/private/protected）が付いて
+    いなかった。既存のvisibility無し形が引き続き機能することも確認する。
+    2026-08-29、235件パース失敗の要因分析で発見。"""
+    ast = parse_sysml_antlr("public alias X for Y;")
+    node = ast["children"][0]
+    assert node["type"] == "alias"
+    assert node["visibility"] == "public"
+    assert node["name"] == "X"
+    assert node["target"] == "Y"
+
+    plain_ast = parse_sysml_antlr("alias X for Y;")
+    plain_node = plain_ast["children"][0]
+    assert plain_node["visibility"] is None

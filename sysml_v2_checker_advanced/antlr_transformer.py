@@ -2584,11 +2584,15 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # KerMLの`alias`文（別名宣言）。`alias name for target;`のname/target
         # 双方ともQUOTED_NAME形式（記号を含む名前）を取りうるため、両方
         # simpleNameで受ける。`;`終端に加え、bodyを持つ形（`alias X for Y
-        # { doc /* ... */ }`）も許容する。
+        # { doc /* ... */ }`）も許容する。`public alias X for Y;`
+        # （Package Example.sysml）のようにvisibilityIndicatorも持ちうる
+        # （2026-08-29、235件パース失敗の要因分析で発見）。
+        visibility_ctx = ctx.visibilityIndicator()
         return {
             "type": "alias",
             "name": _simple_name_text(ctx.simpleName()),
             "target": _namespace_path_text(ctx.target),
+            "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 

@@ -413,8 +413,12 @@ bareDocComment
 // `alias`は`;`終端だけでなく、`alias AttributeValue for DataValue
 // { doc /* ... */ }`のようにbodyを持てる形も公式コーパスに存在する
 // （`Attributes.sysml`）。
+// `public alias X for Y;`（Package Example.sysml）のように、
+// visibilityIndicatorが付くことがある（`alias`自体が固有のキーワード
+// のため、他規則との曖昧性は生じない。2026-08-29、235件パース失敗の
+// 要因分析で発見）。
 aliasStmt
-    : 'alias' simpleName 'for' target=namespacePath ( '{' partBodyElement* '}' | ';' )
+    : visibilityIndicator? 'alias' simpleName 'for' target=namespacePath ( '{' partBodyElement* '}' | ';' )
     ;
 
 // --- case / analysis case / verification case / use case (8.2.2.22-25) --------
