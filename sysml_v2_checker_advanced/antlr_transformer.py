@@ -2620,13 +2620,27 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         }
 
     def visitExhibitStateUsageStmt(self, ctx: SysMLMinParser.ExhibitStateUsageStmtContext) -> Dict:
-        type_ctx = ctx.namespacePath()
+        # `exhibit vehicleStates { ... }`（State Exhibition Example.sysml）
+        # のように、`state`キーワードを省略した裸形（`ref`ラベル）もある
+        # （2026-08-29、235件パース失敗の要因分析で発見）。`state`付き代替
+        # には無い`ref`の有無で代替を判別する。
+        if ctx.ref is not None:
+            redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
+            return {
+                "type": "exhibit_state_usage",
+                "name": _namespace_path_text(ctx.ref),
+                "type_name": None,
+                "redefines": redefines,
+                "isParallel": ctx.isParallel is not None,
+                "children": [self.visit(el) for el in ctx.stateBodyElement()],
+            }
         return {
             "type": "exhibit_state_usage",
             "name": _simple_name_text(ctx.simpleName()),
             # `exhibit state 'vehicle states': 'Vehicle States';`のような型節
             # （2026-08-28、参照実装比較レポートP1-2で発見）。
-            "type_name": _namespace_path_text(type_ctx) if type_ctx is not None else None,
+            "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
+            "redefines": [],
             # `exhibit state vehicleStates parallel { ... }`のような直交
             # (orthogonal)状態修飾子・本体（2026-08-28、state parallel
             # 修飾子の調査で発見）。

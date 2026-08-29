@@ -3023,6 +3023,7 @@ def test_antlr_exhibit_state_usage_is_new_construct():
         "type": "exhibit_state_usage",
         "name": "A",
         "type_name": None,
+        "redefines": [],
         "isParallel": False,
         "children": [],
     }
@@ -3042,6 +3043,7 @@ def test_antlr_exhibit_state_usage_type_clause_and_partbody():
         "type": "exhibit_state_usage",
         "name": "vehicle states",
         "type_name": "Vehicle States",
+        "redefines": [],
         "isParallel": False,
         "children": [],
     }
@@ -5540,3 +5542,51 @@ def test_antlr_event_usage_occurrence_keyword_omission():
     assert bare_node["name"] == "A"
     assert bare_node["value"] is None
     assert bare_node["redefines"] == []
+
+
+def test_antlr_exhibitstateusagestmt_state_keyword_omission():
+    """`exhibit vehicleStates { ... }`（State Exhibition Example.sysml）の
+    ように、exhibitStateUsageStmtの`state`キーワードが省略できなかった
+    （従来は`exhibit state NAME`のように必須）。同種のコーパス実例には
+    `::`修飾参照（`exhibit MiningFrigate::miningFrigatesStates;`）、`.`
+    参照（`exhibit vehicleStates.on;`）、redefine節付き
+    （`exhibit 'vehicle states' :>> VehicleA::'vehicle states' { ... }`）
+    もあるため、これらも併せて確認する。2026-08-29、235件パース失敗の
+    要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "part def X { exhibit vehicleStates { state s1; } }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "exhibit_state_usage"
+    assert node["name"] == "vehicleStates"
+    assert node["redefines"] == []
+    assert len(node["children"]) == 1
+
+    qualified_ast = parse_sysml_antlr(
+        "part def X { exhibit MiningFrigate::miningFrigatesStates; }"
+    )
+    qualified_node = qualified_ast["children"][0]["children"][0]
+    assert qualified_node["name"] == "MiningFrigate::miningFrigatesStates"
+
+    dotted_ast = parse_sysml_antlr("part def X { exhibit vehicleStates.on; }")
+    dotted_node = dotted_ast["children"][0]["children"][0]
+    assert dotted_node["name"] == "vehicleStates::on"
+
+    redefine_ast = parse_sysml_antlr(
+        "part def X { exhibit 'vehicle states' :>> VehicleA::'vehicle states' "
+        "{ state s1; } }"
+    )
+    redefine_node = redefine_ast["children"][0]["children"][0]
+    assert redefine_node["name"] == "vehicle states"
+    assert redefine_node["redefines"] == [
+        {"kind": "redefines", "target": "VehicleA::vehicle states"}
+    ]
+
+    # 既存の`state`キーワード付き形が引き続き機能することを確認する。
+    keyworded_ast = parse_sysml_antlr(
+        "part def X { exhibit state 'vehicle states': 'Vehicle States'; }"
+    )
+    keyworded_node = keyworded_ast["children"][0]["children"][0]
+    assert keyworded_node["name"] == "vehicle states"
+    assert keyworded_node["type_name"] == "Vehicle States"
+    assert keyworded_node["redefines"] == []

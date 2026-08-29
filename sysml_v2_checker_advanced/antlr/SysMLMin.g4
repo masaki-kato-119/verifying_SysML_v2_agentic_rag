@@ -196,8 +196,18 @@ eventOccurrenceUsageStmt
 // 本体（stateBodyElement*）・`parallel`修飾子のいずれも持ちうる
 // （2026-08-28、state parallel修飾子の調査で発見。以前は`;'`終端のみで
 // 本体を一切持てなかった）。
+// `exhibit vehicleStates { ... }`（State Exhibition Example.sysml）・
+// `exhibit MiningFrigate::miningFrigatesStates { ... }`（Domain.sysml）・
+// `exhibit 'vehicle states' :>> VehicleA::'vehicle states' { ... }`
+// （5-State-based Behavior-1.sysml）のように、`state`キーワードを省略した
+// 裸形（参照は`.`/`::`混在のnamespacePath、redefine節も持ちうる）もある
+// （2026-08-29、235件パース失敗の要因分析で発見）。
 exhibitStateUsageStmt
-    : 'exhibit' 'state' simpleName (':' namespacePath)? isParallel='parallel'? ( '{' stateBodyElement* '}' | ';' )
+    : 'exhibit' 'state' simpleName (':' typeRef=namespacePath)? isParallel='parallel'? ( '{' stateBodyElement* '}' | ';' )
+    | 'exhibit' ref=namespacePath
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      isParallel='parallel'?
+      ( '{' stateBodyElement* '}' | ';' )
     ;
 
 // --- portion usage: snapshot/timeslice (8.2.2.9) --------------------------------
