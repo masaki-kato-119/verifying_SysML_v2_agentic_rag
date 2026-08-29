@@ -2825,7 +2825,11 @@ expression
     // `Triangle::length^2 + Triangle::width^2`のように、`^`べき乗演算子が
     // 公式コーパス17ファイルで使われている（`s^-1`等の単位式が大半）。
     // 算術演算子より強く結合するため`mulDivExpr`より前に置く。
-    | expression op='^' expression                              # powerExpr
+    // `(p_2 / p_1)**((gamma - 1) / gamma)`・`tpd_avg **(-3)`（Turbojet Stage
+    // Analysis.sysml、VehicleModel_2_Simplified.sysml他計5ファイル）のように、
+    // 物理量計算式では`^`と同じ意味の`**`も多用される（2026-08-29、730件
+    // ベースライン154件エラー要因分析で発見）。
+    | expression op=('^' | '**') expression                     # powerExpr
     | expression op=('*'|'/') expression                       # mulDivExpr
     | expression op=('+'|'-') expression                       # addSubExpr
     // `for i in 1..powerProfile->size()-1 { ... }`（10d-Dynamics
@@ -3037,16 +3041,19 @@ portUsage
 // '{ }' 形の RelationshipBody は未対応。
 // 再帰ワイルドカード`::**`（パッケージ自身に加えその配下の入れ子パッケージの
 // メンバまでインポートする形）に対応する（2026-08-28、730件パース失敗の
-// 要因分析で発見。`**`はレキサー上`*`トークン2つの並びとして扱われる）。
+// 要因分析で発見。`**`は元々レキサー上`*`トークン2つの並びとして扱われて
+// いたが、2026-08-29に`**`べき乗演算子（powerExpr）を追加したことで単一の
+// `**`トークンとしてレキシングされるようになったため、どちらの形でも
+// 受理できるよう`'*' '*'? | '**'`に変更した）。
 // `Pkg211::*::**;`（ImportTest.sysml）のように、ワイルドカード段が複数
-// 連なる多段形もある（`('::' '*' '*'?)*`で0回以上に一般化）。
+// 連なる多段形もある（`('::' (...))*`で0回以上に一般化）。
 // `public import vehicle::**[@Safety and (as Safety).isMandatory];`
 // （Filtering Example-2.sysml）のように、ワイルドカードの直後に
 // ブラケット付きインラインフィルタ式（`@Type`メタデータ参照式・
 // `and`/`or`論理結合）が続くこともある（2026-08-29、730件ベースラインの
 // 154件エラー要因分析で発見）。
 importStmt
-    : visibilityIndicator? 'import' namespacePath ('::' '*' '*'?)* ('[' filterExpr=expression ']')? ';'
+    : visibilityIndicator? 'import' namespacePath ('::' ('*' '*'? | '**'))* ('[' filterExpr=expression ']')? ';'
     ;
 
 visibilityIndicator
@@ -3101,9 +3108,10 @@ namespacePathList
 // （11b-Safety and Security Feature Views.sysml、11a-View-Viewpoint.sysml）
 // のように、importStmtと同じく多段ワイルドカード・ブラケット付き
 // インラインフィルタ式に対応する（2026-08-29、730件ベースラインの154件
-// エラー要因分析で発見）。
+// エラー要因分析で発見）。importStmtと同じ理由で`'*' '*'? | '**'`の
+// いずれも受理する（`**`べき乗演算子追加によるレキシング変化への対応）。
 exposeStmt
-    : 'expose' namespacePath ('::' '*' '*'?)* ('[' filterExpr=expression ']')? ';'
+    : 'expose' namespacePath ('::' ('*' '*'? | '**'))* ('[' filterExpr=expression ']')? ';'
     ;
 
 // `filter @SysML::PartUsage or @SysML::PartDefinition or

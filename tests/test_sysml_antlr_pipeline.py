@@ -4131,6 +4131,32 @@ def test_antlr_power_expression():
     assert value["right"] == {"type": "unary_expr", "op": "-", "operand": {"type": "literal", "literal_type": "int", "value": 1}}
 
 
+def test_antlr_double_star_power_operator():
+    """`(p_2 / p_1)**((gamma - 1) / gamma)`（Turbojet Stage Analysis.sysml）・
+    `tpd_avg **(-3)`（VehicleModel_2_Simplified.sysml）・`231.0 * 'in' **
+    3`（Vehicle Analysis Demo.sysml）のように、物理量計算式では`^`と同じ
+    べき乗演算子として`**`も多用されるが、従来`powerExpr`は`^`のみを
+    受理していた。2026-08-29、730件ベースライン154件エラー要因分析で
+    発見。"""
+    ast = parse_sysml_antlr("part def P { attribute a = x ** 3; }")
+    value = ast["children"][0]["children"][-1]["value"]
+    assert value == {
+        "type": "binary_expr", "op": "**",
+        "left": {"type": "name_ref", "reference": "x"},
+        "right": {"type": "literal", "literal_type": "int", "value": 3},
+    }
+
+    # 既存の`^`（回帰防止）と、括弧付きオペランドの組み合わせ。
+    nested_ast = parse_sysml_antlr("part def P { attribute a = (p2 / p1) ** ((g - 1) / g); }")
+    nested_value = nested_ast["children"][0]["children"][-1]["value"]
+    assert nested_value["type"] == "binary_expr"
+    assert nested_value["op"] == "**"
+
+    caret_ast = parse_sysml_antlr("part def P { attribute a = s^-1; }")
+    caret_value = caret_ast["children"][0]["children"][-1]["value"]
+    assert caret_value["op"] == "^"
+
+
 def test_antlr_ampersand_and_pipe_as_and_or_alternates():
     """d59_ampersand_caret_operators_lexer_missing: ShapeItems.sysmlの
     `notEmpty(outerSpaceDimension) & outerSpaceDimension <= 2`・

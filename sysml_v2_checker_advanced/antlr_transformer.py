@@ -1962,7 +1962,10 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
     def visitExposeStmt(self, ctx: SysMLMinParser.ExposeStmtContext) -> Dict:
         # exposeノードは{"type": "special_stmt", "children": [{"type":
         # "expose", ...}]}という入れ子で返す。
-        is_wildcard = any(child.getText() == "*" for child in ctx.getChildren())
+        # `**`べき乗演算子の追加（2026-08-29）により`::**`は単一の`**`
+        # トークンとしてレキシングされうるため、`*`単体だけでなく`**`も
+        # ワイルドカードとして検出する。
+        is_wildcard = any(child.getText() in ("*", "**") for child in ctx.getChildren())
         # `expose vehicle::**[@Safety and ...];`のように、ワイルドカード
         # 直後にブラケット付きインラインフィルタ式が続くこともある
         # （2026-08-29、連鎖的に発見）。既存のexact-equality辞書テストを
@@ -2826,7 +2829,10 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return {"size": size, "is_ordered": is_ordered, "is_unique": is_unique}
 
     def visitImportStmt(self, ctx: SysMLMinParser.ImportStmtContext) -> Dict:
-        is_wildcard = any(child.getText() == "*" for child in ctx.getChildren())
+        # `**`べき乗演算子の追加（2026-08-29）により`::**`は単一の`**`
+        # トークンとしてレキシングされうるため、`*`単体だけでなく`**`も
+        # ワイルドカードとして検出する。
+        is_wildcard = any(child.getText() in ("*", "**") for child in ctx.getChildren())
         visibility_ctx = ctx.visibilityIndicator()
         # `import vehicle::**[@Safety and ...];`のように、ワイルドカード
         # 直後にブラケット付きインラインフィルタ式が続くこともある
