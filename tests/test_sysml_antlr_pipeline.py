@@ -1762,6 +1762,47 @@ def test_antlr_assume_keyword_and_redefine_on_assert_constraint_usage():
     assert prefix_node["name"] == "payloadMassLimit"
 
 
+def test_antlr_assert_bare_name_constraint_omission():
+    """`assert mc { in totalMass = m; in partMasses = (eng.m, trans.m); }`
+    （MassConstraintExample.sysml）・`assert not massLimitation { :>>
+    mass = vehicle3.mass; ... }`（ConstraintTest.sysml）のように、継承した
+    制約フィーチャーを暗黙に再定義する場合、`assert`は`constraint`
+    キーワード自体を省略した`assert <name> { パラメータ束縛 }`形も広く
+    使われる（従来`assertConstraintUsage`は`constraint`キーワードを
+    必須としていた）。`require`/`assume`は同型の省略形が別途`requireUsage`
+    として既に存在するため、この省略形は`assert`のみに限定する。
+    2026-08-29、730件ベースライン154件エラー要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "part def V4 { assert mc { in totalMass = m; in partMasses = (eng.m, trans.m); } }"
+    )
+    node = ast["children"][0]["children"][0]["children"][0]
+    assert node["type"] == "assert_constraint_usage"
+    assert node["kind"] == "assert"
+    assert node["is_negated"] is False
+    assert node["name"] == "mc"
+    assert node["type_name"] == ""
+    assert len(node["children"]) == 2
+
+    negated_ast = parse_sysml_antlr(
+        "part def V4b { assert not massLimitation { :>> mass = vehicle3.mass; :>> massLimit = vehicle4.mass; } }"
+    )
+    negated_node = negated_ast["children"][0]["children"][0]["children"][0]
+    assert negated_node["is_negated"] is True
+    assert negated_node["name"] == "massLimitation"
+
+    # 既存の`assert constraint`明示形・`require`/`assume`のconstraint省略形
+    # （requireUsage）が回帰しないことを確認する。
+    explicit_ast = parse_sysml_antlr("part def V { assert constraint { mass == 1; } }")
+    explicit_node = explicit_ast["children"][0]["children"][0]["children"][0]
+    assert explicit_node["type"] == "assert_constraint_usage"
+    assert explicit_node["name"] is None
+
+    require_ast = parse_sysml_antlr("part def V { require viewpointSatisfactions { ref x; } }")
+    require_node = require_ast["children"][0]["children"][0]
+    assert require_node["type"] == "require_usage"
+    assert require_node["name"] == "viewpointSatisfactions"
+
+
 def test_antlr_require_usage_assume_keyword_multiplicity_and_prefix():
     """`assume c1 [0..*];`（RequirementTest.sysml）のように、requireUsage
     （`constraint`キーワードを伴わない裸参照形）は`require`だけでなく

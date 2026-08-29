@@ -769,6 +769,17 @@ assertConstraintUsage
       ( ':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)* )?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' documentationStmt* resultExpr=expression '}' | '{' calcBodyElement* '}' | ';' )
+    // `assert mc { in totalMass = m; ... }`・`assert not massLimitation
+    // { :>> mass = vehicle3.mass; ... }`（MassConstraintExample.sysml、
+    // ConstraintTest.sysml）のように、継承した制約フィーチャーを暗黙に
+    // 再定義する場合、`assert`単体では`constraint`キーワード自体を省略
+    // した`assert <name> { パラメータ束縛 }`形が広く使われる。`require`/
+    // `assume`は同型の`constraint`省略形が別途`requireUsage`として既に
+    // 存在するため、ここでは`assert`のみに限定する（`requireUsage`との
+    // 曖昧な衝突を避けるため。2026-08-29、730件ベースライン154件エラー
+    // 要因分析で発見）。
+    | visibilityIndicator? assertKind='assert' prefixMetadataAnnotation* ('not')? simpleName
+      ( '{' documentationStmt* resultExpr=expression '}' | '{' calcBodyElement* '}' | ';' )
     ;
 
 // --- calculation usage / constraint usage (8.2.2.19, 8.2.2.20) -----------------
