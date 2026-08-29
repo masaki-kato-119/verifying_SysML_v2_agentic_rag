@@ -2646,6 +2646,20 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 
+    def visitFrameStatement(self, ctx: SysMLMinParser.FrameStatementContext) -> Dict:
+        # `frame concern ProfitabilityConcern;`（BusinessCaseOpsCon.sysml）・
+        # `frame 'Reduce the number of special parts';`
+        # （DontPanic-SysMLv2-Batmobile.sysml）のように、requirement/
+        # concern/viewpoint定義本体内でframed concern参照を宣言する
+        # `frame`文（2026-08-29、235件パース失敗の要因分析で発見）。
+        return {
+            "type": "frame_statement",
+            "isConcern": ctx.isConcern is not None,
+            "name": _simple_name_text(ctx.name),
+            "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
+            "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
+        }
+
     def visitOccurrenceDef(self, ctx: SysMLMinParser.OccurrenceDefContext) -> Dict:
         children = [self.visit(el) for el in ctx.partBodyElement()]
         return {

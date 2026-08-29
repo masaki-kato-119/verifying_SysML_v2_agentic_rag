@@ -1338,6 +1338,21 @@ partBodyElement
     // 書ける（2026-08-29、235件パース失敗の要因分析で発見。occurrenceDef
     // と同型のギャップ）。
     | requirementDef
+    // `frame concern ProfitabilityConcern;`（BusinessCaseOpsCon.sysml）・
+    // `frame 'Reduce the number of special parts';`
+    // （DontPanic-SysMLv2-Batmobile.sysml）のように、requirement/concern/
+    // viewpoint定義本体内でframed concern参照を宣言する`frame`文が完全に
+    // 未実装だった（2026-08-29、235件パース失敗の要因分析で発見）。
+    | frameStatement
+    ;
+
+// `frame`文（FramedConcernMembership）。requirement/concern/viewpoint
+// def・viewpoint usageの本体（いずれもpartBodyElement経由）で使われる。
+// `frame concern X;`という`concern`キーワード付き形と、`frame 'Name';`・
+// `frame c;`という省略形の両方がある。`frame c3[0..*];`のように多重度、
+// `frame concern hs : HomeSafety;`のように型節も付きうる。
+frameStatement
+    : 'frame' isConcern='concern'? name=simpleName multiplicitySpec? (':' typeRef=namespacePath)? ';'
     ;
 
 // 公式コーパスには`ref self: Part :>> Item::self;`や`ref stateSpace:

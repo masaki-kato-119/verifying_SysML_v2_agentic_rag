@@ -5425,3 +5425,51 @@ def test_antlr_accept_after_duration_trigger():
     transition_node = implicit_ast["children"][0]["children"][-1]
     assert transition_node["type"] == "transition"
     assert transition_node["trigger"]["trigger_kind"] == "after"
+
+
+def test_antlr_frame_statement():
+    """`frame concern ProfitabilityConcern;`（BusinessCaseOpsCon.sysml）・
+    `frame 'Reduce the number of special parts';`
+    （DontPanic-SysMLv2-Batmobile.sysml）のように、requirement/concern/
+    viewpoint定義本体内でframed concern参照を宣言する`frame`文が完全に
+    未実装だった。`concern`キーワード付き/省略形、多重度付き
+    （`frame c3[0..*];`）、型節付き（`frame concern hs : HomeSafety;`）
+    のいずれも受理できることを確認する。2026-08-29、235件パース失敗の
+    要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "requirement def R2 { frame concern ProfitabilityConcern; "
+        "frame c3[0..*]; frame 'Reduce the number of special parts'; "
+        "frame concern hs : HomeSafety; }"
+    )
+    nodes = ast["children"][0]["children"]
+    assert nodes[0] == {
+        "type": "frame_statement", "isConcern": True,
+        "name": "ProfitabilityConcern", "multiplicity": None, "type_name": None,
+    }
+    assert nodes[1]["type"] == "frame_statement"
+    assert nodes[1]["isConcern"] is False
+    assert nodes[1]["name"] == "c3"
+    assert nodes[1]["multiplicity"] == {
+        "size": {"min": 0, "max": "*"}, "is_ordered": False, "is_unique": True,
+    }
+    assert nodes[2] == {
+        "type": "frame_statement", "isConcern": False,
+        "name": "Reduce the number of special parts",
+        "multiplicity": None, "type_name": None,
+    }
+    assert nodes[3] == {
+        "type": "frame_statement", "isConcern": True,
+        "name": "hs", "multiplicity": None, "type_name": "HomeSafety",
+    }
+
+    # viewpoint def/usage本体でも同様に機能することを確認する。
+    viewpoint_ast = parse_sysml_antlr(
+        "viewpoint def VP { frame c; } viewpoint vp: VP { frame concern c1; }"
+    )
+    vp_def_frame = viewpoint_ast["children"][0]["children"][0]
+    assert vp_def_frame["type"] == "frame_statement"
+    assert vp_def_frame["name"] == "c"
+    vp_usage_frame = viewpoint_ast["children"][1]["children"][0]
+    assert vp_usage_frame["type"] == "frame_statement"
+    assert vp_usage_frame["isConcern"] is True
+    assert vp_usage_frame["name"] == "c1"

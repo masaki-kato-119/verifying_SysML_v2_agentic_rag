@@ -389,6 +389,11 @@ class SysMLMinVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by SysMLMinParser#frameStatement.
+    def visitFrameStatement(self, ctx:SysMLMinParser.FrameStatementContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by SysMLMinParser#featureUsage.
     def visitFeatureUsage(self, ctx:SysMLMinParser.FeatureUsageContext):
         return self.visitChildren(ctx)
