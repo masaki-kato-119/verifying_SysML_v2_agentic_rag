@@ -1126,7 +1126,12 @@ requirementUsage
       // sysml）のように、型節がカンマ区切りの複数型を取ることがある
       // （calculationUsageと同じ理由。2026-08-28、730件パース失敗の要因
       // 分析で発見）。
-      (':' typeRef=ID (',' extraTypeRefs+=ID)*)?
+      // `requirement uavSystemRequirements : DSRE::TextualRequirements::
+      // UAVSystemRequirements { ... }`（The-SysMLv2-Book-DroneSystemModel-
+      // Example.sysml）のように、型節が3階層以上の`::`修飾名を取ることも
+      // あるため、`ID`単体ではなく`namespacePath`を使う（2026-08-29、
+      // add_actorusage_namespacepath_type対応中に連鎖的に発見）。
+      (':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
       postMult=multiplicitySpec?
       // `ref requirement requirementVerifications : RequirementCheck[0..*]
       // = obj.requirementVerifications { ... }`（VerificationCases.sysml）

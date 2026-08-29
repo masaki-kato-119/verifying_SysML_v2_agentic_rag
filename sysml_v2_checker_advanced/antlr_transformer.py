@@ -1192,7 +1192,15 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # （attributeUsageのtype_namesと同じ方針。2026-08-28、730件パース
         # 失敗の要因分析で発見）。
         extra_type_refs = getattr(ctx, "extraTypeRefs", None) or []
-        type_names = ([type_name] if type_name is not None else []) + [t.text for t in extra_type_refs]
+        # `requirement r : R1, R2::R3::R4;`のように、requirementUsageは
+        # extraTypeRefsも`namespacePath`（`::`修飾名）を取りうる。他規則
+        # （calc/case/constraint usage）は引き続き生の`ID`トークンのため、
+        # 型で分岐する（typeRef本体と同じ方針。2026-08-29、
+        # add_actorusage_namespacepath_type対応中に連鎖的に発見）。
+        type_names = ([type_name] if type_name is not None else []) + [
+            _namespace_path_text(t) if isinstance(t, SysMLMinParser.NamespacePathContext) else t.text
+            for t in extra_type_refs
+        ]
         # `then use case 'drive vehicle' { ... }`のように`then`前置を持つ
         # 規則が一部にしかない（今のところuseCaseUsageのみ）ため、
         # getattrで安全に読む（variability/prefixMetadataと同じ方針。

@@ -4527,6 +4527,34 @@ def test_antlr_mult_before_type_extended_to_more_usage_kinds():
     assert ok_capability["multiplicity"]["size"] == {"min": "*", "max": "*"}
 
 
+def test_antlr_requirementusage_multisegment_qualified_type():
+    """`requirement uavSystemRequirements : DSRE::TextualRequirements::
+    UAVSystemRequirements { ... }`（The-SysMLv2-Book-DroneSystemModel-
+    Example.sysml L41）のように、requirementUsageの型節は3階層以上の
+    `::`修飾名を取りうる（従来は単一`ID`のみで、2階層以上の`::`修飾名を
+    受理できなかった。2026-08-29、add_actorusage_namespacepath_type対応
+    中に連鎖的に発見）。カンマ区切り複数型の各要素も`::`修飾名を取れる
+    ことも併せて確認する。"""
+    ast = parse_sysml_antlr(
+        "requirement uavSystemRequirements : "
+        "DSRE::TextualRequirements::UAVSystemRequirements { }"
+    )
+    node = ast["children"][0]
+    assert node["type"] == "requirement_usage"
+    assert node["type_name"] == "DSRE::TextualRequirements::UAVSystemRequirements"
+
+    multi_ast = parse_sysml_antlr(
+        "requirement r : A::B::C, D::E;"
+    )
+    multi_node = multi_ast["children"][0]
+    assert multi_node["type_names"] == ["A::B::C", "D::E"]
+
+    # 既存の単一セグメント型（`::`無し）が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr("requirement req : Goal;")
+    plain_node = plain_ast["children"][0]
+    assert plain_node["type_name"] == "Goal"
+
+
 def test_antlr_comma_separated_multi_type_declaration():
     """usage型節がカンマ区切りの複数型を取れなかった（部分的なdef/usage系
     規則にしか対応していなかった。2026-08-28、730件パース失敗の要因分析で
