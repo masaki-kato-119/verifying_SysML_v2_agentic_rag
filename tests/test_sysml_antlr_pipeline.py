@@ -1944,7 +1944,7 @@ def test_antlr_bare_flow_usage_no_from_to():
     legacy_ast = parse_sysml_antlr("part def P { flow of X from a to b; }")
     legacy_node = legacy_ast["children"][0]["children"][-1]
     assert legacy_node == {
-        "type": "flow_usage", "item_type": "X", "from_end": "a", "to_end": "b", "children": [],
+        "type": "flow_usage", "name": None, "item_type": "X", "from_end": "a", "to_end": "b", "children": [],
     }
 
 
@@ -1965,6 +1965,7 @@ def test_antlr_bare_flow_short_form_outside_action_body():
     node = ast["children"][0]["children"][-1]
     assert node == {
         "type": "flow_usage",
+        "name": None,
         "item_type": None,
         "from_end": "外界の映像を撮る::映像",
         "to_end": "前方障害物との距離を推定する::カメラ映像",
@@ -1974,13 +1975,13 @@ def test_antlr_bare_flow_short_form_outside_action_body():
     from_ast = parse_sysml_antlr("part def P { flow from a to b; }")
     from_node = from_ast["children"][0]["children"][-1]
     assert from_node == {
-        "type": "flow_usage", "item_type": None, "from_end": "a", "to_end": "b", "children": [],
+        "type": "flow_usage", "name": None, "item_type": None, "from_end": "a", "to_end": "b", "children": [],
     }
 
     bare_ast = parse_sysml_antlr("part def P { flow; }")
     bare_node = bare_ast["children"][0]["children"][-1]
     assert bare_node == {
-        "type": "flow_usage", "item_type": None, "from_end": None, "to_end": None, "children": [],
+        "type": "flow_usage", "name": None, "item_type": None, "from_end": None, "to_end": None, "children": [],
     }
 
 
@@ -2001,6 +2002,7 @@ def test_antlr_flow_connect_endpoint_double_colon_mixed():
     flow_node = flow_ast["children"][0]["children"][-1]
     assert flow_node == {
         "type": "flow_usage",
+        "name": None,
         "item_type": None,
         "from_end": "A::B::C",
         "to_end": "D::E",
@@ -5932,3 +5934,46 @@ def test_antlr_connectionendmember_redefine_and_direct_reference_combined():
     assert named_node["name"] == "p1"
     assert named_node["type_name"] == "P"
     assert named_node["reference"] is None
+
+
+def test_antlr_flowusage_named_bare_from_to_form():
+    """`flow publish_request from producerBehavior.publish.request to
+    publicationPort.publish { attribute :>> isInstant = true; }`
+    （ServerSequenceOutsideRealization-3.sysml）のように、flowUsageの裸
+    短縮形（`from...to`）に名前を伴い、かつ`;`終端の代わりに本体を持つ
+    ことがある（従来この代替に名前スロット自体が無かった）。`ofType`/
+    `typeRef`ラベルで代替を判別するため、既存の`flow of X from a to b;`
+    （型付き裸形）・`abstract flow flows: Flow[0..*] ... { }`（型定義形）
+    が引き続き機能することも確認する。2026-08-29、235件パース失敗の
+    要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "part def X { flow publish_request from a.b to c.d "
+        "{ attribute :>> isInstant = true; } }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "flow_usage"
+    assert node["name"] == "publish_request"
+    assert node["from_end"] == "a::b"
+    assert node["to_end"] == "c::d"
+    assert len(node["children"]) == 1
+
+    # 既存の`;`終端・名前無し形が引き続き機能することを確認する。
+    semi_ast = parse_sysml_antlr("part def X { flow publish_request2 from a.b to c.d; }")
+    semi_node = semi_ast["children"][0]["children"][0]
+    assert semi_node["name"] == "publish_request2"
+    assert semi_node["children"] == []
+
+    typed_ast = parse_sysml_antlr("part def X { flow of X from a to b; }")
+    typed_node = typed_ast["children"][0]["children"][0]
+    assert typed_node["name"] is None
+    assert typed_node["item_type"] == "X"
+
+    # 既存の型定義形（第2代替）が引き続き機能することを確認する。
+    def_ast = parse_sysml_antlr(
+        "part def P { abstract flow flows: Flow[0..*] "
+        "nonunique :> messages, flowTransfers { } }"
+    )
+    def_node = def_ast["children"][0]["children"][0]
+    assert def_node["name"] == "flows"
+    assert def_node["type_name"] == "Flow"
+    assert def_node["isAbstract"] is True

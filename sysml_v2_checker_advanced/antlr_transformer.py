@@ -713,14 +713,19 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
     def visitFlowUsage(self, ctx: SysMLMinParser.FlowUsageContext) -> Dict:
         # `abstract flow flows: Flow[0..*] nonunique :> messages,
         # flowTransfers { ... }`という、`of`/`from...to`を伴わない裸のflow
-        # usage形（connection/allocation/message等と同型）。
-        if ctx.simpleName() is not None or ctx.multiplicitySpec() is not None or len(ctx.postKind) > 0 or ctx.partBodyElement():
-            id_ctx = ctx.ID()
+        # usage形（connection/allocation/message等と同型）。`typeRef`
+        # ラベル（第2代替のみ）の有無で代替を判別する（`flow publish_request
+        # from A to B;`のように第1代替にも名前が付くようになったため、
+        # 従来の`simpleName`有無による判別が使えなくなった。両代替とも
+        # bodyを持てるようになったため、`partBodyElement()`はもはや
+        # 判別材料として使えない。2026-08-29、235件パース失敗の要因分析
+        # で発見）。
+        if ctx.typeRef is not None or ctx.multiplicitySpec() is not None or len(ctx.postKind) > 0 or ctx.isAbstract is not None:
             redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
             return {
                 "type": "flow_usage",
                 "name": _optional_simple_name_text(ctx.simpleName()),
-                "type_name": id_ctx.getText() if id_ctx is not None else None,
+                "type_name": ctx.typeRef.text if ctx.typeRef is not None else None,
                 "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
                 "isAbstract": ctx.isAbstract is not None,
                 "redefines": redefines,
@@ -732,10 +737,15 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         to_end = _namespace_path_text(ctx.toEnd) if ctx.toEnd is not None else None
         return {
             "type": "flow_usage",
-            "item_type": ctx.ID().getText() if ctx.ID() is not None else None,
+            "name": _optional_simple_name_text(ctx.simpleName()),
+            "item_type": ctx.ofType.text if ctx.ofType is not None else None,
             "from_end": from_end,
             "to_end": to_end,
-            "children": [],
+            # `flow NAME from A to B { attribute :>> isInstant = true; }`
+            # （ServerSequenceOutsideRealization-3.sysml）のように、`;`
+            # 終端の代わりに本体を持つこともある（2026-08-29、235件パース
+            # 失敗の要因分析で発見）。
+            "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 
     def visitFlowDef(self, ctx: SysMLMinParser.FlowDefContext) -> Dict:

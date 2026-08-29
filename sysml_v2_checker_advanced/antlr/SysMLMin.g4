@@ -1811,14 +1811,25 @@ qualifiedName
 // （adas-sysmlv2-main、実モデル、12件）のように、端点が`::`と`.`を
 // 混在させる場合もあるため、`qualifiedName`ではなく`namespacePath`を
 // 使う。
+// `flow publish_request from producerBehavior.publish.request to
+// publicationPort.publish { attribute :>> isInstant = true; }`
+// （ServerSequenceOutsideRealization-3.sysml）のように、裸短縮形
+// （`from...to`）に名前を伴い、かつ`;`終端の代わりに本体を持つことも
+// ある（従来この代替に名前スロット自体が無かった。2026-08-29、235件
+// パース失敗の要因分析で発見）。
+// `ofType`/`typeRef`という専用ラベルを使うことで、両代替の無ラベル`ID`が
+// 合算されるANTLRの既知の挙動を避け、`ctx.typeRef`の有無で代替を判別
+// できるようにする（interfaceUsageのtypeRefと同じ設計。2026-08-29、
+// 名前スロット追加に伴いsimpleNameの有無だけでは判別できなくなった
+// ため対応）。
 flowUsage
-    : 'flow' ( 'of' ID )?
+    : 'flow' simpleName? ( 'of' ofType=ID )?
       ( 'from' fromEnd=namespacePath 'to' toEnd=namespacePath
       | fromEnd=namespacePath 'to' toEnd=namespacePath
       )?
-      ';'
+      ( '{' partBodyElement* '}' | ';' )
     | isAbstract='abstract'? 'flow' simpleName?
-      (':' ID)?
+      (':' typeRef=ID)?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )
