@@ -3708,6 +3708,35 @@ def test_antlr_succession_flow_composite_form():
     }
 
 
+def test_antlr_successionusageflow_bare_from_omitted():
+    """`succession flow x.p to a1.aa.receiver;`（PartTest.sysml L25）の
+    ように、successionUsageの`succession flow`複合キーワード形は`from`
+    キーワードが省略され、sourceのnamespacePathが直接書かれる短縮形も
+    取りうる（flowUsageの`from`省略bare形と同型のギャップ。従来は
+    `from`が必須だった）。2026-08-29、add_nested_packagedef_in_partbody
+    対応中に連鎖的に発見。"""
+    ast = parse_sysml_antlr(
+        "part def B { succession flow x.p to a1.aa.receiver; }"
+    )
+    node = ast["children"][0]["children"][-1]
+    assert node == {
+        "type": "succession_usage",
+        "name": None,
+        "visibility": None,
+        "isFlow": True,
+        "fromEnd": "x::p",
+        "toEnd": "a1::aa::receiver",
+        "children": [],
+    }
+
+    # 既存の`from`明示形が引き続き機能することを確認する。
+    explicit_ast = parse_sysml_antlr(
+        "part def P { succession flow onOffCmdFlow from a.x to b.y; }"
+    )
+    explicit_node = explicit_ast["children"][0]["children"][-1]
+    assert explicit_node["fromEnd"] == "a::x"
+
+
 def test_antlr_power_expression():
     """d59_ampersand_caret_operators_lexer_missing: SI.sysmlの`s^-1`・
     ShapeItems.sysmlの`Triangle::length^2 + Triangle::width^2`のように、

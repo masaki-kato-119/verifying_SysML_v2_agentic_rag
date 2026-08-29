@@ -2471,8 +2471,15 @@ successionUsage
       'first' firstMult=multiplicitySpec? firstEnd=connectorEnd
       'then' thenMult=multiplicitySpec? thenEnd=connectorEnd
       ( '{' partBodyElement* '}' | ';' )                                # successionUsageFirstThen
+    // `succession flow x.p to a1.aa.receiver;`（PartTest.sysml）のように、
+    // `from`キーワードが省略され、sourceのnamespacePathが直接書かれる
+    // 短縮形もある（flowUsageの`from`省略bare形と同型のギャップ。
+    // 2026-08-29、add_nested_packagedef_in_partbody対応中に連鎖的に
+    // 発見）。
     | visibilityIndicator? 'succession' 'flow' simpleName?
-      'from' fromEnd=namespacePath 'to' toEnd=namespacePath ';'         # successionUsageFlow
+      ( 'from' fromEnd=namespacePath 'to' toEnd=namespacePath
+      | fromEnd=namespacePath 'to' toEnd=namespacePath
+      ) ';'                                                             # successionUsageFlow
     ;
 
 // --- bare first/then（action/part本体内の連鎖チェーン形） --------------------
