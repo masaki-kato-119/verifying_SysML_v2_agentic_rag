@@ -6672,6 +6672,35 @@ def test_antlr_connectionusage_named_typed_inline_connect():
     assert bare_node["thenEnd"] is None
 
 
+def test_antlr_connectionusage_variant_prefix():
+    """`variant connection adoption_certificate_TypeB1 : Adoption_Certificate
+    connect (parent1 ::> woman, adoptiveParent_1 ::> adult, certifiedChild
+    ::> child);`（family.sysml L217-218、variation part本体内）のように、
+    connectionUsage（名前+型節形）はVariability機能の先頭修飾子
+    （`variation`/`variant`）を持つことがある（partDef/attributeUsageと
+    同型）。2026-08-29、add_connectionusage_variant_prefix対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "part def P { "
+        "variant connection adoption_certificate_TypeB1 : Adoption_Certificate "
+        "connect (parent1 ::> woman, adoptiveParent_1 ::> adult, "
+        "certifiedChild ::> child); "
+        "}"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "connection_usage"
+    assert node["name"] == "adoption_certificate_TypeB1"
+    assert node["type_name"] == "Adoption_Certificate"
+    assert node["variability"] == "variant"
+    assert len(node["ends"]) == 3
+
+    # 既存の`variability`無し形が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr(
+        "part def CommSystem { connection link : DataLink connect tx.txPort to rx.rxPort; }"
+    )
+    plain_node = plain_ast["children"][0]["children"][0]
+    assert plain_node["variability"] is None
+
+
 def test_antlr_messageusage_of_type_with_from_to():
     """`message submitCheckout of CheckoutRequest from storefront.submitSent
     to apiGateway.submitReceived;`（WebShopArchitecture.sysml）のように、

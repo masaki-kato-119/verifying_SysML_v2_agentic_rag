@@ -2012,7 +2012,12 @@ connectionUsage
     // （CoSMAPackage.sysml）のように、名前の直後に多重度、その後に型節と
     // いう順序もある（partUsage/requirementUsageと同じpreMult/postMult
     // 設計。2026-08-28、730件パース失敗の要因分析で発見）。
-    | prefixMetadataAnnotation* isAbstract='abstract'? 'connection' simpleName?
+    // `variant connection adoption_certificate_TypeB1 : Adoption_Certificate
+    // connect (parent1 ::> woman, ...);`（family.sysml、variation part本体
+    // 内）のように、Variability機能の先頭修飾子がここにも付く（partDef/
+    // attributeUsageと同じ理由。2026-08-29、
+    // add_connectionusage_variant_prefix対応中に発見）。
+    | variability=('variation' | 'variant')? prefixMetadataAnnotation* isAbstract='abstract'? 'connection' simpleName?
       preMult=multiplicitySpec?
       (':' ID)?
       postMult=multiplicitySpec?

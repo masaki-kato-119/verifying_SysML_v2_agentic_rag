@@ -684,6 +684,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "multiplicity": self._multiplicity_dict(redefine_mult),
             "isAbstract": ctx.isAbstract is not None,
             "redefines": redefines,
+            # `variant connection adoption_certificate_TypeB1 : Adoption_
+            # Certificate connect (...);`（family.sysml）のように、
+            # Variability機能の先頭修飾子を持つことがある（2026-08-29、
+            # add_connectionusage_variant_prefix対応中に発見）。
+            "variability": ctx.variability.text if ctx.variability is not None else None,
             "firstMultiplicity": self._multiplicity_dict(ctx.firstMult) if not nary_ends else None,
             "firstEnd": self.visit(ctx.firstEnd) if ctx.firstEnd is not None else None,
             "thenMultiplicity": self._multiplicity_dict(ctx.thenMult) if not nary_ends else None,
