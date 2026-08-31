@@ -6753,6 +6753,40 @@ def test_antlr_messageusage_named_payload_of_clause_and_then_prefix():
     assert unnamed_node["payload_name"] == "applicableLaw"
 
 
+def test_antlr_messageusage_redefine_equals_value():
+    """`message :>> setSpeedMessage = driver_a.driverBehavior.sendSetSpeed.
+    sentMessage;`（Interaction Realization-1.sysml L51-53）のように、
+    messageUsageはredefine節(:>>)の後に`= value`値代入を持つことがある
+    （`of`/`from`/`to`節はすでに対応済みだが、この単純な`=`代入形は
+    未対応だった。attributeUsage/portUsage/connectionEndMemberと同型）。
+    2026-08-29、add_messageusage_redefine_equals_value対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "message :>> setSpeedMessage = "
+        "driver_a.driverBehavior.sendSetSpeed.sentMessage;"
+    )
+    node = ast["children"][0]
+    assert node["type"] == "message_usage"
+    assert node["name"] is None
+    assert node["redefines"] == [{"kind": "redefines", "target": "setSpeedMessage"}]
+    assert node["value"]["type"] == "name_ref"
+    assert node["value"]["reference"] == "driver_a.driverBehavior.sendSetSpeed.sentMessage"
+
+    # `:=`初期値代入も同様に機能することを確認する。
+    walrus_ast = parse_sysml_antlr(
+        "message :>> fuelCommandMessage := vehicle_a.controllerBehavior.sentMessage;"
+    )
+    walrus_node = walrus_ast["children"][0]
+    assert walrus_node["value"]["type"] == "name_ref"
+
+    # 既存の`of`/`from...to`形が引き続き機能することを確認する
+    # （"value"キー自体が無いことも確認する）。
+    of_ast = parse_sysml_antlr(
+        "message Statement1 of applicableLaw : ApplicableLaw from a.x to b.y;"
+    )
+    of_node = of_ast["children"][0]
+    assert "value" not in of_node
+
+
 def test_antlr_flowusage_named_payload_of_clause_omitted_name():
     """`flow of fuel : Fuel from pump.fuelOutPort.fuel to
     vehicle.fuelInPort.fuel;`（3d-Function-based Behavior-item.sysml

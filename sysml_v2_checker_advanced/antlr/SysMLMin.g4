@@ -2492,11 +2492,16 @@ messageStmt
 // （family.sysml）のように、`of`節が「型のみ」ではなく「名前:型」の
 // named payload形を取ることもある（2026-08-29、730件ベースライン
 // 154件エラー要因分析で発見）。
+// `message :>> setSpeedMessage = driver_a.driverBehavior.sendSetSpeed.
+// sentMessage;`（Interaction Realization-1.sysml）のように、redefine節
+// (:>>)の後に`= value`値代入を持つこともある（attributeUsage/portUsageと
+// 同型。2026-08-29、add_messageusage_redefine_equals_value対応中に発見）。
 messageUsage
     : isThen='then'? isAbstract='abstract'? 'message' messageName=simpleName?
       ( ':' ID | 'of' (payloadName=simpleName ':')? payloadType=namespacePath )?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (('=' | ':=') value=expression)?
       ( 'from' fromEnd=namespacePath 'to' toEnd=namespacePath )?
       ( '{' partBodyElement* '}' | ';' )
     ;

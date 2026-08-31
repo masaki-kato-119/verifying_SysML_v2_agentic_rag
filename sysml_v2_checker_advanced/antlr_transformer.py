@@ -2376,6 +2376,13 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             # で発見）。
             "from_end": _namespace_path_text(ctx.fromEnd) if ctx.fromEnd is not None else None,
             "to_end": _namespace_path_text(ctx.toEnd) if ctx.toEnd is not None else None,
+            # `message :>> setSpeedMessage = driver_a.driverBehavior.
+            # sendSetSpeed.sentMessage;`（Interaction Realization-1.sysml）
+            # のように、redefine節の後に`= value`値代入を持つことがある
+            # （attributeUsage/portUsage/connectionEndMemberと同型。
+            # 2026-08-29、add_messageusage_redefine_equals_value対応中に
+            # 発見）。
+            **({"value": self.visit(ctx.value)} if ctx.value is not None else {}),
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 
