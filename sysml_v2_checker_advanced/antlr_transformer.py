@@ -2461,6 +2461,28 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "children": [],
         }
 
+    def visitSelectFilterExpr(self, ctx: SysMLMinParser.SelectFilterExprContext) -> Dict:
+        # `subcomponents.totalMass.?{in p:>ISQ::mass; p >= minMass}`
+        # （MassRollup.sysml、MassRollup2.sysml）というOCL的selectフィルタ
+        # 式。arrowLambdaExprと同型のbody（arrowLambdaBody）を共有する。
+        body_ctx = ctx.arrowLambdaBody()
+        param_ctx = body_ctx.lambdaParam()
+        param = None
+        if param_ctx is not None:
+            type_ctx = param_ctx.namespacePath()
+            param = {
+                "name": _simple_name_text(param_ctx.simpleName()),
+                "isRef": param_ctx.isRef is not None,
+                "typeName": _namespace_path_text(type_ctx) if type_ctx is not None else None,
+            }
+        return {
+            "type": "select_filter",
+            "receiver": self.visit(ctx.expression()),
+            "param": param,
+            "body": self.visit(body_ctx.expression()),
+            "children": [],
+        }
+
     def visitNewExpr(self, ctx: SysMLMinParser.NewExprContext) -> Dict:
         # `new TypeName(name = expr, ...)`というKerMLのインスタンス生成式。
         return {

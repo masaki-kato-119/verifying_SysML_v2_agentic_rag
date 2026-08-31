@@ -4020,6 +4020,39 @@ def test_antlr_arrow_lambda_body_doc_keyword_then_param_and_statement():
     assert lambda_node["param"]["name"] == "x"
 
 
+def test_antlr_expression_select_filter_dotquestion():
+    """`subcomponents.totalMass.?{in p:>ISQ::mass; p >= minMass}`
+    （MassRollup2.sysml）・`subcomponents.totalMass.?{in p :> ISQ::mass;
+    p > minMass}`（MassRollup.sysml）のように、`.?{ ... }`というOCL的
+    selectフィルタ式が未対応だった（`.`直後の`?`が既存の`memberAccessExpr`
+    の`member=simpleName`として解釈できず失敗していた）。パラメータの
+    型節は`:`だけでなく`:>`でも書かれる。2026-08-29、730件ベースライン
+    154件エラー要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "part def P { attribute a = "
+        "subcomponents.totalMass.?{in p:>ISQ::mass; p >= minMass}; }"
+    )
+    node = ast["children"][0]["children"][0]
+    value = node["value"]
+    assert value["type"] == "select_filter"
+    assert value["receiver"] == {"type": "name_ref", "reference": "subcomponents.totalMass"}
+    assert value["param"] == {"name": "p", "isRef": False, "typeName": "ISQ::mass"}
+    assert value["body"] == {
+        "type": "binary_expr", "op": ">=",
+        "left": {"type": "name_ref", "reference": "p"},
+        "right": {"type": "name_ref", "reference": "minMass"},
+    }
+
+    # `:>`ではなく素の`:`型節、複数のsubcomponentsチェーンとの併存も確認する。
+    plain_colon_ast = parse_sysml_antlr(
+        "part def P { attribute a = "
+        "subcomponents.totalMass.?{in p : ISQ::mass; p > minMass}; }"
+    )
+    plain_colon_node = plain_colon_ast["children"][0]["children"][0]["value"]
+    assert plain_colon_node["type"] == "select_filter"
+    assert plain_colon_node["param"]["typeName"] == "ISQ::mass"
+
+
 def test_antlr_rendering_usage_redefine_with_equals_value():
     """d50_feature_usage_equals_value: Views.sysmlの`rendering :>>
     subrenderings[0..*] = columnView.viewRendering;`のように、redefine

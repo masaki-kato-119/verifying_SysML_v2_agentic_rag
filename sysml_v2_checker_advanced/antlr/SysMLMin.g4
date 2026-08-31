@@ -2916,6 +2916,13 @@ expression
     // ANTLRの通常のprediction順で解決される）。`#()`と同様、メンバ
     // アクセスに準じる強い結合の後置演算子として扱う。
     | expression '.' member=simpleName                          # memberAccessExpr
+    // `subcomponents.totalMass.?{in p:>ISQ::mass; p >= minMass}`
+    // （MassRollup.sysml、MassRollup2.sysml）のように、`.?{ ... }`という
+    // OCL的selectフィルタ式が使われる（`.`直後の`?`が`memberAccessExpr`の
+    // `member=simpleName`として解釈できず失敗していた）。`arrowLambdaExpr`
+    // と同型のbody（`arrowLambdaBody`）を共有する（2026-08-29、730件
+    // ベースライン154件エラー要因分析で発見）。
+    | expression '.' '?' '{' arrowLambdaBody '}'                 # selectFilterExpr
     | expression 'as' typeRef=namespacePath                     # asCastExpr
     // `multicausations meta SysML::Usage;`（CauseAndEffect.sysml、4ファイル・
     // 7件）のように、KerMLの`meta`式（メタデータ型参照）を持つ。
@@ -3077,8 +3084,11 @@ arrowLambdaBody
 // 同様に`;`だけでなく`{ doc ... }`というbody形も取りうる。body形にする
 // ことで、`arrowLambdaBody`の既存構造（`lambdaParam? ... expression`）が
 // そのままparam直後の結果式も受理できる。
+// `in p:>ISQ::mass;`（MassRollup.sysml、MassRollup2.sysml）のように、
+// select filter式（`.?{ ... }`）のパラメータ型節は`:`だけでなく`:>`でも
+// 書かれる（2026-08-29、730件ベースライン154件エラー要因分析で発見）。
 lambdaParam
-    : 'in'? isRef='ref'? simpleName (':' namespacePath)?
+    : 'in'? isRef='ref'? simpleName ((':' | ':>') namespacePath)?
       ( '{' (documentationStmt | bareDocComment)* '}' | ';' )
     ;
 
