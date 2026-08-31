@@ -3177,7 +3177,11 @@ expression
     // `functionCallExpr`の位置引数とは異なり`name = expression`という
     // 名前付き引数のみ（公式コーパスで確認した3ファイル・5件すべてが
     // この形）。
-    | 'new' qualifiedName '(' (newArgument (',' newArgument)*)? ')'  # newExpr
+    // `new Time::Clock()`（Local Clock Example.sysml）のように、new式の
+    // 型参照は`::`修飾名を取ることもある（従来`qualifiedName`は`.`区切り
+    // のみだったため`namespacePath`へ差し替える。2026-08-29、
+    // add_newexpr_namespacepath_type対応中に発見）。
+    | 'new' newType=namespacePath '(' (newArgument (',' newArgument)*)? ')'  # newExpr
     // `subject : Engine[1..*] = all engineChoice;`（10b-Trade-off Among
     // Alternative Configurations.sysml）のように、KerMLの`all <ref>`
     // コレクション選択式（指定した分類子の全インスタンスを選択）が式文法に

@@ -3165,6 +3165,28 @@ def test_antlr_new_expr_positional_argument():
     ]
 
 
+def test_antlr_newexpr_namespacepath_type():
+    """`new Time::Clock()`（Local Clock Example.sysml L8）のように、new式の
+    型参照は`::`修飾名を取ることもある（従来`qualifiedName`は`.`区切りの
+    みだったため`namespacePath`へ差し替えた）。既存の単一セグメント・
+    `.`区切り型が引き続き機能することも確認する。2026-08-29、
+    add_newexpr_namespacepath_type対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "part def Server { part :>> localClock = new Time::Clock(); }"
+    )
+    value = ast["children"][0]["children"][0]["expression"]
+    assert value["type"] == "new_instance"
+    assert value["name"] == "Time::Clock"
+    assert value["arguments"] == []
+
+    # 既存の単一セグメント型が引き続き機能することを確認する。
+    single_ast = parse_sysml_antlr(
+        "part def P { attribute a = new SamplePair(x, calculation(x)); }"
+    )
+    single_value = single_ast["children"][0]["children"][0]["value"]
+    assert single_value["name"] == "SamplePair"
+
+
 def test_antlr_expression_all_selection():
     """`subject : Engine[1..*] = all engineChoice;`（10b-Trade-off Among
     Alternative Configurations.sysml L76）のように、KerMLの`all <ref>`

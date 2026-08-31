@@ -2691,9 +2691,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
 
     def visitNewExpr(self, ctx: SysMLMinParser.NewExprContext) -> Dict:
         # `new TypeName(name = expr, ...)`というKerMLのインスタンス生成式。
+        # `new Time::Clock()`（Local Clock Example.sysml）のように、型参照は
+        # `::`修飾名を取ることもある（2026-08-29、
+        # add_newexpr_namespacepath_type対応中に発見）。
         return {
             "type": "new_instance",
-            "name": _qualified_name_text(ctx.qualifiedName()),
+            "name": _namespace_path_text(ctx.newType),
             "arguments": [self.visit(a) for a in ctx.newArgument()],
             "children": [],
         }
