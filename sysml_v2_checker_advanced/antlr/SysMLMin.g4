@@ -202,7 +202,7 @@ eventOccurrenceUsageStmt
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       (':' namespacePath)?
-      ( 'default' defaultValue=expression | '=' value=expression )?
+      ( 'default' '='? defaultValue=expression | '=' value=expression )?
       ( '{' partBodyElement* '}' | ';' )
     ;
 
@@ -318,7 +318,7 @@ occurrenceUsage
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ('=' value=expression)?
-      ('default' defaultValue=expression)?
+      ('default' '='? defaultValue=expression)?
       ( '{' partBodyElement* '}' | ';' )
     ;
 
@@ -1222,7 +1222,7 @@ itemUsage
       (':' typeRef=namespacePath)?
       postMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
-      ( 'default' defaultValue=expression | '=' value=expression )?
+      ( 'default' '='? defaultValue=expression | '=' value=expression )?
       ( '{' partBodyElement* '}' | ';' )
     ;
 
@@ -1269,7 +1269,7 @@ requirementUsage
       // のようにインライン値代入を伴う形も存在する（subjectUsageと同じ位置）。
       ('=' value=expression)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
-      ('default' defaultValue=expression)?
+      ('default' '='? defaultValue=expression)?
       ( '{' partBodyElement* '}' | ';' )
     ;
 
@@ -1279,7 +1279,7 @@ concernUsage
       (':' ID)?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
-      ('default' defaultValue=expression)?
+      ('default' '='? defaultValue=expression)?
       ( '{' partBodyElement* '}' | ';' )
     ;
 
@@ -1301,7 +1301,7 @@ subjectUsage
       multiplicitySpec?
       ('=' value=expression)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
-      ('default' defaultValue=expression)?
+      ('default' '='? defaultValue=expression)?
       ( '{' partBodyElement* '}' | ';' )
     ;
 
@@ -1316,7 +1316,7 @@ stakeholderUsage
       multiplicitySpec?
       ('=' value=expression)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
-      ('default' defaultValue=expression)?
+      ('default' '='? defaultValue=expression)?
       ( '{' partBodyElement* '}' | ';' )
     ;
 
@@ -1336,7 +1336,7 @@ actorUsage
       multiplicitySpec?
       ('=' value=expression)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
-      ('default' defaultValue=expression)?
+      ('default' '='? defaultValue=expression)?
       ( '{' partBodyElement* '}' | ';' )
     ;
 
@@ -1347,7 +1347,7 @@ objectiveUsage
       multiplicitySpec?
       ('=' value=expression)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
-      ('default' defaultValue=expression)?
+      ('default' '='? defaultValue=expression)?
       ( '{' partBodyElement* '}' | ';' )
     ;
 
@@ -1675,7 +1675,7 @@ featureUsage
       postMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>') postTarget+=namespacePathList)*
       ('=' value=expression)?
-      ('default' defaultValue=expression)?
+      ('default' '='? defaultValue=expression)?
       ( '{' partBodyElement* '}' | ';' )
     ;
 
@@ -1724,7 +1724,7 @@ partUsage
       postMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ('=' value=expression)?
-      ('default' defaultValue=expression)?
+      ('default' '='? defaultValue=expression)?
       ( '{' partBodyElement* '}' | ';' )
     ;
 
@@ -1794,7 +1794,13 @@ attributeUsage
       // （2026-08-28、730件パース失敗の要因分析で発見）。
       (('=' | ':=') value=expression)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
-      ('default' defaultValue=expression)?
+      // `attribute m default = 10;`・`attribute mass redefines Vehicle::mass
+      // default = 1750 [kg] { ... }`（DefaultValueTest.sysml、1c-Parts Tree
+      // Redefinition.sysml）のように、`default`キーワードの直後に`=`を
+      // 挟むことがある（従来`default`直後に式を直接置く形しか無かった。
+      // 2026-08-29、730件ベースライン154件エラー要因分析で発見。`default`
+      // 節を持つ規則全般に同じ`'='?`を追加した）。
+      ('default' '='? defaultValue=expression)?
       ( '{' partBodyElement* '}' | ';' )
     ;
 // 専用のattributeBodyElement規則は持たず、他のusage（part/port）と同じ
@@ -2168,7 +2174,7 @@ actionParameter
       // （Assignment Example.sysml）のように、`=`とは別に`:=`という
       // 代入演算子も使われる（2026-08-28、730件パース失敗の要因分析で
       // 発見）。
-      ( 'default' ( '{' defaultValue=expression ';'? '}' | defaultValue=expression ) | ('=' | ':=') value=expression )?
+      ( 'default' '='? ( '{' defaultValue=expression ';'? '}' | defaultValue=expression ) | ('=' | ':=') value=expression )?
       // `in dt : TimeValue { @ToolVariable { name = "deltaT"; } }`
       // （AnalysisAnnotation.sysml）のように、型節直後のbodyに
       // `@Type { ... }`ショートハンド形のインラインメタデータ注釈が

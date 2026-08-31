@@ -2724,6 +2724,31 @@ def test_antlr_braced_default_expression():
     assert bare_node["defaultValue"] == {"type": "name_ref", "reference": "enclosingItem.localClock"}
 
 
+def test_antlr_default_clause_equals_form():
+    """`attribute m default = 10;`・`attribute :>> m default = n;`
+    （DefaultValueTest.sysml）・`attribute mass redefines Vehicle::mass
+    default = 1750 [kg] { ... }`（1c-Parts Tree Redefinition.sysml）の
+    ように、`default`節は直後に式を直接置く形しか無く、実コーパスで
+    広く使われる`default = <expr>`という`=`付き形を受理できなかった
+    （2026-08-29、730件ベースライン154件エラー要因分析で発見）。"""
+    ast = parse_sysml_antlr(
+        "part def V { attribute m default = 10; attribute n = 20; }"
+    )
+    m_node, n_node = ast["children"][0]["children"]
+    assert m_node["defaultValue"] == {"type": "literal", "literal_type": "int", "value": 10}
+    assert n_node["value"] == {"type": "literal", "literal_type": "int", "value": 20}
+
+    redefine_ast = parse_sysml_antlr("part def W { attribute :>> m default = n; }")
+    redefine_node = redefine_ast["children"][0]["children"][0]
+    assert redefine_node["redefines"] == [{"kind": "redefines", "target": "m"}]
+    assert redefine_node["defaultValue"] == {"type": "name_ref", "reference": "n"}
+
+    # 既存の`=`無し裸形が引き続き機能することを確認する（回帰防止）。
+    plain_ast = parse_sysml_antlr("part def V2 { attribute m default 10; }")
+    plain_node = plain_ast["children"][0]["children"][0]
+    assert plain_node["defaultValue"] == {"type": "literal", "literal_type": "int", "value": 10}
+
+
 def test_antlr_interaction_keyword_as_namespace_path_segment():
     """d90_interaction_keyword_as_namespace_path_segment_missing:
     SysML.sysmlの`redefines actionDefinition, interaction subsets
