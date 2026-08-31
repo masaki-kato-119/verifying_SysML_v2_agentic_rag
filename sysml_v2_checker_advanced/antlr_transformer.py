@@ -3001,6 +3001,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "wildcard": is_wildcard,
             "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
             **({"filter": filter_expr} if filter_expr is not None else {}),
+            # `public import all P2::*;`のように、`private import`による
+            # 可視性制限を上書きする`all`修飾子を伴うことがある（2026-08-29、
+            # 730件ベースライン154件エラー要因分析で発見）。既存の
+            # exact-equality辞書テストを壊さないよう、無い場合はキー自体を
+            # 省略する。
+            **({"isAll": True} if ctx.isAll is not None else {}),
             "children": [],
         }
 

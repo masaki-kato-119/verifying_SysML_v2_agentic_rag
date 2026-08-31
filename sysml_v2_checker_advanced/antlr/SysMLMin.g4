@@ -3228,8 +3228,12 @@ portUsage
 // ブラケット付きインラインフィルタ式（`@Type`メタデータ参照式・
 // `and`/`or`論理結合）が続くこともある（2026-08-29、730件ベースラインの
 // 154件エラー要因分析で発見）。
+// `public import all P2::*;`（PrivateImportTest.sysml）のように、`import`
+// 直後に`all`修飾子（`private import`による可視性制限を上書きする）が
+// 付くことがある（2026-08-29、730件ベースライン154件エラー要因分析で
+// 発見）。
 importStmt
-    : visibilityIndicator? 'import' namespacePath ('::' ('*' '*'? | '**'))* ('[' filterExpr=expression ']')? ';'
+    : visibilityIndicator? 'import' isAll='all'? namespacePath ('::' ('*' '*'? | '**'))* ('[' filterExpr=expression ']')? ';'
     ;
 
 visibilityIndicator

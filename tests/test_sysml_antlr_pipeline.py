@@ -4929,6 +4929,27 @@ def test_antlr_import_expose_multilevel_wildcard_and_bracket_filter():
     assert "filter" not in plain_node
 
 
+def test_antlr_import_all_modifier():
+    """`public import all P2::*;`（PrivateImportTest.sysml）のように、
+    `import`直後に`all`修飾子（`private import`による可視性制限を
+    上書きする）が付くことがある（従来importStmtには`import`直後の
+    `all`オプションが無かった）。2026-08-29、730件ベースライン154件
+    エラー要因分析で発見。"""
+    ast = parse_sysml_antlr("package P { public import all P2::*; }")
+    node = ast["children"][0]
+    assert node["type"] == "import"
+    assert node["name"] == "P2"
+    assert node["wildcard"] is True
+    assert node["visibility"] == "public"
+    assert node["isAll"] is True
+
+    # 既存の`all`無し形が引き続き機能し、"isAll"キー自体が無いことを
+    # 確認する（回帰防止）。
+    plain_ast = parse_sysml_antlr("private import P3::*;")
+    plain_node = plain_ast["children"][0]
+    assert "isAll" not in plain_node
+
+
 def test_antlr_interface_usage_unnamed_typed_inline_connect():
     """`interface : StagingInterface connect a.p to b.q;`のように、名前を
     省略した型付きinterface usageへのインライン`connect...to...`が
