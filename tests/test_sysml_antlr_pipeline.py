@@ -6711,6 +6711,79 @@ def test_antlr_messageusage_of_type_with_from_to():
     assert bare_node["to_end"] is None
 
 
+def test_antlr_messageusage_named_payload_of_clause_and_then_prefix():
+    """`message Statement1 of applicableLaw : ApplicableLaw from
+    judge.statementOfLaw to adoptiveParent_1.informationOfLaw;`
+    （family.sysml L171）のように、`of`節が「型のみ」ではなく
+    「名前:型」のnamed payload形を取ることがある。また後続行
+    `then message agreementParent1 of agreement : Agreement from ...;`
+    （family.sysml L172）のように、直前のmessageに続くsuccession-then
+    接頭辞を伴うこともある（従来`messageUsage`には`isThen`が無かった）。
+    `messageName`という専用ラベルでこの規則自身の名前を読む必要がある
+    （`payloadName`と同じ規則へのラベル無し位置参照は、名前省略時に
+    `payloadName`側を誤って拾ってしまう）。2026-08-29、
+    add_messageflow_named_payload_of_clause対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "occurrence def O { "
+        "message Statement1 of applicableLaw : ApplicableLaw from a.x to b.y; "
+        "then message agreementParent1 of agreement : Agreement from c.x to d.y; "
+        "}"
+    )
+    first, second = ast["children"][0]["children"]
+    assert first["type"] == "message_usage"
+    assert first["name"] == "Statement1"
+    assert first["type_name"] == "ApplicableLaw"
+    assert first["payload_name"] == "applicableLaw"
+    assert "isThen" not in first
+
+    assert second["type"] == "message_usage"
+    assert second["name"] == "agreementParent1"
+    assert second["type_name"] == "Agreement"
+    assert second["payload_name"] == "agreement"
+    assert second["isThen"] is True
+
+    # 規則自身の名前が省略された場合、`payloadName`側を誤って拾わず
+    # `name`は`None`になることを確認する（`ctx.messageName`/
+    # `ctx.payloadName`が独立して読めることの検証）。
+    unnamed_ast = parse_sysml_antlr(
+        "message of applicableLaw : ApplicableLaw from a.x to b.y;"
+    )
+    unnamed_node = unnamed_ast["children"][0]
+    assert unnamed_node["name"] is None
+    assert unnamed_node["payload_name"] == "applicableLaw"
+
+
+def test_antlr_flowusage_named_payload_of_clause_omitted_name():
+    """`flow of fuel : Fuel from pump.fuelOutPort.fuel to
+    vehicle.fuelInPort.fuel;`（3d-Function-based Behavior-item.sysml
+    L59-60）のように、`of`節が「名前:型」のnamed payload形を取り、かつ
+    flow自身の名前は省略されうる。`ofName`という専用ラベル追加により
+    無ラベルの`ctx.simpleName()`がリストを返すようになったため、
+    flow自身の名前にも`flowName`という専用ラベルを与える必要がある
+    （さもないと、名前省略時に位置0が`ofName`側にずれてしまう）。
+    2026-08-29、730件ベースライン154件エラー要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "part def P { flow of fuel : Fuel from pump.fuelOutPort.fuel "
+        "to vehicle.fuelInPort.fuel; }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "flow_usage"
+    assert node["name"] is None
+    assert node["item_type"] == "Fuel"
+    assert node["item_name"] == "fuel"
+    assert node["from_end"] == "pump::fuelOutPort::fuel"
+    assert node["to_end"] == "vehicle::fuelInPort::fuel"
+
+    # flow自身の名前とofNameが両方存在する場合も正しく区別できることを確認する。
+    named_ast = parse_sysml_antlr(
+        "part def P { flow f of fuel : Fuel from pump.fuelOutPort.fuel "
+        "to vehicle.fuelInPort.fuel; }"
+    )
+    named_node = named_ast["children"][0]["children"][0]
+    assert named_node["name"] == "f"
+    assert named_node["item_name"] == "fuel"
+
+
 def test_antlr_part_kind_calc_and_action_parameter():
     """`in part : Engine;`・`return part : Engine;`（TradeStudyTest.sysml）、
     `in part testVehicle : Vehicle = ...;`（Verification Case Definition

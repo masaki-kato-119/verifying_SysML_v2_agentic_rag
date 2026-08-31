@@ -762,7 +762,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             )
             return {
                 "type": "flow_usage",
-                "name": _optional_simple_name_text(ctx.simpleName()),
+                "name": _optional_simple_name_text(ctx.flowName),
                 "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
                 "multiplicity": self._multiplicity_dict(ctx.typeMult),
                 "isAbstract": ctx.isAbstract is not None,
@@ -782,7 +782,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         bare_redefines = self._redefine_list_namespace(ctx.preKind, ctx.preTarget)
         return {
             "type": "flow_usage",
-            "name": _optional_simple_name_text(ctx.simpleName()),
+            # `flowName`ラベルで規則自身の名前を明示的に読む
+            # （`ofName=simpleName`と同じ代替内に存在するため、無ラベルの
+            # 位置指定は名前省略時に`ofName`側を誤って拾ってしまう。
+            # 2026-08-29、730件ベースライン154件エラー要因分析で発見）。
+            "name": _optional_simple_name_text(ctx.flowName),
             "item_type": ctx.ofType.text if ctx.ofType is not None else None,
             "from_end": from_end,
             "to_end": to_end,
@@ -793,6 +797,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             # exact-equality辞書テストを壊さないよう、無い場合はキー自体を
             # 省略する。
             **({"item_multiplicity": self._multiplicity_dict(ctx.ofMult)} if ctx.ofMult is not None else {}),
+            # `flow of fuel : Fuel from ... to ...;`（3d-Function-based
+            # Behavior-item.sysml）のように、`of`節が「名前:型」の
+            # named payload形を取ることがある（2026-08-29、730件
+            # ベースライン154件エラー要因分析で発見）。
+            **({"item_name": _simple_name_text(ctx.ofName)} if ctx.ofName is not None else {}),
             # `flow NAME from A to B { attribute :>> isInstant = true; }`
             # （ServerSequenceOutsideRealization-3.sysml）のように、`;`
             # 終端の代わりに本体を持つこともある（2026-08-29、235件パース
@@ -2281,13 +2290,27 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             type_name = id_ctx.getText()
         else:
             type_name = None
+        # `message Statement1 of applicableLaw : ApplicableLaw from ...;`
+        # のように、`of`節が「名前:型」のnamed payload形を取ることがある。
+        # `messageName`という専用ラベルでこの規則自身の名前を読む
+        # （`payloadName`と同じ規則へのラベル無し位置参照は、規則自身の
+        # 名前が省略された場合に`payloadName`側を誤って拾ってしまう。
+        # flowUsageの`flowName`/`ofName`と同型の衝突。2026-08-29、
+        # 730件ベースライン154件エラー要因分析で発見）。
         return {
             "type": "message_usage",
-            "name": _optional_simple_name_text(ctx.simpleName()),
+            "name": _optional_simple_name_text(ctx.messageName),
             "type_name": type_name,
+            **({"payload_name": _simple_name_text(ctx.payloadName)} if ctx.payloadName is not None else {}),
             "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
             "isAbstract": ctx.isAbstract is not None,
             "redefines": redefines,
+            # `then message agreementParent1 of agreement : Agreement from
+            # ...;`（family.sysml）のように、直前のmessageに続く
+            # succession-then接頭辞を取ることがある（2026-08-29、
+            # add_messageflow_named_payload_of_clause対応中に連鎖的に
+            # 発見。他の多くの規則と同じ`isThen`パターン）。
+            **({"isThen": True} if ctx.isThen is not None else {}),
             # `message submitCheckout of CheckoutRequest from
             # storefront.submitSent to apiGateway.submitReceived;`
             # （WebShopArchitecture.sysml）のように、`of Type`と`from...to`が

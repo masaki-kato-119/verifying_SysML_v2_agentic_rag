@@ -2080,15 +2080,24 @@ qualifiedName
 // （`ofType`/`typeRef`と同じ設計思想だが、今回は`getTypedRuleContext`
 // の型ベース検索という別の衝突パターン。2026-08-29、
 // add_interfaceusage_nary_connect_form対応中に連鎖的に発見）。
+// `flow of fuel : Fuel from pump.fuelOutPort.fuel to
+// vehicle.fuelInPort.fuel;`（3d-Function-based Behavior-item.sysml）の
+// ように、`of`節が「型のみ」ではなく「名前:型」のnamed payload形を
+// 取ることもあり、かつこの規則自身の名前（flowの名前）は省略され
+// うる。`ofName`という専用ラベルに加え、この規則自身の名前にも
+// `flowName`という専用ラベルを与える（無ラベルの位置参照だと、
+// 名前省略時に`ofName`側を誤って拾ってしまうため。messageUsageの
+// `messageName`/`payloadName`と同型。2026-08-29、730件ベースライン
+// 154件エラー要因分析で発見）。
 flowUsage
-    : 'flow' simpleName?
+    : 'flow' flowName=simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
-      ( 'of' ofType=ID ofMult=multiplicitySpec? )?
+      ( 'of' (ofName=simpleName ':')? ofType=ID ofMult=multiplicitySpec? )?
       ( 'from' fromEnd=namespacePath 'to' toEnd=namespacePath
       | fromEnd=namespacePath 'to' toEnd=namespacePath
       )?
       ( '{' partBodyElement* '}' | ';' )
-    | isAbstract='abstract'? 'flow' simpleName?
+    | isAbstract='abstract'? 'flow' flowName=simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       // `flow :>> publish_message: Transfers::MessageTransfer { ... }`の
       // ように、型節が`::`修飾名を取ることもあるため`ID`単体ではなく
@@ -2450,9 +2459,14 @@ messageStmt
 // ペイロード型節と`from...to`端点節を同時に持つことがある（従来
 // `messageStmt`側にのみ`from...to`があり、`messageUsage`側は非対応だった。
 // 2026-08-29、235件パース失敗の要因分析で発見）。
+// `message Statement1 of applicableLaw : ApplicableLaw from
+// judge.statementOfLaw to adoptiveParent_1.informationOfLaw;`
+// （family.sysml）のように、`of`節が「型のみ」ではなく「名前:型」の
+// named payload形を取ることもある（2026-08-29、730件ベースライン
+// 154件エラー要因分析で発見）。
 messageUsage
-    : isAbstract='abstract'? 'message' simpleName?
-      ( ':' ID | 'of' payloadType=namespacePath )?
+    : isThen='then'? isAbstract='abstract'? 'message' messageName=simpleName?
+      ( ':' ID | 'of' (payloadName=simpleName ':')? payloadType=namespacePath )?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( 'from' fromEnd=namespacePath 'to' toEnd=namespacePath )?
