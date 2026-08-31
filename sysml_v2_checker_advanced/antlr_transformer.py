@@ -898,7 +898,17 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # kind/type_name/multiplicity/redefines/value/childrenも提供する。
         direction_ctx = ctx.direction()
         direction_text = direction_ctx.getText() if direction_ctx is not None else ctx.dirReturn.text
-        kind_text = ctx.kind.text if ctx.kind is not None else None
+        # `private in ref item y: A, B;`（ItemTest.sysml(xpect)）のように、
+        # `ref`と種別キーワードが複合で現れることがある。`kind`は既存の
+        # 後方互換（`ref`単独の場合は従来通り`"ref"`）を保ちつつ、`isRef`
+        # で複合か否かを独立して判定できるようにする（2026-08-29、
+        # add_actionparameter_compound_kind対応中に発見）。
+        if ctx.kind is not None:
+            kind_text = ctx.kind.text
+        elif ctx.isRef is not None:
+            kind_text = "ref"
+        else:
+            kind_text = None
         # `private in ref y: A, B;`（ItemTest.sysml）のように、型節が
         # カンマ区切りの複数型を取ることがあるため、`typeRef`という専用
         # ラベル（`extraTypeRefs`と合わせて2箇所目のnamespacePathが増えた
@@ -925,6 +935,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "direction": direction_text,
             "is_item": kind_text == "item",
             "kind": kind_text,
+            # `private in ref item y: A, B;`（ItemTest.sysml(xpect)）のように
+            # `ref`が種別キーワードと複合で現れる場合に備え、`kind`とは独立
+            # に`isRef`を持たせる（`ref`単独の場合は`kind`が既に`"ref"`を
+            # 表すため、このキー自体を省略する。2026-08-29、
+            # add_actionparameter_compound_kind対応中に発見）。
+            **({"isRef": True} if ctx.isRef is not None and ctx.kind is not None else {}),
             "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
             "name": _optional_simple_name_text(ctx.simpleName()),
             "type_spec": {"name": type_name} if type_name is not None else None,

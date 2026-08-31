@@ -2265,7 +2265,15 @@ loopActionStmt
 // 235件パース失敗の要因分析で発見）。
 actionParameter
     : visibilityIndicator? (direction | dirReturn='return')
-      kind=('item' | 'attribute' | 'ref' | 'part' | 'calc' | 'action')?
+      // `private in ref item y: A, B;`（ItemTest.sysml(xpect)）のように、
+      // `ref`と種別キーワード（`item`等）が複合で現れることがある
+      // （従来`kind`は単一トークンのみで、`ref`単独か`item`等単独かの
+      // いずれかしか受理できなかった）。`isRef`を独立したラベルに分離
+      // することで、`ref`単独・`item`等単独・`ref item`複合のいずれも
+      // 受理する（2026-08-29、add_actionparameter_compound_kind対応中に
+      // 発見）。
+      isRef='ref'?
+      kind=('item' | 'attribute' | 'part' | 'calc' | 'action')?
       simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       preMult=multiplicitySpec?

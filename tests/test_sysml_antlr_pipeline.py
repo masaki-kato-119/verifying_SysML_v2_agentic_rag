@@ -8177,6 +8177,37 @@ def test_antlr_visibility_prefix_on_actionparameter():
     assert "type_names" not in plain_param
 
 
+def test_antlr_actionparameter_compound_kind():
+    """`private in ref item y: A, B;`（ItemTest.sysml(xpect) L16）のように、
+    actionParameterの`kind`は単一トークンだけでなく`ref item`のような
+    複合形も取りうる（従来`ref`単独か`item`等単独のいずれかしか受理
+    できなかった）。`ref`単独形（`kind`が`"ref"`になる後方互換）が
+    引き続き機能することも確認する。2026-08-29、
+    add_actionparameter_compound_kind対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "part def C { private in ref item y: A, B; }"
+    )
+    param = ast["children"][0]["children"][0]
+    assert param["type"] == "param"
+    assert param["kind"] == "item"
+    assert param["isRef"] is True
+    assert param["is_item"] is True
+    assert param["type_names"] == ["A", "B"]
+
+    # 既存の`ref`単独形が引き続き機能することを確認する
+    # （"isRef"キー自体が無いことも確認する）。
+    bare_ref_ast = parse_sysml_antlr("action def A { private in ref y: A, B; }")
+    bare_ref_param = bare_ref_ast["children"][0]["params"][0]
+    assert bare_ref_param["kind"] == "ref"
+    assert "isRef" not in bare_ref_param
+
+    # 既存の`item`単独形が引き続き機能することを確認する。
+    bare_item_ast = parse_sysml_antlr("action def A { in item x : T; }")
+    bare_item_param = bare_item_ast["children"][0]["params"][0]
+    assert bare_item_param["kind"] == "item"
+    assert "isRef" not in bare_item_param
+
+
 def test_antlr_actionparameter_general_body_content():
     """`private in ref y: A, B { part B_b redefines B::b; port B_x
     redefines B::x; }`（PartTest.sysml L38、private port def C本体内）の
