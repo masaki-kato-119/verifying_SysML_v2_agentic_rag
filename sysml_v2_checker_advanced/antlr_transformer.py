@@ -993,6 +993,10 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "payload": self._send_action_payload(ctx),
             "target": _qualified_name_text(target),
             "target_type": target_type,
+            # `then send new Show(shoot.picture) to screen;`（Messaging
+            # Example.sysml）のように、named形と同じ先頭の裸`then`を持ちうる
+            # （2026-08-29、730件ベースライン154件エラー要因分析で発見）。
+            **({"isThen": True} if ctx.isThen is not None else {}),
         }
 
     def visitAcceptActionStmt(self, ctx: SysMLMinParser.AcceptActionStmtContext) -> Dict:

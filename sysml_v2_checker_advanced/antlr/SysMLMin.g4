@@ -2248,7 +2248,11 @@ sendActionStmt
     : isThen='then'? 'action' name=simpleName 'send'
       ( payload=namespacePath | 'new' newPayloadType=qualifiedName '(' (newPayloadArgs+=newArgument (',' newPayloadArgs+=newArgument)*)? ')' )
       ( 'to' receiver=qualifiedName | 'via' receiverVia=qualifiedName ) ';'          # sendActionNamed
-    | 'send'
+    // `then send new Show(shoot.picture) to screen;`（Messaging Example.sysml、
+    // Messaging with Ports.sysml、ActionTest.sysml）のように、匿名形にも
+    // named形と同じ先頭の裸`then`（直前ノードとの暗黙の連鎖）を持ちうる
+    // （2026-08-29、730件ベースライン154件エラー要因分析で発見）。
+    | isThen='then'? 'send'
       ( payload=namespacePath | 'new' newPayloadType=qualifiedName '(' (newPayloadArgs+=newArgument (',' newPayloadArgs+=newArgument)*)? ')' )
       ( 'to' toTarget=qualifiedName | 'via' viaTarget=qualifiedName ) ';' # sendActionAnonymous
     ;

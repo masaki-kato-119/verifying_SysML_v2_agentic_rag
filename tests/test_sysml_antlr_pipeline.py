@@ -5534,6 +5534,34 @@ def test_antlr_send_action_new_expression_payload():
     assert plain_named_node["receiver_type"] == "to"
 
 
+def test_antlr_sendaction_anonymous_then_prefix():
+    """`then send new Show(shoot.picture) to screen;`（Messaging
+    Example.sysml）・`then send new Show(shoot.picture) via displayPort;`
+    （Messaging with Ports.sysml）・`then send new S() to b;`（ActionTest.sysml）
+    のように、sendActionStmtの匿名形（`action`キーワード・名前を伴わない
+    `send ...;`）にも、named形と同じ先頭の裸`then`（直前ノードとの暗黙の
+    連鎖）を持ちうる（従来named形にしか無かった）。2026-08-29、730件
+    ベースライン154件エラー要因分析で発見。"""
+    to_ast = parse_sysml_antlr("action def A { then send new Show(x) to screen; }")
+    to_node = to_ast["children"][0]["children"][0]
+    assert to_node["type"] == "send_action"
+    assert to_node["name"] is None
+    assert to_node["target"] == "screen"
+    assert to_node["target_type"] == "to"
+    assert to_node["isThen"] is True
+
+    via_ast = parse_sysml_antlr("action def A { then send new Show(x) via displayPort; }")
+    via_node = via_ast["children"][0]["children"][0]
+    assert via_node["target_type"] == "via"
+    assert via_node["isThen"] is True
+
+    # 既存の`then`無し匿名形が引き続き機能し、"isThen"キー自体が無いことを
+    # 確認する（回帰防止）。
+    plain_ast = parse_sysml_antlr("action def A { send new S() to b; }")
+    plain_node = plain_ast["children"][0]["children"][0]
+    assert "isThen" not in plain_node
+
+
 def test_antlr_quoted_name_type_reference():
     """`use case 'provide transportation' : 'Provide Transportation' { }`
     （Use Case Usage Example.sysml）・`action 'provide power' :
