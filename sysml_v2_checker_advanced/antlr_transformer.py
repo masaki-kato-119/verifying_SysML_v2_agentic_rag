@@ -1390,7 +1390,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # 型で分岐する（typeRef本体と同じ方針。2026-08-29、
         # add_actorusage_namespacepath_type対応中に連鎖的に発見）。
         type_names = ([type_name] if type_name is not None else []) + [
-            _namespace_path_text(t) if isinstance(t, SysMLMinParser.NamespacePathContext) else t.text
+            _namespace_path_text(t) if isinstance(t, SysMLMinParser.NamespacePathContext) else _unquote_text(t.text)
             for t in extra_type_refs
         ]
         # `then use case 'drive vehicle' { ... }`のように`then`前置を持つ

@@ -864,7 +864,11 @@ assertConstraintUsage
 calculationUsage
     : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'calc' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
-      (':' typeRef=ID (',' extraTypeRefs+=ID)*)?
+      // `calc 'Solve for Pressure1' : 'Ideal Gas Law';`（Turbojet Stage
+      // Analysis.sysml）のように、型節がQUOTED_NAME型参照を取ることも
+      // ある（従来`ID`決め打ちだった。2026-08-29、
+      // add_calculationusage_quoted_type_ref対応中に発見）。
+      (':' typeRef=(ID | QUOTED_NAME) (',' extraTypeRefs+=(ID | QUOTED_NAME))*)?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' calcBodyElement* '}' | ';' )

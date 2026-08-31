@@ -580,6 +580,26 @@ def test_antlr_calculation_usage_short_name():
     assert lint_ast(ast) == []
 
 
+def test_antlr_calculationusage_quoted_type_ref():
+    """`calc 'Solve for Pressure1' : 'Ideal Gas Law';`（Turbojet Stage
+    Analysis.sysml L88）のように、calculationUsageの型節はQUOTED_NAME
+    型参照を取ることもある（従来`ID`決め打ちだった）。既存の`ID`型・
+    カンマ区切り複数型が引き続き機能することも確認する。2026-08-29、
+    add_calculationusage_quoted_type_ref対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "part def P { calc 'Solve for Pressure1' : 'Ideal Gas Law'; }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "calculation_usage"
+    assert node["name"] == "Solve for Pressure1"
+    assert node["type_name"] == "Ideal Gas Law"
+
+    # 既存のID型・カンマ区切り複数型が引き続き機能することを確認する。
+    multi_ast = parse_sysml_antlr("part def P { calc f1 : F1, F2; }")
+    multi_node = multi_ast["children"][0]["children"][0]
+    assert multi_node["type_names"] == ["F1", "F2"]
+
+
 def test_antlr_statebodyelement_bare_constraint():
     """`constraint { DurationOf(maintenance) <= 48 [h] }`（Time
     Constraints.sysml、state本体内）のように、`assertConstraintUsage`は
