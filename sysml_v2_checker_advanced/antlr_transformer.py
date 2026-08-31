@@ -1026,6 +1026,21 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             **({"isThen": True} if ctx.isThen is not None else {}),
         }
 
+    def visitSendActionNamedViaTo(self, ctx: SysMLMinParser.SendActionNamedViaToContext) -> Dict:
+        # `action snd2 send via this to aa.target;`（ActionTest.sysml）の
+        # ように、payloadを省略し、`via <port>`と`to <target>`を併記する
+        # 形もある（2026-08-29、730件ベースライン154件エラー要因分析で
+        # 発見）。
+        return {
+            "type": "send_action",
+            "name": _simple_name_text(ctx.name),
+            "payload": None,
+            "receiver": _qualified_name_text(ctx.viaToReceiver),
+            "receiver_type": "to",
+            "via": _qualified_name_text(ctx.viaPort),
+            **({"isThen": True} if ctx.isThen is not None else {}),
+        }
+
     def visitSendActionAnonymous(self, ctx: SysMLMinParser.SendActionAnonymousContext) -> Dict:
         if ctx.toTarget is not None:
             target, target_type = ctx.toTarget, "to"

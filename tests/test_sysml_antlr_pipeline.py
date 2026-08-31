@@ -5993,6 +5993,31 @@ def test_antlr_sendactionstmt_named_body():
     assert inline_node["receiver"] == "y"
 
 
+def test_antlr_sendactionstmt_via_to_combined():
+    """`action snd2 send via this to aa.target;`（ActionTest.sysml）の
+    ように、sendActionStmtのnamed形はpayloadを省略し、`via <port>`と
+    `to <target>`を併記することもある（従来`to`/`via`は排他選択かつ
+    payload必須だった）。2026-08-29、730件ベースライン154件エラー要因
+    分析で発見。"""
+    ast = parse_sysml_antlr(
+        "action a2 { action aa { out part target; } "
+        "action snd2 send via this to aa.target; }"
+    )
+    node = ast["children"][0]["children"][-1]
+    assert node["type"] == "send_action"
+    assert node["name"] == "snd2"
+    assert node["payload"] is None
+    assert node["receiver"] == "aa.target"
+    assert node["receiver_type"] == "to"
+    assert node["via"] == "this"
+
+    # 既存の`to`/`via`単独選択形が引き続き機能し、"via"キー自体が無いことを
+    # 確認する（回帰防止）。
+    plain_ast = parse_sysml_antlr("action def A { action snd send x to y; }")
+    plain_node = plain_ast["children"][0]["children"][0]
+    assert "via" not in plain_node
+
+
 def test_antlr_quoted_name_type_reference():
     """`use case 'provide transportation' : 'Provide Transportation' { }`
     （Use Case Usage Example.sysml）・`action 'provide power' :

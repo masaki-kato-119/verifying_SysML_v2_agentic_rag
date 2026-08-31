@@ -539,6 +539,11 @@ class SysMLMinVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by SysMLMinParser#sendActionNamedViaTo.
+    def visitSendActionNamedViaTo(self, ctx:SysMLMinParser.SendActionNamedViaToContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by SysMLMinParser#sendActionAnonymous.
     def visitSendActionAnonymous(self, ctx:SysMLMinParser.SendActionAnonymousContext):
         return self.visitChildren(ctx)

@@ -2331,6 +2331,11 @@ sendActionStmt
     // redefine+値代入（`in :>> payload = s;`）を並べたbodyで表すことも
     // ある（2026-08-29、730件ベースライン154件エラー要因分析で発見）。
     | isThen='then'? 'action' name=simpleName 'send' '{' actionBodyElement* '}'      # sendActionNamedBody
+    // `action snd2 send via this to aa.target;`（ActionTest.sysml）のように、
+    // payloadを省略し、`via <port>`と`to <target>`を併記する形もある
+    // （現行は`to`/`via`が排他選択かつpayload必須。2026-08-29、730件
+    // ベースライン154件エラー要因分析で発見）。
+    | isThen='then'? 'action' name=simpleName 'send' 'via' viaPort=qualifiedName 'to' viaToReceiver=qualifiedName ';' # sendActionNamedViaTo
     // `then send new Show(shoot.picture) to screen;`（Messaging Example.sysml、
     // Messaging with Ports.sysml、ActionTest.sysml）のように、匿名形にも
     // named形と同じ先頭の裸`then`（直前ノードとの暗黙の連鎖）を持ちうる
