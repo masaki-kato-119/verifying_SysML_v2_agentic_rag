@@ -1384,21 +1384,30 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
 
     def visitSatisfyRequirementUsage(self, ctx: SysMLMinParser.SatisfyRequirementUsageContext) -> Dict:
         # `satisfy requirement viewpointConformance by that { ... }`
-        # （Views.sysml）というbodyありの代替がある。`ctx.by`（この代替のみで
-        # 設定される`by=namespacePath`ラベル）の有無で2つの代替を区別する。
+        # （Views.sysml）というbodyありの代替がある。`ctx.nameRef`（この
+        # 代替のみで設定される`nameRef=namespacePath`ラベル）の有無で2つの
+        # 代替を区別する（`by`は`satisfy 'system structure perspective';`
+        # （11a-View-Viewpoint.sysml）のように省略されることがあるため、
+        # 判別には使えない。2026-08-29、730件ベースライン154件エラー
+        # 要因分析で発見。従来は`ctx.by`の有無で判別していたが、`by`省略
+        # 対応でこの判別が壊れるため`ctx.nameRef`に切り替えた）。
         is_negated = any(child.getText() == "not" for child in ctx.getChildren())
-        by_ctx = getattr(ctx, "by", None)
-        if by_ctx is not None:
+        if ctx.nameRef is not None:
             # `satisfy Drone_StakeholderRequirements::longDistance by drone;`
             # のように、対象参照名が`::`修飾を取りうるため、この代替では
             # simpleNameではなく`nameRef=namespacePath`ラベルを使う
             # （2026-08-28、730件パース失敗の要因分析で発見）。
+            # `satisfy requirement req1 : Req1 by system;`
+            # （RequirementDerivationExample.sysml）のように、nameRefと
+            # `by`の間に型節`: Type`を挟むこともある（2026-08-29、730件
+            # ベースライン154件エラー要因分析で発見）。
+            by_ctx = ctx.by
             return {
                 "type": "satisfy_requirement_usage",
                 "is_negated": is_negated,
                 "name": _namespace_path_text(ctx.nameRef),
-                "type_name": None,
-                "by": _namespace_path_text(by_ctx),
+                "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
+                "by": _namespace_path_text(by_ctx) if by_ctx is not None else None,
                 "children": [self.visit(el) for el in ctx.partBodyElement()],
             }
         type_ctx = ctx.ID()

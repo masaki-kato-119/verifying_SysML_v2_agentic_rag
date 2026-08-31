@@ -912,9 +912,15 @@ constraintUsage
 // 付きうる（従来この代替は前置修飾子を一切持たず、`assert`/`not`は
 // `satisfiedBy`キーワード形にしか無かった。2026-08-29、730件ベースライン
 // 154件エラー要因分析で発見）。
+// `satisfy requirement req1 : Req1 by system;`
+// （RequirementDerivationExample.sysml）のように、nameRefと`by`の間に
+// 型節`: Type`を挟むことがある。`satisfy 'system structure
+// perspective';`（11a-View-Viewpoint.sysml）のように、`by`節自体を
+// 省略した裸参照形（既存のrequirement usageを名前のみで参照する形）も
+// ある（2026-08-29、730件ベースライン154件エラー要因分析で発見）。
 satisfyRequirementUsage
     : 'assert' ('not')? 'satisfiedBy' ( 'requirement' simpleName ':' ID | simpleName ) ';'
-    | ('assert')? ('not')? 'satisfy' 'requirement'? nameRef=namespacePath 'by' by=namespacePath ( '{' partBodyElement* '}' | ';' )
+    | ('assert')? ('not')? 'satisfy' 'requirement'? nameRef=namespacePath (':' typeRef=namespacePath)? ('by' by=namespacePath)? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // `verify requirement : R;`・`verify requirement massRequirement :

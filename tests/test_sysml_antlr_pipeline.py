@@ -5323,6 +5323,56 @@ def test_antlr_assert_satisfy_by_combined_form():
     assert assert_not_node["by"] == "q"
 
 
+def test_antlr_satisfyrequirementusage_type_and_by_omission():
+    """`satisfy requirement req1 : Req1 by system;`
+    （RequirementDerivationExample.sysml）のように、nameRefと`by`の間に
+    型節`: Type`を挟むことがある。`satisfy 'system structure
+    perspective';`（11a-View-Viewpoint.sysml）のように、`by`節自体を
+    省略した裸参照形（既存のrequirement usageを名前のみで参照する形）も
+    ある。従来は`ctx.by`の有無で`satisfiedBy`キーワード形との代替判別を
+    行っていたが、`by`省略対応でこの判別方法自体を`ctx.nameRef`に
+    切り替える必要があった。2026-08-29、730件ベースライン154件エラー
+    要因分析で発見。"""
+    typed_ast = parse_sysml_antlr(
+        "part def P { requirement req1 : Req1; part system; "
+        "satisfy requirement req1 : Req1 by system; }\n"
+        "requirement def Req1;\n"
+    )
+    typed_node = typed_ast["children"][0]["children"][-1]
+    assert typed_node["type"] == "satisfy_requirement_usage"
+    assert typed_node["name"] == "req1"
+    assert typed_node["type_name"] == "Req1"
+    assert typed_node["by"] == "system"
+
+    by_omitted_ast = parse_sysml_antlr(
+        "part def P { requirement 'system structure perspective'; "
+        "satisfy 'system structure perspective'; }\n"
+    )
+    by_omitted_node = by_omitted_ast["children"][0]["children"][-1]
+    assert by_omitted_node["type"] == "satisfy_requirement_usage"
+    assert by_omitted_node["name"] == "system structure perspective"
+    assert by_omitted_node["type_name"] is None
+    assert by_omitted_node["by"] is None
+
+    # 既存の`satisfiedBy`キーワード形・型節無しの`by`付き形が引き続き
+    # 機能することを確認する（回帰防止）。
+    satisfiedby_ast = parse_sysml_antlr(
+        "part def P { assert satisfiedBy requirement x : R; }"
+    )
+    satisfiedby_node = satisfiedby_ast["children"][0]["children"][-1]
+    assert satisfiedby_node["type"] == "satisfy_requirement_usage"
+    assert satisfiedby_node["name"] == "x"
+    assert satisfiedby_node["type_name"] == "R"
+
+    plain_by_ast = parse_sysml_antlr(
+        "part def P { requirement r : R; satisfy r by q; }\n"
+        "requirement def R;\n"
+    )
+    plain_by_node = plain_by_ast["children"][0]["children"][-1]
+    assert plain_by_node["type_name"] is None
+    assert plain_by_node["by"] == "q"
+
+
 def test_antlr_import_statement_inside_typedef_body():
     """`part def Camera { private import PictureTaking::*; ... }`
     （camera.sysml）のように、import文が型定義スコープに閉じた形で使われる
