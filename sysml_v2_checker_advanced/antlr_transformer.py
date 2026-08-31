@@ -1117,9 +1117,25 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         visibility_ctx = ctx.visibilityIndicator()
         return {
             "type": "accept_action",
-            "message": _qualified_name_text(ctx.message),
+            "message": _qualified_name_text(ctx.message) if ctx.message is not None else None,
             "message_type": _namespace_path_text(ctx.messageType) if ctx.messageType is not None else None,
             "port": _qualified_name_text(ctx.port) if ctx.port is not None else None,
+            # `then accept at new Time::Iso8601DateTime(...);`・`then accept
+            # when b.f;`（ActionTest.sysml）のように、`transitionTrigger`と
+            # 同型の`at`/`when`トリガー節（式ベースの時刻/変化トリガー）を
+            # 持つこともある（`message`単純参照形とは排他）。2026-08-29、
+            # add_acceptactionstmt_trigger_clause対応中に発見。
+            **(
+                {
+                    "trigger": {
+                        "kind": "trigger",
+                        "trigger_kind": ctx.triggerKind.text,
+                        "expression": self.visit(ctx.triggerExpr),
+                    }
+                }
+                if ctx.triggerKind is not None
+                else {}
+            ),
             # `then accept sig after 10[SI::s];`（ActionTest.sysml）のように、
             # `via`節の代わりに`after`継続時間節を持つことがある（従来`via`は
             # 必須だったが、`then accept S;`という両方とも無い裸形もあるため

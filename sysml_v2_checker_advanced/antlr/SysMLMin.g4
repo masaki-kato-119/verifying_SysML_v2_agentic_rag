@@ -2475,10 +2475,19 @@ sendActionStmt
 // `do`/`action`キーワード無しの裸の`{ actionBodyElement* }`本体を直接
 // 持つこともある（2026-08-29、add_acceptactionstmt_named_body対応中に
 // 発見）。
+// `then accept at new Time::Iso8601DateTime(...);`・`then accept when
+// b.f;`（ActionTest.sysml）のように、`transitionTrigger`にすでにある
+// `at`/`when`トリガー節（式ベースの時刻/変化トリガー）を、acceptアクション
+// 自身のトリガーとして直接持つこともある（従来の`message=qualifiedName`
+// 単純参照形とは別代替。2026-08-29、add_acceptactionstmt_trigger_clause
+// 対応中に発見）。
 acceptActionStmt
     : isThen='then'? visibilityIndicator? ('action' actionName=simpleName?)?
-      'accept' message=qualifiedName ( ':' messageType=namespacePath )?
-      ( 'via' port=qualifiedName | 'after' afterDuration=expression )?
+      'accept'
+      ( message=qualifiedName ( ':' messageType=namespacePath )?
+        ( 'via' port=qualifiedName | 'after' afterDuration=expression )?
+      | triggerKind=('at' | 'when') triggerExpr=expression
+      )
       ( ';' | hasDoAction='do' 'action' '{' actionBodyElement* '}' | hasBareBody='{' actionBodyElement* '}' )
     ;
 

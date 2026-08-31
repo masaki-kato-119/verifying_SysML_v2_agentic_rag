@@ -1276,6 +1276,40 @@ def test_antlr_acceptactionstmt_named_body():
     assert "children" not in semi_node
 
 
+def test_antlr_acceptactionstmt_trigger_clause():
+    """`then accept at new Time::Iso8601DateTime("...");`・`then accept
+    when b.f;`（ActionTest.sysml L19,22）のように、acceptActionStmtは
+    `transitionTrigger`と同型の`at`/`when`トリガー節（式ベースの時刻/
+    変化トリガー）を持つこともある（従来`message=qualifiedName`単純参照
+    形しか無かった）。既存の単純参照形が引き続き機能することも確認する。
+    2026-08-29、add_acceptactionstmt_trigger_clause対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "action a1 { first start; then accept when b.f; "
+        'then accept at new Time::Iso8601DateTime("2022-01-30T01:00:00Z"); }'
+    )
+    when_node, at_node = ast["children"][0]["children"][1], ast["children"][0]["children"][2]
+    assert when_node["type"] == "accept_action"
+    assert when_node["message"] is None
+    assert when_node["trigger"] == {
+        "kind": "trigger",
+        "trigger_kind": "when",
+        "expression": {"type": "name_ref", "reference": "b.f"},
+    }
+
+    assert at_node["trigger"]["trigger_kind"] == "at"
+    assert at_node["trigger"]["expression"]["type"] == "new_instance"
+    assert at_node["trigger"]["expression"]["name"] == "Time::Iso8601DateTime"
+
+    # 既存の単純参照形が引き続き機能することを確認する
+    # （"trigger"キー自体が無いことも確認する）。
+    plain_ast = parse_sysml_antlr(
+        "action def Act { accept response : ConnectionResponse via client; }"
+    )
+    plain_node = plain_ast["children"][0]["children"][0]
+    assert plain_node["message"] == "response"
+    assert "trigger" not in plain_node
+
+
 def test_antlr_perform_action():
     ast = parse_sysml_antlr("action def Act { perform logFailure; }")
     assert ast["children"][0]["children"][0] == {
