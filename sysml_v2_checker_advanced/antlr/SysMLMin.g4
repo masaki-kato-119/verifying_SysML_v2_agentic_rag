@@ -1877,7 +1877,11 @@ attributeUsage
     : variability=('variation' | 'variant')? prefixMetadataAnnotation* visibilityIndicator? isDerived='derived'? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
       'attribute' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       preMult=multiplicitySpec?
-      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      // `attribute ::> m = ms.totalMass;`（CalculationTest.sysml）のように、
+      // redefineトークン一覧に`::>`（featureUsage/connectionEndMember等には
+      // 既にある`references`の記号形同義語）が欠けていた（2026-08-29、
+      // add_attributeusage_triple_colon_gt_redefine対応中に発見）。
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>') preTarget+=namespacePathList)*
       (':' (typeList=namespacePathList | typeQuoted=QUOTED_NAME))?
       postMult=multiplicitySpec?
       // `attribute i : ScalarValues::Integer := 0;`（StructuredControlTest.sysml、
@@ -1885,7 +1889,7 @@ attributeUsage
       // `:=`（初期値、下流で変更可能）という代入演算子も使われる
       // （2026-08-28、730件パース失敗の要因分析で発見）。
       (('=' | ':=') value=expression)?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>') postTarget+=namespacePathList)*
       // `attribute m default = 10;`・`attribute mass redefines Vehicle::mass
       // default = 1750 [kg] { ... }`（DefaultValueTest.sysml、1c-Parts Tree
       // Redefinition.sysml）のように、`default`キーワードの直後に`=`を

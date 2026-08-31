@@ -1788,6 +1788,28 @@ def test_antlr_attribute_usage_ref_modifier():
     assert node["isConstant"] is True
 
 
+def test_antlr_attributeusage_triple_colon_gt_redefine():
+    """`attribute ::> m = ms.totalMass;`（CalculationTest.sysml L14）の
+    ように、attributeUsageのredefineトークン一覧に`::>`（featureUsage/
+    connectionEndMember等には既にある`references`の記号形同義語）が
+    欠けていた。既存の`:>>`形が引き続き機能することも確認する。
+    2026-08-29、add_attributeusage_triple_colon_gt_redefine対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "calc def C { attribute ::> m = ms.totalMass; }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "attribute_usage"
+    assert node["redefines"] == [{"kind": "references", "target": "m"}]
+    assert node["value"] == {"type": "name_ref", "reference": "ms.totalMass"}
+
+    # 既存の`:>>`形が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr(
+        "part def P { attribute unit :>> UnitPowerFactor::unit = 1; }"
+    )
+    plain_node = plain_ast["children"][0]["children"][0]
+    assert plain_node["redefines"] == [{"kind": "redefines", "target": "UnitPowerFactor::unit"}]
+
+
 def test_antlr_item_usage_ref_before_individual_order():
     """`ref individual item :>> operator : Alice;`（Boeing.sysml、Individuals
     and Time Slices.sysml）のように、`ref`が`individual`より前に来る語順も
