@@ -5752,6 +5752,32 @@ def test_antlr_requirementusage_multisegment_qualified_type():
     assert plain_node["type_name"] == "Goal"
 
 
+def test_antlr_requirementusage_references_form():
+    """`requirement references vehicleMass1 { ... }`（8-Requirements.sysml
+    L162）のように、名前無しの`requirement`直後に`references`キーワード
+    （connectionEndMemberのdirectKindと同じ記号的な同義語）+参照先が
+    続くことがある。既存の通常の名前付き形が引き続き機能することも
+    確認する。2026-08-29、add_requirementusage_references_form対応中に
+    発見。"""
+    ast = parse_sysml_antlr(
+        "requirement def R { "
+        "requirement references vehicleMass1 { doc /* x */ } "
+        "}"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "requirement_usage"
+    assert node["name"] is None
+    assert node["reference"] == "vehicleMass1"
+    assert len(node["children"]) == 1
+
+    # 既存の通常の名前付き形が引き続き機能することを確認する
+    # （"reference"キー自体が無いことも確認する）。
+    named_ast = parse_sysml_antlr("requirement req : Goal;")
+    named_node = named_ast["children"][0]
+    assert named_node["name"] == "req"
+    assert "reference" not in named_node
+
+
 def test_antlr_comma_separated_multi_type_declaration():
     """usage型節がカンマ区切りの複数型を取れなかった（部分的なdef/usage系
     規則にしか対応していなかった。2026-08-28、730件パース失敗の要因分析で

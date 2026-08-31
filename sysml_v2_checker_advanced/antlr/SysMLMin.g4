@@ -1307,6 +1307,12 @@ itemUsage
 // preMult/postMult設計。2026-08-28、730件パース失敗の要因分析で発見）。
 requirementUsage
     : variability=('variation' | 'variant')? prefixMetadataAnnotation* visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'requirement' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
+      // `requirement references vehicleMass1 { ... }`（8-Requirements.sysml
+      // L162）のように、名前無しの`requirement`直後に`references`
+      // キーワード（connectionEndMemberのdirectKindと同じ記号的な同義語）+
+      // 参照先が続くこともある（2026-08-29、
+      // add_requirementusage_references_form対応中に発見）。
+      ('references' referenceTarget=namespacePath)?
       preMult=multiplicitySpec?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       // `typeRef`という専用ラベルを使う（無ラベルの`ID`のままだと、上のshortName

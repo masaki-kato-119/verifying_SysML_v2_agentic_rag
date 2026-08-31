@@ -266,6 +266,13 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         node = self._usage_keyword_node("requirement_usage", ctx, ctx.partBodyElement())
         node["value"] = self.visit(ctx.value) if ctx.value is not None else None
         node["defaultValue"] = self.visit(ctx.defaultValue) if ctx.defaultValue is not None else None
+        # `requirement references vehicleMass1 { ... }`（8-Requirements.sysml）
+        # のように、名前無しの`requirement`直後に`references`キーワード
+        # （connectionEndMemberのdirectKindと同じ記号的な同義語）+参照先が
+        # 続くこともある（2026-08-29、
+        # add_requirementusage_references_form対応中に発見）。
+        if ctx.referenceTarget is not None:
+            node["reference"] = _namespace_path_text(ctx.referenceTarget)
         return node
 
     def visitConcernUsage(self, ctx: SysMLMinParser.ConcernUsageContext) -> Dict:
