@@ -4061,6 +4061,27 @@ def test_antlr_succession_stmt_accepts_quoted_names():
     assert succession["thenEnd"]["reference"] == "join1"
 
 
+def test_antlr_successionstmt_doc_body():
+    """`first start then continue { doc /* ... */ }`（3a-Function-based
+    Behavior-1.sysml L85）のように、successionStmt（無名の`first X then
+    Y;`）は`;`終端の代わりに`{ doc ... }`という本体を持つこともある
+    （transitionStmtと同型）。既存の`;`終端形が引き続き機能することも
+    確認する。2026-08-29、add_successionstmt_body対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "action def A { first start then continue { doc /* explanation */ } }"
+    )
+    succession = ast["children"][0]["children"][0]
+    assert succession["type"] == "succession"
+    assert succession["firstEnd"]["reference"] == "start"
+    assert succession["thenEnd"]["reference"] == "continue"
+    assert [c["type"] for c in succession["children"]] == ["documentation"]
+
+    # 既存の`;`終端形が引き続き機能することを確認する。
+    semi_ast = parse_sysml_antlr("action def A { first start then continue; }")
+    semi_succession = semi_ast["children"][0]["children"][0]
+    assert semi_succession["children"] == []
+
+
 def test_antlr_action_flow_stmt_from_and_short_forms():
     """action本体専用のflow_stmt(from有無両形)。working/action_flow.sysmlも参照。"""
     ast = parse_sysml_antlr("action def Act { flow from a to b; flow c to d; }")

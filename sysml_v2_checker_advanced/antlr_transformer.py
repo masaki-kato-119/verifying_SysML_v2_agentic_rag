@@ -1614,11 +1614,23 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         }
 
     def visitSuccessionStmt(self, ctx: SysMLMinParser.SuccessionStmtContext) -> Dict:
+        # `first start then continue { doc /* ... */ }`（3a-Function-based
+        # Behavior-1.sysml）のように、`;`終端の代わりにdocのみのbodyが
+        # 付くことがある（transitionStmtと同型。2026-08-29、
+        # add_successionstmt_body対応中に発見）。
+        children = [
+            self.visit(child)
+            for child in ctx.getChildren()
+            if isinstance(
+                child,
+                (SysMLMinParser.DocumentationStmtContext, SysMLMinParser.BareDocCommentContext),
+            )
+        ]
         return {
             "type": "succession",
             "firstEnd": self.visit(ctx.firstEnd),
             "thenEnd": self.visit(ctx.thenEnd),
-            "children": [],
+            "children": children,
         }
 
     def visitSuccessionUsageFlow(self, ctx: SysMLMinParser.SuccessionUsageFlowContext) -> Dict:

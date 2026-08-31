@@ -2827,8 +2827,13 @@ bindingConnector
       ( '{' partBodyElement* '}' | ';' )
     ;
 
+// `first start then continue { doc /* ... */ }`（3a-Function-based
+// Behavior-1.sysml）のように、`;`終端の代わりに`{ doc ... }`という本体を
+// 持つこともある（transitionStmt/successionUsage等と同型。2026-08-29、
+// add_successionstmt_body対応中に発見）。
 successionStmt
-    : 'first' firstEnd=connectorEnd 'then' thenEnd=connectorEnd ';'
+    : 'first' firstEnd=connectorEnd 'then' thenEnd=connectorEnd
+      ( '{' (documentationStmt | bareDocComment)* '}' | ';' )
     ;
 
 // `succession causalOrdering first [nCauses] causes.startShot then
