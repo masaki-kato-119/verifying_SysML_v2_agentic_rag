@@ -1083,6 +1083,16 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             **({"isThen": True} if ctx.isThen is not None else {}),
             **({"visibility": visibility_ctx.getText()} if visibility_ctx is not None else {}),
             **({"actionName": _simple_name_text(ctx.actionName)} if ctx.actionName is not None else {}),
+            # `accept cl:CallGiveItems via tellu.APIS_HTTP do action {
+            # first start; ... }`（AHFNorwayTopics.sysml）のように、`;`
+            # 終端の代わりに`do action { actionBodyElement* }`という明示的な
+            # 振る舞い節を持つこともある（2026-08-29、
+            # add_ahfnorwaytopics_composite_gaps対応中に発見）。
+            **(
+                {"children": [self.visit(el) for el in ctx.actionBodyElement()]}
+                if ctx.hasDoAction is not None
+                else {}
+            ),
         }
 
     def visitPerformActionStmt(self, ctx: SysMLMinParser.PerformActionStmtContext) -> Dict:
@@ -1706,6 +1716,24 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 "assign": self.visit(ctx.assign),
                 "children": [],
             }
+        # `entry send new CallGiveItems("All the items") via apisp.APIS_HTTP;`
+        # というインラインsendアクション（doActionMemberの`do send ...`と
+        # 同型、2026-08-29、add_ahfnorwaytopics_composite_gaps対応中に発見）。
+        if ctx.payload is not None:
+            return {
+                "type": "entry_action",
+                "kind": "entry",
+                "action_reference": None,
+                "type_name": None,
+                "redefines": [],
+                "send": {
+                    "payload": self.visit(ctx.payload),
+                    "to": _namespace_path_text(ctx.sendTarget) if ctx.sendTarget is not None else None,
+                    "via": _namespace_path_text(ctx.sendVia) if ctx.sendVia is not None else None,
+                },
+                "assign": None,
+                "children": [],
+            }
         # `entry action entryAction :>> 'entry';`（States.sysml）のように
         # 型節・redefine節も持つ（対象は`entry`自体が予約語のためQUOTED_NAME
         # で囲む）。`entry performSelfTest{ in vehicle = operatingVehicle; }`
@@ -1996,6 +2024,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # MessageTransfer, MessageAction { ... }`のように型節がカンマ区切りの
         # 複数型を取ることもある。
         type_names = [_namespace_path_text(p) for p in ctx.typeList.namespacePath()] if ctx.typeList is not None else []
+        # `#servicedd serviceDiscovery:~ServiceDiscoveryDD ;`（AHFNorwayTopics.sysml）
+        # のように、共役（`~`）修飾型節を取ることがある（portUsageと同じく、
+        # `~`をtype_nameの先頭に合成する。2026-08-29、
+        # add_ahfnorwaytopics_composite_gaps対応中に発見）。
+        if ctx.conjugated is not None and type_names:
+            type_names = ["~" + type_names[0]] + type_names[1:]
         type_name = type_names[0] if type_names else None
         # redefinesは常にリスト（0件含む）。
         redefines = self._redefine_list_namespace(ctx.preKind, ctx.preTarget) + self._redefine_list_namespace(
@@ -2153,6 +2187,24 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "attributes": [],
             "inheritance": self._inheritance_dict(ctx),
             "isAbstract": ctx.isAbstract is not None,
+            "children": children,
+        }
+
+    def visitFeatureDef(self, ctx: SysMLMinParser.FeatureDefContext) -> Dict:
+        # `#service def APISService { ... }`（AHFNorwayTopics.sysml）のように、
+        # メタデータ注釈付きで種別キーワードを一切伴わない汎用def宣言
+        # （featureUsageのdef版。2026-08-29、
+        # add_ahfnorwaytopics_composite_gaps対応中に発見）。
+        children = [self.visit(el) for el in ctx.partBodyElement()]
+        prefix_metadata = [
+            _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
+        ]
+        return {
+            "type": "feature_def",
+            "name": _simple_name_text(ctx.simpleName()),
+            "inheritance": self._inheritance_dict(ctx),
+            "isAbstract": ctx.isAbstract is not None,
+            "prefixMetadata": prefix_metadata,
             "children": children,
         }
 

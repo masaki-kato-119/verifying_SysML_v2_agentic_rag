@@ -6944,6 +6944,110 @@ def test_antlr_accept_after_duration_trigger():
     assert transition_node["trigger"]["trigger_kind"] == "after"
 
 
+def test_antlr_accept_action_do_action_body_in_state():
+    """`accept cl:CallGiveItems via tellu.APIS_HTTP do action { first
+    start; ... }`（AHFNorwayTopics.sysml L94-99）のように、acceptActionStmt
+    は`;`終端の代わりに`do action { actionBodyElement* }`という明示的な
+    振る舞い節を持つこともある。また従来`stateBodyElement`には
+    `implicitTransitionStmt`（`accept ... then target;`必須）しか登録
+    されておらず、`then target;`を伴わない単独のacceptActionStmtは
+    state本体直下で使えなかった（非対称）。2026-08-29、
+    add_ahfnorwaytopics_composite_gaps対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "state def X { "
+        "state WaitOnData; "
+        "accept cl:CallGiveItems via tellu.APIS_HTTP "
+        "do action { first start; then send new Result(x) via tellu.APIS_HTTP; } "
+        "then WaitOnData; "
+        "}"
+    )
+    children = ast["children"][0]["children"]
+    accept_node = next(c for c in children if c["type"] == "accept_action")
+    assert accept_node["message"] == "cl"
+    assert accept_node["message_type"] == "CallGiveItems"
+    assert accept_node["port"] == "tellu.APIS_HTTP"
+    assert [c["type"] for c in accept_node["children"]] == ["first_stmt", "send_action"]
+
+    # 既存の`;`終端形（"children"キー自体が無いこと）が引き続き機能することを確認する。
+    semi_ast = parse_sysml_antlr(
+        "action def Act { accept response : ConnectionResponse via client; }"
+    )
+    semi_node = semi_ast["children"][0]["children"][0]
+    assert "children" not in semi_node
+
+    # 既存のimplicitTransitionStmt（`accept ... then target;`必須形）が
+    # 引き続き機能することを確認する。
+    implicit_ast = parse_sysml_antlr(
+        "state def X { accept s : Sig do action D then S2; }"
+    )
+    transition_node = implicit_ast["children"][0]["children"][-1]
+    assert transition_node["type"] == "transition"
+
+
+def test_antlr_featureusage_conjugated_type():
+    """`#servicedd serviceDiscovery:~ServiceDiscoveryDD ;`
+    （AHFNorwayTopics.sysml）のように、キーワード無しの汎用usage形
+    （featureUsage）でも共役（`~`）修飾型節を取ることがある（portUsageと
+    同型）。2026-08-29、add_ahfnorwaytopics_composite_gaps対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "package P { #servicedd serviceDiscovery:~ServiceDiscoveryDD ; }"
+    )
+    node = ast["children"][0]
+    assert node["type"] == "feature_usage"
+    assert node["name"] == "serviceDiscovery"
+    assert node["type_name"] == "~ServiceDiscoveryDD"
+    assert node["prefixMetadata"] == ["servicedd"]
+
+    # 既存の共役無し形が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr("package P { apisp: APIS_DD ; }")
+    plain_node = plain_ast["children"][0]
+    assert plain_node["type_name"] == "APIS_DD"
+
+
+def test_antlr_featuredef_metadata_prefix_bare_def():
+    """`#service def APISService { attribute :>> serviceDefinition =
+    "APISPullService"; }`（AHFNorwayTopics.sysml）のように、メタデータ
+    注釈（`#service`）付きで種別キーワード（part/port/attribute等）を
+    一切伴わない汎用def宣言もある（featureUsageのdef版として`featureDef`
+    規則を新設）。2026-08-29、add_ahfnorwaytopics_composite_gaps対応中に
+    発見。"""
+    ast = parse_sysml_antlr(
+        'package P { #service def APISService { '
+        'attribute :>> serviceDefinition = "APISPullService"; '
+        '} }'
+    )
+    node = ast["children"][0]
+    assert node["type"] == "feature_def"
+    assert node["name"] == "APISService"
+    assert node["prefixMetadata"] == ["service"]
+    assert len(node["children"]) == 1
+
+
+def test_antlr_entryactionmember_send_form():
+    """`entry send new CallGiveItems("All the items") via apisp.APIS_HTTP;`
+    （AHFNorwayTopics.sysml）のように、doActionMemberの`do send ...`と
+    同型のインラインsendアクションを、単独のentry-actionメンバーとしても
+    書ける（従来entryActionMemberには`entry assign ...`しか無く非対称
+    だった）。2026-08-29、add_ahfnorwaytopics_composite_gaps対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "state def X { "
+        'entry send new Publish("Return_AllItems") via apisc.APIS_MQTT; '
+        "}"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "entry_action"
+    assert node["kind"] == "entry"
+    assert node["send"]["payload"]["type"] == "new_instance"
+    assert node["send"]["via"] == "apisc::APIS_MQTT"
+    assert node["send"]["to"] is None
+
+    # 既存の`entry assign ...`形が引き続き機能することを確認する
+    # （"send"キー自体が無いことも確認する）。
+    assign_ast = parse_sysml_antlr("state def X { entry assign counter.count := 0; }")
+    assign_node = assign_ast["children"][0]["children"][0]
+    assert "send" not in assign_node
+
+
 def test_antlr_frame_statement():
     """`frame concern ProfitabilityConcern;`（BusinessCaseOpsCon.sysml）・
     `frame 'Reduce the number of special parts';`

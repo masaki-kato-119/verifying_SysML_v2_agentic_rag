@@ -50,6 +50,7 @@ packageBodyElement
     // ベースライン154件エラー要因分析で発見）。
     | enumUsage
     | typeDef
+    | featureDef
     | actionDef
     // `abstract flow def MessageAction :> Action, Link { ... }`（Flows.sysml）。
     | flowDef
@@ -1169,6 +1170,15 @@ typeDef
     : isAbstract='abstract'? 'type' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
+// `#service def APISService { ... }`（AHFNorwayTopics.sysml）のように、
+// メタデータ注釈（`#service`）付きで、種別キーワード（part/port/
+// attribute等）を一切伴わない汎用def宣言もある（featureUsage（キーワード
+// 無しの汎用usage形）のdef版。2026-08-29、
+// add_ahfnorwaytopics_composite_gaps対応中に発見）。
+featureDef
+    : prefixMetadataAnnotation* isAbstract='abstract'? 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    ;
+
 // `specializes`/`subsets`両キーワードと複数基底（カンマ区切り、
 // namespacePathListを使う）に対応し、`kind`フィールドで演算子の種類を
 // 保持する（`str(inheritance)`に"subsets"という部分文字列を含ませることで、
@@ -1496,6 +1506,7 @@ partBodyElement
     | textualRepresentationStmt
     | valueBindingStmt
     | featureUsage
+    | featureDef
     | bareDocComment
     | aliasStmt
     | assertConstraintUsage
@@ -1735,7 +1746,11 @@ featureUsage
       // ことがある（partUsage/actionUsageStmtと同型のpreMult/postMult順序、
       // 2026-08-28、730件パース失敗の要因分析で発見）。
       preMult=multiplicitySpec?
-      (':' typeList=namespacePathList)?
+      // `#servicedd serviceDiscovery:~ServiceDiscoveryDD ;`
+      // （AHFNorwayTopics.sysml）のように、キーワード無しの汎用usage形でも
+      // 共役（`~`）修飾型節を取ることがある（portUsageと同型。2026-08-29、
+      // add_ahfnorwaytopics_composite_gaps対応中に発見）。
+      (':' conjugated='~'? typeList=namespacePathList)?
       postMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>') postTarget+=namespacePathList)*
       ('=' value=expression)?
@@ -2386,11 +2401,16 @@ sendActionStmt
 // （従来`via`節は必須だったが、`then accept S;`という`via`/`after`いずれも
 // 無い裸形も同じくActionTest.sysmlで使われているため、この節全体を
 // 任意化する。2026-08-29、235件パース失敗の要因分析で発見）。
+// `accept cl:CallGiveItems via tellu.APIS_HTTP do action { first start;
+// ... }`（AHFNorwayTopics.sysml）のように、`;`終端の代わりに`do action
+// { actionBodyElement* }`という明示的な振る舞い節を持つこともある
+// （entryActionMember/doActionMemberのbody形と同じ設計。2026-08-29、
+// add_ahfnorwaytopics_composite_gaps対応中に発見）。
 acceptActionStmt
     : isThen='then'? visibilityIndicator? ('action' actionName=simpleName?)?
       'accept' message=qualifiedName ( ':' messageType=namespacePath )?
       ( 'via' port=qualifiedName | 'after' afterDuration=expression )?
-      ';'
+      ( ';' | hasDoAction='do' 'action' '{' actionBodyElement* '}' )
     ;
 
 // --- perform action (Section 7.17 PerformActionUsage) -------------------------
@@ -2667,6 +2687,13 @@ stateBodyElement
     // `accept s : Sig do action D then S2;`のような、`transition ...
     // first`を伴わない暗黙遷移形（2026-08-28、730件回帰チェックで発見）。
     | implicitTransitionStmt
+    // `accept cl:CallGiveItems via tellu.APIS_HTTP do action { ... }`
+    // （AHFNorwayTopics.sysml）のように、`then target;`を伴わない単独の
+    // acceptActionStmt（`do action {...}`本体形）もstate本体直下に書ける
+    // （従来stateBodyElementにはimplicitTransitionStmt（`accept ... then
+    // target;`必須）しか登録されておらず非対称だった。2026-08-29、
+    // add_ahfnorwaytopics_composite_gaps対応中に発見）。
+    | acceptActionStmt
     // `state def Counting { part counter : Counter; ... }`
     // （AssignmentTest.sysml）のように、partUsageもstateBodyElement内に
     // 書ける（attributeUsage/featureUsage/actionUsageStmtは登録済みで
@@ -2860,6 +2887,11 @@ entryActionMember
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' actionBodyElement* '}' | ';' )
     | 'entry' assign=assignmentStmt
+    // `entry send new CallGiveItems("All the items") via apisp.APIS_HTTP;`
+    // （AHFNorwayTopics.sysml）のように、doActionMemberの`do send ...`と
+    // 同型のインラインsendアクションを、単独のentry-actionメンバーとしても
+    // 書ける（2026-08-29、add_ahfnorwaytopics_composite_gaps対応中に発見）。
+    | 'entry' 'send' payload=expression ( 'to' sendTarget=namespacePath | 'via' sendVia=namespacePath )? ';'
     ;
 
 // `do send new Sig(T.s.x) to p;`（StateTest.sysml、公式xpectテスト）のように、

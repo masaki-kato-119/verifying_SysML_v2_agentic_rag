@@ -319,6 +319,11 @@ class SysMLMinVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by SysMLMinParser#featureDef.
+    def visitFeatureDef(self, ctx:SysMLMinParser.FeatureDefContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by SysMLMinParser#inheritanceClause.
     def visitInheritanceClause(self, ctx:SysMLMinParser.InheritanceClauseContext):
         return self.visitChildren(ctx)
