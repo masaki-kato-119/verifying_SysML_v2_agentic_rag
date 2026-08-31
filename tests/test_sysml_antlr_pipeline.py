@@ -3314,6 +3314,64 @@ def test_antlr_arrow_lambda_param_body_form():
     assert semicolon_form_value["param"] == {"name": "a", "isRef": True, "typeName": None}
 
 
+def test_antlr_lambda_body_multiple_local_declarations():
+    """`(1..numberOfBolts)->forAll { in i : Natural; private attribute
+    lbcf = lugBolts#(i).coordinateFrame; private attribute trs : Type
+    { ... } lbcf.transformation == trs }`
+    （VehicleGeometryAndCoordinateFrames.sysml）・`->forAll {in i:
+    Integer; private thisSample : Type = sc.samples#(i); private
+    nextSample : Type = sc.samples#(i+1); StraightLineDynamicsEquations
+    (...)}`（Vehicle Analysis Demo.sysml、`attribute`キーワード省略の
+    featureUsage形）のように、arrowLambdaBodyは単一パラメータ+最終式
+    のみで、最終結果式の前に複数のローカル宣言を並べる実例に対応
+    できなかった。2026-08-29、730件ベースライン154件エラー要因分析で
+    発見。"""
+    attr_ast = parse_sysml_antlr(
+        "part def P { attribute numberOfBolts : Natural = 5; "
+        "assert constraint { (1..numberOfBolts)->forAll { "
+        "in i : Natural; "
+        "private attribute lbcf = lugBolts; "
+        "private attribute trs : TranslationRotationSequence { :>> source = wcf; } "
+        "lbcf.transformation == trs } } }"
+    )
+    lambda_node = attr_ast["children"][0]["children"][-1]["children"][0]["result_expression"]
+    assert lambda_node["type"] == "arrow_lambda"
+    assert lambda_node["name"] == "forAll"
+    assert lambda_node["param"] == {"name": "i", "isRef": False, "typeName": "Natural"}
+    assert len(lambda_node["children"]) == 2
+    lbcf_node, trs_node = lambda_node["children"]
+    assert lbcf_node["type"] == "attribute_usage"
+    assert lbcf_node["name"] == "lbcf"
+    assert lbcf_node["visibility"] == "private"
+    assert trs_node["type"] == "attribute_usage"
+    assert trs_node["name"] == "trs"
+    assert trs_node["type_name"] == "TranslationRotationSequence"
+    assert lambda_node["body"] == {
+        "type": "binary_expr", "op": "==",
+        "left": {"type": "name_ref", "reference": "lbcf.transformation"},
+        "right": {"type": "name_ref", "reference": "trs"},
+    }
+
+    # `attribute`キーワード省略のfeatureUsage形ローカル宣言（Vehicle
+    # Analysis Demo.sysml）も受理することを確認する。
+    feature_ast = parse_sysml_antlr(
+        "part def P { attribute a = (1..5)->forAll {in i: Integer; "
+        "private thisSample : T = samples; "
+        "private nextSample : T = samples; "
+        "f(p = power, m = mass) }; }"
+    )
+    feature_lambda = feature_ast["children"][0]["children"][0]["value"]
+    assert len(feature_lambda["children"]) == 2
+    assert feature_lambda["children"][0]["type"] == "feature_usage"
+    assert feature_lambda["children"][0]["name"] == "thisSample"
+
+    # 既存のローカル宣言無し形（最終式のみ）が引き続き機能することを
+    # 確認する（回帰防止）。
+    plain_ast = parse_sysml_antlr("part def P { attribute a = x->forAll {in i: T; y}; }")
+    plain_lambda = plain_ast["children"][0]["children"][0]["value"]
+    assert plain_lambda["children"] == []
+
+
 def test_antlr_derived_modifier_keyword():
     """d84_derived_modifier_keyword_missing: SysML.sysmlの`derived ref
     item receiverArgument : Expression[0..1] subsets Metadata::

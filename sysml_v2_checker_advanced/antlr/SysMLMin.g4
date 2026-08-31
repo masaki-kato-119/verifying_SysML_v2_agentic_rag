@@ -3075,8 +3075,20 @@ literal
 // `bareDocComment`(キーワード無し)ではなく`doc`キーワード付きの
 // `documentationStmt`であるため、`documentationStmt`も受理する
 // （`bareDocComment*`のみでは`doc`キーワードが`extraneous input`となる）。
+// `(1..numberOfBolts)->forAll { in i : Natural; private attribute lbcf =
+// lugBolts#(i).coordinateFrame; private attribute trs : Type { ... };
+// lbcf.transformation == trs }`（VehicleGeometryAndCoordinateFrames.sysml）・
+// `->forAll {in i: Integer; private thisSample : Type = sc.samples#(i);
+// private nextSample : Type = sc.samples#(i+1); StraightLineDynamicsEquations
+// (...)}`（Vehicle Analysis Demo.sysml、`attribute`キーワード省略の
+// featureUsage形）のように、最終結果式の前に複数のローカル宣言
+// （attributeUsage/featureUsage、いずれもpartBodyElementに含まれる）を
+// 並べることがある（従来lambdaParam直後は結果式のみだった。partBodyElement
+// の各代替は末尾に`{...}`/`;`を必須とするため、それらを持たない裸の
+// 結果式との曖昧性は生じない。2026-08-29、730件ベースライン154件エラー
+// 要因分析で発見）。
 arrowLambdaBody
-    : (documentationStmt | bareDocComment)* lambdaParam? (documentationStmt | bareDocComment)* expression
+    : (documentationStmt | bareDocComment)* lambdaParam? (documentationStmt | bareDocComment)* partBodyElement* expression
     ;
 
 // `->selectOne {in ref a { doc ... } tradeStudyObjective(...)}`

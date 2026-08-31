@@ -2452,13 +2452,18 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 "isRef": param_ctx.isRef is not None,
                 "typeName": _namespace_path_text(type_ctx) if type_ctx is not None else None,
             }
+        # `(1..numberOfBolts)->forAll { in i : Natural; private attribute
+        # lbcf = ...; private attribute trs : Type { ... }; lbcf.transformation
+        # == trs }`のように、最終結果式の前に複数のローカル宣言
+        # （attributeUsage/featureUsage）を並べることがある（2026-08-29、
+        # 730件ベースライン154件エラー要因分析で発見）。
         return {
             "type": "arrow_lambda",
             "receiver": self.visit(ctx.expression()),
             "name": _simple_name_text(ctx.opName),
             "param": param,
             "body": self.visit(body_ctx.expression()),
-            "children": [],
+            "children": [self.visit(el) for el in body_ctx.partBodyElement()],
         }
 
     def visitSelectFilterExpr(self, ctx: SysMLMinParser.SelectFilterExprContext) -> Dict:
@@ -2480,7 +2485,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "receiver": self.visit(ctx.expression()),
             "param": param,
             "body": self.visit(body_ctx.expression()),
-            "children": [],
+            "children": [self.visit(el) for el in body_ctx.partBodyElement()],
         }
 
     def visitNewExpr(self, ctx: SysMLMinParser.NewExprContext) -> Dict:
