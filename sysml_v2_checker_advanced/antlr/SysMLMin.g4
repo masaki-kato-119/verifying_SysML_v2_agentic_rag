@@ -44,6 +44,11 @@ packageBodyElement
     // （Items.sysml）のように、`itemUsage`はpackage直下にも書ける。
     | itemUsage
     | enumDef
+    // `enum color : ColorKind;`（EnumerationTest.sysml）のように、
+    // package直下にもenumUsage（`enum def`ではなく`enum`単体キーワード
+    // で既存のenum定義から値を導入する形）が書ける（2026-08-29、730件
+    // ベースライン154件エラー要因分析で発見）。
+    | enumUsage
     | typeDef
     | actionDef
     // `abstract flow def MessageAction :> Action, Link { ... }`（Flows.sysml）。
@@ -1399,9 +1404,26 @@ enumBodyElement
 // のような`#Type`プレフィックス注釈（2026-08-28、730件回帰チェックで発見。
 // extend_hash_prefix_annotation_and_bare_ref_featureで他規則へは拡張済み
 // だったがenumLiteral自体を見落としていた）。
+// `= 60.0;`（EnumerationTest.sysml、`enum def SizeChoice { = 60.0; = 70.0;
+// = 80.0; }`の各行）のように、名前自体を省略した無名リテラルもある
+// （2026-08-29、730件ベースライン154件エラー要因分析で発見。値代入形
+// [enumLiteralValue]のみで確認、body形[enumLiteralBody]は名前必須の
+// ままとする）。
 enumLiteral
-    : prefixMetadataAnnotation* 'enum'? simpleName (':' typeRef=namespacePath)? '=' value=expression ';'               # enumLiteralValue
+    : prefixMetadataAnnotation* 'enum'? simpleName? (':' typeRef=namespacePath)? '=' value=expression ';'              # enumLiteralValue
     | prefixMetadataAnnotation* 'enum'? simpleName (':' typeRef=namespacePath)? ( '{' enumBodyElement* '}' | ';' )      # enumLiteralBody
+    ;
+
+// `enum color : ColorKind;`・`enum color1 = ColorKind::blue;`・
+// `enum size: SizeChoice = 60.0;`（EnumerationTest.sysml）のように、
+// package/part本体直下で`enum def`ではなく`enum`単体キーワードで
+// 既存のenum定義から値を導入するEnumerationUsageが使われる
+// （enumLiteralと同型だが、`enum`キーワードを必須にすることでpackage/
+// partBodyElementの他の代替との曖昧性を避ける。`enumLiteral`自体は
+// `enum`キーワード省略も許すため、enumBodyElement専用のまま据え置く。
+// 2026-08-29、730件ベースライン154件エラー要因分析で発見）。
+enumUsage
+    : prefixMetadataAnnotation* 'enum' simpleName (':' typeRef=namespacePath)? ('=' value=expression)? ( '{' enumBodyElement* '}' | ';' )
     ;
 
 // --- attribute definition (8.2.2.6) ---------------------------------------------
@@ -1463,6 +1485,7 @@ partBodyElement
     | verifyRequirementUsage
     | requireUsage
     | enumDef
+    | enumUsage
     // `analysis def`/`calc def`/`constraint def`等の本体（partBodyElement）
     // 内に、対応するusageキーワード（`ref analysis self ...;`等）を書く形が
     // 公式コーパスで広く使われているため、この6規則はpartBodyElementにも

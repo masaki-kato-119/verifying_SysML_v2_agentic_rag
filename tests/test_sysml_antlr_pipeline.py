@@ -6269,6 +6269,55 @@ def test_antlr_enum_literal_bare_redefine_shorthand():
     ]
 
 
+def test_antlr_enumusage_and_anonymous_literal():
+    """`enum color : ColorKind;`・`enum color1 = ColorKind::blue;`・
+    `enum size: SizeChoice = 60.0;`（EnumerationTest.sysml）のように、
+    package/part本体直下では`enum def`ではなく`enum`単体キーワードで
+    既存のenum定義から値を導入するEnumerationUsageが使われる（従来
+    `enumDef`しか存在しなかった）。`= 60.0;`（同、`enum def SizeChoice
+    { = 60.0; = 70.0; = 80.0; }`の各行）のように、enumLiteralの値代入形
+    は名前自体を省略した無名リテラルも取りうる（従来simpleNameが必須
+    だった）。2026-08-29、730件ベースライン154件エラー要因分析で発見。"""
+    typed_ast = parse_sysml_antlr("enum def ColorKind; enum color : ColorKind;")
+    typed_node = typed_ast["children"][-1]
+    assert typed_node["type"] == "enum_usage"
+    assert typed_node["name"] == "color"
+    assert typed_node["type_name"] == "ColorKind"
+    assert typed_node["value"] is None
+
+    value_ast = parse_sysml_antlr(
+        "enum def ColorKind { enum blue; } enum color1 = ColorKind::blue;"
+    )
+    value_node = value_ast["children"][-1]
+    assert value_node["type"] == "enum_usage"
+    assert value_node["name"] == "color1"
+    assert value_node["type_name"] is None
+    assert value_node["value"]["type"] == "name_ref"
+    assert value_node["value"]["reference"] == "ColorKind::blue"
+
+    typed_value_ast = parse_sysml_antlr(
+        "enum def SizeChoice; enum size: SizeChoice = 60.0;"
+    )
+    typed_value_node = typed_value_ast["children"][-1]
+    assert typed_value_node["type_name"] == "SizeChoice"
+    assert typed_value_node["value"] == {"type": "literal", "literal_type": "real", "value": 60.0}
+
+    anon_ast = parse_sysml_antlr(
+        "enum def SizeChoice { = 60.0; = 70.0; = 80.0; }"
+    )
+    anon_children = anon_ast["children"][0]["children"]
+    assert len(anon_children) == 3
+    for child, expected in zip(anon_children, [60.0, 70.0, 80.0]):
+        assert child["type"] == "enum_literal"
+        assert child["name"] is None
+        assert child["value"] == {"type": "literal", "literal_type": "real", "value": expected}
+
+    # 既存の名前付きリテラルが引き続き機能することを確認する（回帰防止）。
+    named_ast = parse_sysml_antlr("enum def E { low = 0.25; }")
+    named_node = named_ast["children"][0]["children"][0]
+    assert named_node["name"] == "low"
+
+
 def test_antlr_xpect_multiline_block_comment():
     """`//* XPECT errors --- "..." at "..." --- */`（公式xpectテスト
     フィクスチャの複数行アノテーション規約、Connector_Invalid.sysml等）の

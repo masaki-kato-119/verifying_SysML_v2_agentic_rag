@@ -342,12 +342,14 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # （2026-08-28、730件回帰チェックで発見）。
         # `#Security enum secret : ... = 2;`のような`#Type`プレフィックス
         # 注釈（2026-08-28、730件回帰チェックで発見）。
+        # `= 60.0;`のように、名前自体を省略した無名リテラルもある
+        # （2026-08-29、730件ベースライン154件エラー要因分析で発見）。
         prefix_metadata = [
             _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
         ]
         return {
             "type": "enum_literal",
-            "name": _simple_name_text(ctx.simpleName()),
+            "name": _optional_simple_name_text(ctx.simpleName()),
             "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
             "prefixMetadata": prefix_metadata,
             "value": self.visit(ctx.value),
@@ -367,6 +369,24 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
             "prefixMetadata": prefix_metadata,
             "value": None,
+            "children": [self.visit(el) for el in ctx.enumBodyElement()],
+        }
+
+    def visitEnumUsage(self, ctx: SysMLMinParser.EnumUsageContext) -> Dict:
+        # `enum color : ColorKind;`・`enum color1 = ColorKind::blue;`・
+        # `enum size: SizeChoice = 60.0;`（EnumerationTest.sysml）のように、
+        # package/part本体直下で`enum def`ではなく`enum`単体キーワードで
+        # 既存のenum定義から値を導入するEnumerationUsage（2026-08-29、
+        # 730件ベースライン154件エラー要因分析で発見）。
+        prefix_metadata = [
+            _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
+        ]
+        return {
+            "type": "enum_usage",
+            "name": _simple_name_text(ctx.simpleName()),
+            "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
+            "prefixMetadata": prefix_metadata,
+            "value": self.visit(ctx.value) if ctx.value is not None else None,
             "children": [self.visit(el) for el in ctx.enumBodyElement()],
         }
 

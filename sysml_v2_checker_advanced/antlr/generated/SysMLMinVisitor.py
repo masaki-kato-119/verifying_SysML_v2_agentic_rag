@@ -389,6 +389,11 @@ class SysMLMinVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by SysMLMinParser#enumUsage.
+    def visitEnumUsage(self, ctx:SysMLMinParser.EnumUsageContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by SysMLMinParser#attributeDef.
     def visitAttributeDef(self, ctx:SysMLMinParser.AttributeDefContext):
         return self.visitChildren(ctx)
