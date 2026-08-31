@@ -1565,6 +1565,34 @@ def test_antlr_part_usage_equals_value():
     }
 
 
+def test_antlr_partusage_metadata_prefix_order():
+    """`private #Classified #Security part z1;`（Metadata_valid.sysml(xpect)
+    L35）のように、visibilityIndicatorがprefixMetadataAnnotation*より前に
+    来る語順もある。partUsageは従来`prefixMetadataAnnotation*
+    visibilityIndicator?`という逆順で、この入力だとpartDefの`part def`
+    代替との曖昧性に負けて`missing 'def'`エラーになっていた。partDefと
+    同じ`visibilityIndicator? variability? prefixMetadataAnnotation* ...`
+    という順序に統一した。2026-08-29、
+    add_partusage_metadata_prefix_order対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "part def P { private #Classified #Security part z1; }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "part_instance"
+    assert node["name"] == "z1"
+    assert node["prefixMetadata"] == ["Classified", "Security"]
+    assert node["visibility"] == "private"
+
+    # 既存の`variation part ...`（variabilityあり、metadata無し）が
+    # 引き続き機能することを確認する。
+    variation_ast = parse_sysml_antlr(
+        "part def P { variation part transmission : Transmission[1] { } }"
+    )
+    variation_node = variation_ast["children"][0]["children"][0]
+    assert variation_node["name"] == "transmission"
+    assert variation_node["variability"] == "variation"
+
+
 def test_antlr_part_usage_double_colon_qualified_type():
     """d97_usage_type_clause_double_colon_qualified_missing: 実モデル
     （adas-sysmlv2-main）のADAS.sysmlの`part 'LDW制御スイッチ' : Parts::

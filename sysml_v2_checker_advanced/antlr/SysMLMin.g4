@@ -1803,8 +1803,15 @@ featureUsage
 // manualTransmission; variant automaticTransmission; }`（Variation
 // Usages.sysml）のように、Variability機能の先頭修飾子がここにも付く
 // （partDefと同じ理由、2026-08-28）。
+// `private #Classified #Security part z1;`（Metadata_valid.sysml(xpect)）
+// のように、visibilityIndicatorがprefixMetadataAnnotation*より前に来る
+// 語順もある。partDefと同じ`visibilityIndicator? variability?
+// prefixMetadataAnnotation* ...`という順序に統一する（従来の逆順のままだと
+// この入力でpartDefの`part def`代替とのあいまい性に負け、`def`不足の
+// エラーになっていた。2026-08-29、
+// add_partusage_metadata_prefix_order対応中に発見）。
 partUsage
-    : variability=('variation' | 'variant')? prefixMetadataAnnotation* visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
+    : visibilityIndicator? variability=('variation' | 'variant')? prefixMetadataAnnotation* isIndividual='individual'? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
       'part' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       preMult=multiplicitySpec?
