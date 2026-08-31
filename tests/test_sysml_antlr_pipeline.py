@@ -3367,6 +3367,39 @@ def test_antlr_metadata_usage_at_shorthand():
     assert len(node2["children"]) == 1
 
 
+def test_antlr_metadatausage_type_and_about_clause():
+    """`metadata InterfaceCompatibilityIssue : Issue about
+    engineToTransmissionInterface { ... }`（IssueMetadataExample.sysml）・
+    `metadata SafetyFeature about a, b, c;`（Metadata Example-1.sysml）の
+    ように、`metadata <name> [: Type] about <ref1>[, <ref2>...]`という
+    頻出パターンに未対応だった（従来`inheritanceClause`(`:>`等)しか
+    持たず、plainな`: Type`型節・`about`節のいずれも受理できなかった）。
+    2026-08-29、730件ベースライン154件エラー要因分析で発見。"""
+    typed_ast = parse_sysml_antlr(
+        "metadata def Issue; "
+        "metadata InterfaceCompatibilityIssue : Issue about engineToTransmissionInterface { }"
+    )
+    typed_node = typed_ast["children"][-1]
+    assert typed_node["type"] == "metadata_usage"
+    assert typed_node["name"] == "InterfaceCompatibilityIssue"
+    assert typed_node["type_name"] == "Issue"
+    assert typed_node["about"] == ["engineToTransmissionInterface"]
+
+    multi_ast = parse_sysml_antlr(
+        "metadata def SafetyFeature; metadata SafetyFeature about a, b, c;"
+    )
+    multi_node = multi_ast["children"][-1]
+    assert multi_node["about"] == ["a", "b", "c"]
+    assert "type_name" not in multi_node
+
+    # 既存の`about`/型節無し形が引き続き機能し、両キー自体が無いことを
+    # 確認する（回帰防止）。
+    plain_ast = parse_sysml_antlr("metadata def M; metadata m;")
+    plain_node = plain_ast["children"][-1]
+    assert "about" not in plain_node
+    assert "type_name" not in plain_node
+
+
 def test_antlr_event_occurrence_usage_is_new_construct():
     """`event occurrence A;`は旧Lark実装でも構文としては通るが、出力が
     生Tree混じりの断片で実用に耐えず、type文字列も`_stmt`付きでlinter.pyの

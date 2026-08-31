@@ -678,8 +678,16 @@ metadataDef
 // `#Security #Classified metadata Classified { ... }`（MetadataTest.sysml）
 // のような`#Type`プレフィックス注釈（2026-08-28、730件回帰チェックで発見。
 // `@`ショートハンド形での実例は未確認のため据え置き）。
+// `metadata InterfaceCompatibilityIssue : Issue about
+// engineToTransmissionInterface { ... }`（IssueMetadataExample.sysml）・
+// `metadata SafetyFeature about a, b, c;`（Metadata Example-1.sysml）の
+// ように、`metadata <name> [: Type] about <ref1>[, <ref2>...]`という
+// 頻出パターンに対応する（従来型節・about節のいずれも無かった。
+// 2026-08-29、730件ベースライン154件エラー要因分析で発見）。
 metadataUsage
-    : prefixMetadataAnnotation* isAbstract='abstract'? 'metadata' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )  # metadataUsageKeyword
+    : prefixMetadataAnnotation* isAbstract='abstract'? 'metadata' simpleName (':' typeRef=namespacePath)? inheritanceClause?
+      ('about' aboutTargets+=namespacePath (',' aboutTargets+=namespacePath)*)?
+      ( '{' partBodyElement* '}' | ';' )  # metadataUsageKeyword
     | '@' typeRef=namespacePath ( '{' partBodyElement* '}' | ';' )                                        # metadataUsageShorthand
     ;
 

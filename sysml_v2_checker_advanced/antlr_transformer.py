@@ -2655,6 +2655,13 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # partBodyElementとで異なる。hasattrで判別する（2026-08-29、730件
         # ベースライン154件エラー要因分析で発見）。
         body_ctxs = ctx.calcBodyElement() if hasattr(ctx, "calcBodyElement") else ctx.partBodyElement()
+        # `metadata engineSelectionRationale : Rationale about engine4cyl
+        # { ... }`（RationaleMetadataExample.sysml）のように、`: Type`型節・
+        # `about <ref1>[, <ref2>...]`節を持つ規則（今のところ
+        # metadataUsageKeywordのみ）と持たない規則が混在するため、
+        # isIndividualと同じくgetattrで安全に読む。
+        type_ref_attr = getattr(ctx, "typeRef", None)
+        about_targets = getattr(ctx, "aboutTargets", None) or []
         return {
             "type": node_type,
             "name": _simple_name_text(ctx.simpleName()),
@@ -2663,6 +2670,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "isAbstract": ctx.isAbstract is not None,
             "prefixMetadata": prefix_metadata,
             **({"isIndividual": True} if is_individual_attr is not None else {}),
+            **({"type_name": _namespace_path_text(type_ref_attr)} if type_ref_attr is not None else {}),
+            **({"about": [_namespace_path_text(t) for t in about_targets]} if about_targets else {}),
             "children": [self.visit(el) for el in body_ctxs],
         }
 
