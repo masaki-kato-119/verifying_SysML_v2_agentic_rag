@@ -2501,6 +2501,13 @@ messageUsage
       ( ':' ID | 'of' (payloadName=simpleName ':')? payloadType=namespacePath )?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      // `message :>> publish_message: Transfers::MessageTransfer { ... }`
+      // （ServerSequenceRealization-2.sysml、ServerSequenceOutsideRealization-2.sysml）
+      // のように、redefine節のpostTargetの直後に修飾名の型節
+      // （namespacePath、先頭の`( ':' ID | 'of' ...)`とは別の位置）が
+      // 続くこともある（flowUsageの第2代替と同型。2026-08-31、
+      // add_messageusage_redefine_qualified_type_clause対応中に発見）。
+      (':' postTypeRef=namespacePath)?
       (('=' | ':=') value=expression)?
       ( 'from' fromEnd=namespacePath 'to' toEnd=namespacePath )?
       ( '{' partBodyElement* '}' | ';' )

@@ -2346,6 +2346,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             type_name = _namespace_path_text(ctx.payloadType)
         elif id_ctx is not None:
             type_name = id_ctx.getText()
+        # `message :>> publish_message: Transfers::MessageTransfer { ... }`
+        # （ServerSequenceRealization-2.sysml）のように、redefine節の
+        # postTargetの直後に修飾名の型節が続くこともある（2026-08-31、
+        # add_messageusage_redefine_qualified_type_clause対応中に発見）。
+        elif ctx.postTypeRef is not None:
+            type_name = _namespace_path_text(ctx.postTypeRef)
         else:
             type_name = None
         # `message Statement1 of applicableLaw : ApplicableLaw from ...;`

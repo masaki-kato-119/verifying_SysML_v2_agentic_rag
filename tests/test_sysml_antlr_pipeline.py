@@ -6787,6 +6787,39 @@ def test_antlr_messageusage_redefine_equals_value():
     assert "value" not in of_node
 
 
+def test_antlr_messageusage_redefine_qualified_type_clause():
+    """`message :>> publish_message: Transfers::MessageTransfer { end :>>
+    source = producer.publicationPort; end :>> target = server.
+    publicationPort; }`（ServerSequenceRealization-2.sysml、
+    ServerSequenceOutsideRealization-2.sysml）のように、redefine節(:>>)の
+    postTargetの直後に修飾名（`::`区切り）の型節が続くことがある
+    （flowUsageの第2代替と同型）。従来の`( ':' ID | 'of' ...)`型節スロット
+    はredefineより前の位置にしかなく、この位置には対応していなかった。
+    2026-08-31、add_messageusage_redefine_qualified_type_clause対応中に
+    発見。"""
+    ast = parse_sysml_antlr(
+        "message :>> publish_message: Transfers::MessageTransfer { "
+        "end :>> source = producer.publicationPort; "
+        "end :>> target = server.publicationPort; "
+        "}"
+    )
+    node = ast["children"][0]
+    assert node["type"] == "message_usage"
+    assert node["name"] is None
+    assert node["type_name"] == "Transfers::MessageTransfer"
+    assert node["redefines"] == [{"kind": "redefines", "target": "publish_message"}]
+    assert len(node["children"]) == 2
+
+    # 既存の`= value`redefine形が引き続き機能することを確認する
+    # （"type_name"がNoneのままであることも確認する）。
+    value_ast = parse_sysml_antlr(
+        "message :>> setSpeedMessage = driver_a.sentMessage;"
+    )
+    value_node = value_ast["children"][0]
+    assert value_node["type_name"] is None
+    assert value_node["value"]["type"] == "name_ref"
+
+
 def test_antlr_flowusage_named_payload_of_clause_omitted_name():
     """`flow of fuel : Fuel from pump.fuelOutPort.fuel to
     vehicle.fuelInPort.fuel;`（3d-Function-based Behavior-item.sysml
