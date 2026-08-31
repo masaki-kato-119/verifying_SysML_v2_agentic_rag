@@ -325,6 +325,33 @@ def test_antlr_textual_representation_stmt():
     }
 
 
+def test_antlr_textualrep_stmt_in_partbodyelement():
+    """`assert constraint x_constraint { rep inOCL language "ocl" /* ...
+    */ }`・`action def setX { ... language "alf" /* ... */ }`
+    （TextualRepresentationTest.sysml）のように、textualRepresentationStmt
+    （`rep`/`language`）は従来packageBodyElementにしか登録されておらず、
+    action定義本体（actionBodyElement経由でpartBodyElementに委譲）や
+    assert constraint本体（calcBodyElement経由）にネストすると失敗して
+    いた。2026-08-29、730件ベースライン154件エラー要因分析で発見。"""
+    assert_ast = parse_sysml_antlr(
+        'item def C { attribute x: Real; '
+        'assert constraint x_constraint { rep inOCL language "ocl" /* self.x > 0.0 */ } }'
+    )
+    constraint_node = assert_ast["children"][0]["children"][-1]["children"][0]
+    rep_node = constraint_node["children"][0]
+    assert rep_node["type"] == "textual_representation"
+    assert rep_node["identification"] == {"type": "identification", "name": "inOCL"}
+    assert rep_node["language"] == "ocl"
+
+    action_ast = parse_sysml_antlr(
+        'action def setX { in c; language "alf" /* c.x = newX; */ }'
+    )
+    lang_node = action_ast["children"][0]["children"][-1]
+    assert lang_node["type"] == "textual_representation"
+    assert lang_node["identification"] is None
+    assert lang_node["language"] == "alf"
+
+
 def test_antlr_comment_about_and_locale():
     """`comment about C /* ... */`・`comment cmt_cmt about cmt /* ... */`
     （Comments.sysml/CommentTest.sysml）のように、コメント対象を明示する

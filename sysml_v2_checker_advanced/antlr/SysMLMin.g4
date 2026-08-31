@@ -1423,6 +1423,14 @@ partBodyElement
     | bareFirstStmt
     | bareThenStmt
     | documentationStmt
+    // `assert constraint x_constraint { rep inOCL language "ocl" /* ... */ }`
+    // （TextualRepresentationTest.sysml）・`action def setX { ... language
+    // "alf" /* ... */ }`（同、actionBodyElement経由でpartBodyElementに
+    // 委譲される）のように、textualRepresentationStmt（`rep`/`language`）は
+    // 従来packageBodyElementにしか登録されておらず、action定義本体等に
+    // ネストすると失敗していた（2026-08-29、730件ベースライン154件エラー
+    // 要因分析で発見）。
+    | textualRepresentationStmt
     | valueBindingStmt
     | featureUsage
     | bareDocComment
