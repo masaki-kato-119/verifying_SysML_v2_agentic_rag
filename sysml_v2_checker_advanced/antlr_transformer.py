@@ -1002,6 +1002,30 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             **({"isThen": True} if ctx.isThen is not None else {}),
         }
 
+    def visitSendActionNamedBody(self, ctx: SysMLMinParser.SendActionNamedBodyContext) -> Dict:
+        # `action snd send { in :>> payload = s; }`（ActionTest.sysml）の
+        # ように、payload/target（to/via）をインラインではなく、
+        # actionParameter形の宣言を並べたbodyで表すことがある（2026-08-29、
+        # 730件ベースライン154件エラー要因分析で発見）。
+        params = []
+        children = []
+        for el in ctx.actionBodyElement():
+            node = self.visit(el)
+            if isinstance(node, dict) and node.get("type") == "param":
+                params.append(node)
+            else:
+                children.append(node)
+        return {
+            "type": "send_action",
+            "name": _simple_name_text(ctx.name),
+            "payload": None,
+            "receiver": None,
+            "receiver_type": None,
+            "params": params,
+            "children": children,
+            **({"isThen": True} if ctx.isThen is not None else {}),
+        }
+
     def visitSendActionAnonymous(self, ctx: SysMLMinParser.SendActionAnonymousContext) -> Dict:
         if ctx.toTarget is not None:
             target, target_type = ctx.toTarget, "to"

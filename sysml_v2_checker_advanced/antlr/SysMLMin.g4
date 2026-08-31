@@ -2326,6 +2326,11 @@ sendActionStmt
     : isThen='then'? 'action' name=simpleName 'send'
       ( payload=namespacePath | 'new' newPayloadType=qualifiedName '(' (newPayloadArgs+=newArgument (',' newPayloadArgs+=newArgument)*)? ')' )
       ( 'to' receiver=qualifiedName | 'via' receiverVia=qualifiedName ) ';'          # sendActionNamed
+    // `action snd send { in :>> payload = s; }`（ActionTest.sysml）のように、
+    // payload/target（to/via）をインラインではなく、actionParameter形の
+    // redefine+値代入（`in :>> payload = s;`）を並べたbodyで表すことも
+    // ある（2026-08-29、730件ベースライン154件エラー要因分析で発見）。
+    | isThen='then'? 'action' name=simpleName 'send' '{' actionBodyElement* '}'      # sendActionNamedBody
     // `then send new Show(shoot.picture) to screen;`（Messaging Example.sysml、
     // Messaging with Ports.sysml、ActionTest.sysml）のように、匿名形にも
     // named形と同じ先頭の裸`then`（直前ノードとの暗黙の連鎖）を持ちうる

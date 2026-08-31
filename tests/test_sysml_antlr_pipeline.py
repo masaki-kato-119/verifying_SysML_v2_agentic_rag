@@ -5966,6 +5966,33 @@ def test_antlr_sendaction_anonymous_then_prefix():
     assert "isThen" not in plain_node
 
 
+def test_antlr_sendactionstmt_named_body():
+    """`action snd send { in :>> payload = s; }`（ActionTest.sysml）の
+    ように、sendActionStmtのnamed形はpayload/target（to/via）をインライン
+    ではなく、actionParameter形の宣言（`in :>> payload = s;`）を並べた
+    bodyで表すこともある（従来named形はインラインpayload+to/via必須
+    だった）。2026-08-29、730件ベースライン154件エラー要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "action a2 { in s : S; action snd send { in :>> payload = s; } }"
+    )
+    node = ast["children"][0]["children"][-1]
+    assert node["type"] == "send_action"
+    assert node["name"] == "snd"
+    assert node["payload"] is None
+    assert node["receiver"] is None
+    assert len(node["params"]) == 1
+    param = node["params"][0]
+    assert param["type"] == "param"
+    assert param["redefines"] == [{"kind": "redefines", "target": "payload"}]
+    assert param["value"] == {"type": "name_ref", "reference": "s"}
+
+    # 既存のインライン形が引き続き機能することを確認する（回帰防止）。
+    inline_ast = parse_sysml_antlr("action def A { action snd send x to y; }")
+    inline_node = inline_ast["children"][0]["children"][0]
+    assert inline_node["payload"] == "x"
+    assert inline_node["receiver"] == "y"
+
+
 def test_antlr_quoted_name_type_reference():
     """`use case 'provide transportation' : 'Provide Transportation' { }`
     （Use Case Usage Example.sysml）・`action 'provide power' :
