@@ -4950,6 +4950,38 @@ def test_antlr_import_all_modifier():
     assert "isAll" not in plain_node
 
 
+def test_antlr_importstmt_body_form():
+    """`private import ScalarValues::Integer { doc /* ... */ }`
+    （15_10-Primitive Data Types.sysml）・`private import Definitions::*
+    { /* ... */ }`（1a-Parts Tree.sysml、`doc`キーワード無しの裸コメント）
+    のように、importStmtは`;`終端のみで、docコメントのみのbody形が
+    無かった。2026-08-29、730件ベースライン154件エラー要因分析で発見。"""
+    doc_ast = parse_sysml_antlr(
+        "private import ScalarValues::Integer { doc /* text */ }"
+    )
+    doc_node = doc_ast["children"][0]
+    assert doc_node["type"] == "import"
+    assert doc_node["name"] == "ScalarValues::Integer"
+    assert doc_node["children"] == [
+        {"type": "documentation", "identification": None, "locale": None, "body": "text", "children": []},
+    ]
+
+    bare_comment_ast = parse_sysml_antlr(
+        "private import Definitions::* { /* bare comment */ }"
+    )
+    bare_comment_node = bare_comment_ast["children"][0]
+    assert bare_comment_node["wildcard"] is True
+    assert bare_comment_node["children"] == [
+        {"type": "documentation", "identification": None, "locale": None, "body": "bare comment", "children": []},
+    ]
+
+    # 既存の`;`終端形が引き続き機能し、childrenが空リストであることを
+    # 確認する（回帰防止）。
+    plain_ast = parse_sysml_antlr("private import ScalarValues::Natural;")
+    plain_node = plain_ast["children"][0]
+    assert plain_node["children"] == []
+
+
 def test_antlr_interface_usage_unnamed_typed_inline_connect():
     """`interface : StagingInterface connect a.p to b.q;`のように、名前を
     省略した型付きinterface usageへのインライン`connect...to...`が

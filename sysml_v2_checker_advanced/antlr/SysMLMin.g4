@@ -3232,8 +3232,14 @@ portUsage
 // 直後に`all`修飾子（`private import`による可視性制限を上書きする）が
 // 付くことがある（2026-08-29、730件ベースライン154件エラー要因分析で
 // 発見）。
+// `private import ScalarValues::Integer { doc /* ... */ }`
+// （15_10-Primitive Data Types.sysml）・`private import Definitions::*
+// { /* ... */ }`（1a-Parts Tree.sysml、`doc`キーワード無しの裸コメント）
+// のように、`;`終端だけでなくdocコメントのみのbody形も持ちうる
+// （2026-08-29、730件ベースライン154件エラー要因分析で発見）。
 importStmt
-    : visibilityIndicator? 'import' isAll='all'? namespacePath ('::' ('*' '*'? | '**'))* ('[' filterExpr=expression ']')? ';'
+    : visibilityIndicator? 'import' isAll='all'? namespacePath ('::' ('*' '*'? | '**'))* ('[' filterExpr=expression ']')?
+      ( '{' (documentationStmt | bareDocComment)* '}' | ';' )
     ;
 
 visibilityIndicator

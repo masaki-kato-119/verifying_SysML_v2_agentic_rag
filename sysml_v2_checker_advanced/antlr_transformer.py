@@ -3007,7 +3007,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             # exact-equality辞書テストを壊さないよう、無い場合はキー自体を
             # 省略する。
             **({"isAll": True} if ctx.isAll is not None else {}),
-            "children": [],
+            # `private import ScalarValues::Integer { doc /* ... */ }`の
+            # ように、`;`終端だけでなくdocコメントのみのbody形も持ちうる
+            # （2026-08-29、730件ベースライン154件エラー要因分析で発見）。
+            "children": [self.visit(el) for el in ctx.documentationStmt()]
+            + [self.visit(el) for el in ctx.bareDocComment()],
         }
 
     # --- dependency / event occurrence usage / exhibit state usage / portion usage --
