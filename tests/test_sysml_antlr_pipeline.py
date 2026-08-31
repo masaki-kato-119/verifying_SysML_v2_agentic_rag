@@ -1466,6 +1466,30 @@ def test_antlr_action_usage_stmt_bare_matches_old_lark_shape_loosely():
     }
 
 
+def test_antlr_actionusagestmt_qualified_type():
+    """`then action 'destroy connection of trailer to vehicle' :
+    OccurrenceFunctions::destroy { ... }`（3c-Function-based
+    Behavior-structure mod-1.sysml L41-42）のように、actionUsageStmtの
+    型節は`::`修飾名を取ることもある（従来`ID | QUOTED_NAME`単体決め打ち
+    だった）。既存のQUOTED_NAME単体型が引き続き機能することも確認する。
+    2026-08-29、add_actionusagestmt_qualified_type対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "action def A { then action 'destroy connection' : "
+        "OccurrenceFunctions::destroy { } }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "action_usage"
+    assert node["name"] == "destroy connection"
+    assert node["type_name"] == "OccurrenceFunctions::destroy"
+
+    # 既存のQUOTED_NAME単体型が引き続き機能することを確認する。
+    quoted_ast = parse_sysml_antlr(
+        "action def A { action 'provide power': 'Provide Power' { } }"
+    )
+    quoted_node = quoted_ast["children"][0]["children"][0]
+    assert quoted_node["type_name"] == "Provide Power"
+
+
 def test_antlr_action_usage_stmt_equals_value():
     """d54_bare_action_keyword_feature_usage: Flows.sysmlの`private ref
     action thisConnection = self;`のように、他のusage規則（item/

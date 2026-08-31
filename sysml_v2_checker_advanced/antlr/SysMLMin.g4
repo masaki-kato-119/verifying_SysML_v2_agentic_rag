@@ -2618,7 +2618,13 @@ actionUsageStmt
       // `action 'provide power': 'Provide Power'{ ... }`（3a-Function-based
       // Behavior-1.sysml）のように、型節がQUOTED_NAMEを取ることがある
       // （2026-08-28、730件パース失敗の要因分析で発見）。
-      (':' typeRef=(ID | QUOTED_NAME))?
+      // `then action 'destroy connection of trailer to vehicle' :
+      // OccurrenceFunctions::destroy { ... }`（3c-Function-based
+      // Behavior-structure mod-1.sysml）のように、`::`修飾名も取ることが
+      // ある（従来`ID | QUOTED_NAME`単体決め打ちだったため`namespacePath`
+      // へ差し替える。2026-08-29、
+      // add_actionusagestmt_qualified_type対応中に発見）。
+      (':' typeRef=namespacePath)?
       postMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ('=' value=expression)?

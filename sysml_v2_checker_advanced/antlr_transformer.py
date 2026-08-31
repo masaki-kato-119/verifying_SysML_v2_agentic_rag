@@ -1274,7 +1274,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "name": _optional_simple_name_text(ctx.simpleName()),
             # `action <'xxx'> Name { ... }`のようなShortName注釈。
             "shortName": ctx.shortName.text if ctx.shortName is not None else None,
-            "type_name": _unquote_text(type_ref_ctx.text) if type_ref_ctx is not None else None,
+            "type_name": _namespace_path_text(type_ref_ctx) if type_ref_ctx is not None else None,
             # `action subfunctions[*] : Function :>> subactions;`（多重度が
             # 型節より先）・通常順の両方があるため、preMult/postMultの
             # どちらか一方（両方同時に現れる実例は無い）を読む。
