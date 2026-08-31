@@ -1908,6 +1908,32 @@ def test_antlr_item_usage_ref_before_individual_order():
     assert reversed_node["isIndividual"] is True
 
 
+def test_antlr_itemusage_prefix_metadata():
+    """`#fmea item 'Glucose Meter in Use' : 'Glucose FMEA Item' { ... }`
+    （14c-Language Extensions.sysml L190）のように、itemUsageは`#Type`
+    前置メタデータ注釈を持つことがある（itemDef/occurrenceUsageは既に
+    対応済みだが、itemUsage自体には無かった）。visibilityIndicatorの
+    直後という、itemDefと同じ順序に置く必要がある（順序がずれると
+    itemDefの`item def`代替とのあいまい性に負ける、partUsageの
+    モディファイア順序修正と同型の注意点）。既存のメタデータ無し形が
+    引き続き機能することも確認する。2026-08-31、
+    add_itemusage_prefix_metadata対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "package P { #fmea item 'Glucose Meter in Use' : "
+        "'Glucose FMEA Item' { } }"
+    )
+    node = ast["children"][0]
+    assert node["type"] == "item_usage"
+    assert node["name"] == "Glucose Meter in Use"
+    assert node["type_name"] == "Glucose FMEA Item"
+    assert node["prefixMetadata"] == ["fmea"]
+
+    # 既存のメタデータ無し形が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr("package P { item x : A; }")
+    plain_node = plain_ast["children"][0]
+    assert plain_node["prefixMetadata"] == []
+
+
 def test_antlr_state_body_element_doc_and_assert_constraint():
     """d57_state_body_element_documentation_stmt_missing: States.sysmlの
     `state def StateAction { doc /* ... */ ... assert constraint {...} }`

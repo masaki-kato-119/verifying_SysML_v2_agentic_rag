@@ -1280,8 +1280,15 @@ itemDef
 // `item concerns[*]: Concern;`（CoSMAPackage.sysml）のように、名前の直後に
 // 多重度、その後に型節という順序もある（partUsage/requirementUsageと
 // 同じpreMult/postMult設計。2026-08-28、730件パース失敗の要因分析で発見）。
+// `#fmea item 'Glucose Meter in Use' : 'Glucose FMEA Item' { ... }`
+// （14c-Language Extensions.sysml）のように、`#Type`前置メタデータ注釈を
+// 持つことがある。itemDefと同じ`visibilityIndicator? prefixMetadataAnnotation*
+// ...`の順序（visibilityIndicatorの直後）に置く（partUsageのモディファイア
+// 順序修正で判明した通り、順序がずれるとitemDefの`item def`代替との
+// あいまい性に負けるため。2026-08-31、add_itemusage_prefix_metadata対応中に
+// 発見）。
 itemUsage
-    : visibilityIndicator? isRefPre='ref'? isIndividual='individual'? isDerived='derived'? isAbstract='abstract'? isRef='ref'? 'item' simpleName?
+    : visibilityIndicator? prefixMetadataAnnotation* isRefPre='ref'? isIndividual='individual'? isDerived='derived'? isAbstract='abstract'? isRef='ref'? 'item' simpleName?
       preMult=multiplicitySpec?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       // `item boundingBox : ShapeItems::Box [1] :> boundingShapes { ... }`
