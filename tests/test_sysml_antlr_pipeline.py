@@ -3748,6 +3748,8 @@ def test_antlr_individual_usage_bare_and_typed():
         "name": "A",
         "type_name": None,
         "isAbstract": False,
+        "isRef": False,
+        "redefines": [],
         "children": [],
     }
     assert typed["children"][0] == {
@@ -3755,8 +3757,47 @@ def test_antlr_individual_usage_bare_and_typed():
         "name": "A",
         "type_name": "T",
         "isAbstract": False,
+        "isRef": False,
+        "redefines": [],
         "children": [],
     }
+
+
+def test_antlr_individualusage_ref_redefine():
+    """`individual testSystem : TestSystem :> massVerificationSystem
+    { ... }`（9-Verification-simplified.sysml）・`ref individual :>>
+    vehicleUnderTest : TestVehicle1 :> vehicle1_c2 { ... }`（同、名前
+    省略形）・`individual leftFrontWheel_t0 : Wheel_1 :>> leftFrontWheel;`
+    （IndividualUsage.sysml）のように、individualUsageは他の多くのusage
+    規則（port/occurrence等）にある`ref`修飾子・名前省略・redefine節
+    （pre/post、`:>`/`:>>`/subsets/redefines）一式を欠いていた。
+    2026-08-29、730件ベースライン154件エラー要因分析で発見。"""
+    postkind_ast = parse_sysml_antlr(
+        "part def P { individual testSystem : TestSystem :> massVerificationSystem { } }"
+    )
+    postkind_node = postkind_ast["children"][0]["children"][0]
+    assert postkind_node["name"] == "testSystem"
+    assert postkind_node["type_name"] == "TestSystem"
+    assert postkind_node["redefines"] == [{"kind": "subsets", "target": "massVerificationSystem"}]
+
+    ref_prekind_ast = parse_sysml_antlr(
+        "part def P { ref individual :>> vehicleUnderTest : TestVehicle1 :> vehicle1_c2 { } }"
+    )
+    ref_node = ref_prekind_ast["children"][0]["children"][0]
+    assert ref_node["name"] is None
+    assert ref_node["isRef"] is True
+    assert ref_node["type_name"] == "TestVehicle1"
+    assert ref_node["redefines"] == [
+        {"kind": "redefines", "target": "vehicleUnderTest"},
+        {"kind": "subsets", "target": "vehicle1_c2"},
+    ]
+
+    bare_redefine_ast = parse_sysml_antlr(
+        "part def P { individual leftFrontWheel_t0 : Wheel_1 :>> leftFrontWheel; }"
+    )
+    bare_redefine_node = bare_redefine_ast["children"][0]["children"][0]
+    assert bare_redefine_node["name"] == "leftFrontWheel_t0"
+    assert bare_redefine_node["redefines"] == [{"kind": "redefines", "target": "leftFrontWheel"}]
 
 
 def test_antlr_occurrence_and_individual_do_not_crash_linter():

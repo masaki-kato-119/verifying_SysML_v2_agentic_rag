@@ -342,8 +342,20 @@ individualDef
 // （6-Individual and Snapshots.sysml）のように、型節がQUOTED_NAMEを取る
 // ことと、`;`終端だけでなく本体`{}`も持ちうることの両方が未対応だった
 // （2026-08-28、730件パース失敗の要因分析で発見）。
+// `individual testSystem : TestSystem :> massVerificationSystem { ... }`
+// （9-Verification-simplified.sysml）・`ref individual :>>
+// vehicleUnderTest : TestVehicle1 :> vehicle1_c2 { ... }`（同）・
+// `individual leftFrontWheel_t0 : Wheel_1 :>> leftFrontWheel;`
+// （IndividualUsage.sysml）のように、他の多くのusage規則（port/occurrence
+// 等）と同じ`ref`修飾子・名前省略・redefine節（preKind/postKind、`:>`/
+// `:>>`/subsets/redefines）一式を欠いていた（2026-08-29、730件
+// ベースライン154件エラー要因分析で発見）。
 individualUsage
-    : isAbstract='abstract'? 'individual' simpleName ( ':' typeRef=(ID | QUOTED_NAME) (',' extraTypeRefs+=(ID | QUOTED_NAME))* )? ( '{' partBodyElement* '}' | ';' )
+    : isAbstract='abstract'? isRef='ref'? 'individual' simpleName?
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      ( ':' typeRef=(ID | QUOTED_NAME) (',' extraTypeRefs+=(ID | QUOTED_NAME))* )?
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      ( '{' partBodyElement* '}' | ';' )
     ;
 
 // --- interaction / sequence diagram notation ---------------------------------

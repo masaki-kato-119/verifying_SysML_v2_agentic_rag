@@ -3143,12 +3143,22 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         type_names = ([_unquote_text(ctx.typeRef.text)] if ctx.typeRef is not None else []) + [
             _unquote_text(t.text) for t in ctx.extraTypeRefs
         ]
+        # `individual testSystem : TestSystem :> massVerificationSystem
+        # { ... }`・`ref individual :>> vehicleUnderTest : TestVehicle1
+        # :> vehicle1_c2 { ... }`のように、`ref`修飾子・名前省略・
+        # redefine節（pre/post両方）一式を持ちうる（2026-08-29、730件
+        # ベースライン154件エラー要因分析で発見）。
+        redefines = self._redefine_list_namespace(ctx.preKind, ctx.preTarget) + self._redefine_list_namespace(
+            ctx.postKind, ctx.postTarget
+        )
         return {
             "type": "individual_usage",
-            "name": _simple_name_text(ctx.simpleName()),
+            "name": _optional_simple_name_text(ctx.simpleName()),
             "type_name": type_names[0] if type_names else None,
             **({"type_names": type_names} if len(type_names) > 1 else {}),
             "isAbstract": ctx.isAbstract is not None,
+            "isRef": ctx.isRef is not None,
+            "redefines": redefines,
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 
