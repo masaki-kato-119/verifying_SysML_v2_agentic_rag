@@ -1248,6 +1248,34 @@ def test_antlr_named_accept_action_bare_body():
     }
 
 
+def test_antlr_acceptactionstmt_named_body():
+    """`action engineStarted accept engineStart: EngineStart { ... }`
+    （3a-Function-based Behavior-1.sysml L102）のように、named形の
+    acceptActionStmtは`;`終端の代わりに`do`/`action`キーワード無しの
+    裸の`{ actionBodyElement* }`本体を直接持つこともある（従来`do
+    action {...}`形しか無かった）。既存の`;`終端形が引き続き機能する
+    ことも確認する。2026-08-29、add_acceptactionstmt_named_body対応中に
+    発見。"""
+    ast = parse_sysml_antlr(
+        "action def A { action engineStarted accept engineStart: "
+        "EngineStart { doc /* explanation */ } }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "accept_action"
+    assert node["message"] == "engineStart"
+    assert node["message_type"] == "EngineStart"
+    assert node["actionName"] == "engineStarted"
+    assert [c["type"] for c in node["children"]] == ["documentation"]
+
+    # 既存の`;`終端形が引き続き機能することを確認する
+    # （"children"キー自体が無いことも確認する）。
+    semi_ast = parse_sysml_antlr(
+        "action def Act { accept response : ConnectionResponse via client; }"
+    )
+    semi_node = semi_ast["children"][0]["children"][0]
+    assert "children" not in semi_node
+
+
 def test_antlr_perform_action():
     ast = parse_sysml_antlr("action def Act { perform logFailure; }")
     assert ast["children"][0]["children"][0] == {

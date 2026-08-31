@@ -1139,6 +1139,16 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 if ctx.hasDoAction is not None
                 else {}
             ),
+            # `action engineStarted accept engineStart: EngineStart { ... }`
+            # （3a-Function-based Behavior-1.sysml）のように、`;`終端の
+            # 代わりに`do`/`action`キーワード無しの裸の`{ ... }`本体を直接
+            # 持つこともある（2026-08-29、add_acceptactionstmt_named_body
+            # 対応中に発見）。
+            **(
+                {"children": [self.visit(el) for el in ctx.actionBodyElement()]}
+                if ctx.hasBareBody is not None
+                else {}
+            ),
         }
 
     def visitPerformActionStmt(self, ctx: SysMLMinParser.PerformActionStmtContext) -> Dict:

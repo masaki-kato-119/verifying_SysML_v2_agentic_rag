@@ -2470,11 +2470,16 @@ sendActionStmt
 // { actionBodyElement* }`という明示的な振る舞い節を持つこともある
 // （entryActionMember/doActionMemberのbody形と同じ設計。2026-08-29、
 // add_ahfnorwaytopics_composite_gaps対応中に発見）。
+// `action engineStarted accept engineStart: EngineStart { ... }`
+// （3a-Function-based Behavior-1.sysml）のように、`;`終端の代わりに
+// `do`/`action`キーワード無しの裸の`{ actionBodyElement* }`本体を直接
+// 持つこともある（2026-08-29、add_acceptactionstmt_named_body対応中に
+// 発見）。
 acceptActionStmt
     : isThen='then'? visibilityIndicator? ('action' actionName=simpleName?)?
       'accept' message=qualifiedName ( ':' messageType=namespacePath )?
       ( 'via' port=qualifiedName | 'after' afterDuration=expression )?
-      ( ';' | hasDoAction='do' 'action' '{' actionBodyElement* '}' )
+      ( ';' | hasDoAction='do' 'action' '{' actionBodyElement* '}' | hasBareBody='{' actionBodyElement* '}' )
     ;
 
 // --- perform action (Section 7.17 PerformActionUsage) -------------------------
