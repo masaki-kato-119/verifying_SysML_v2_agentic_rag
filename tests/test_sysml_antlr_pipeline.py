@@ -6478,6 +6478,23 @@ def test_antlr_part_kind_calc_and_action_parameter():
     assert plain_param["kind"] is None
 
 
+def test_antlr_calcparameter_requirement_kind():
+    """`in requirement fuelEconomyRequirement : FuelEconomyRequirement;`
+    （Vehicle Analysis Demo.sysml、10c-Fuel Economy Analysis.sysml）の
+    ように、calcParameterのkind節（item/attribute/ref/part/calc/action）
+    に`requirement`が抜けていた。2026-08-29、730件ベースライン154件
+    エラー要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "analysis def A { in requirement fuelEconomyRequirement : FuelEconomyRequirement; }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "calc_parameter"
+    assert node["direction"] == "in"
+    assert node["kind"] == "requirement"
+    assert node["name"] == "fuelEconomyRequirement"
+    assert node["type_name"] == "FuelEconomyRequirement"
+
+
 def test_antlr_transitionstmt_target_with_doc_body():
     """`transition first preparation accept PreparationPhaseCompletedNotification
     then launch { doc /* ... */ }`（MissionPackage.sysml）のように、

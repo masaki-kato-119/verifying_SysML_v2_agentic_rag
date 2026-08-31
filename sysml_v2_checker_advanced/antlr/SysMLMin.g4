@@ -760,9 +760,13 @@ resultExpressionMember
 // calc/action）節を持つことがある（従来calcParameterにはkind節が
 // 一切なく、`part`に限らず全種別が未対応だった。2026-08-29、235件
 // パース失敗の要因分析で発見）。
+// `in requirement fuelEconomyRequirement : FuelEconomyRequirement;`
+// （Vehicle Analysis Demo.sysml、10c-Fuel Economy Analysis.sysml）の
+// ように、`requirement`種別も抜けていた（2026-08-29、730件ベースライン
+// 154件エラー要因分析で発見）。
 calcParameter
     : (direction | dirReturn='return')
-      kind=('item' | 'attribute' | 'ref' | 'part' | 'calc' | 'action')?
+      kind=('item' | 'attribute' | 'ref' | 'part' | 'calc' | 'action' | 'requirement')?
       simpleName?
       (':' namespacePath multiplicitySpec?)?
       ('=' expression)?
