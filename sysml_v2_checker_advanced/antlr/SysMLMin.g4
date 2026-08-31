@@ -2601,6 +2601,11 @@ stateBodyElement
     | documentationStmt
     | bareDocComment
     | assertConstraintUsage
+    // `constraint { DurationOf(maintenance) <= 48 [h] }`（Time
+    // Constraints.sysml、VehicleModel_2_Simplified.sysml）のように、
+    // `assert`を伴わない裸のconstraintUsageもstate本体直下で使われる
+    // （2026-08-29、730件ベースライン154件エラー要因分析で発見）。
+    | constraintUsage
     // `action :>> subactions :> middle { doc ... }`（States.sysml）の
     // ように、名前省略の裸の`action`usage形もstate def本体で使える
     // （entry/do/exit ActionMemberは'entry'/'do'/'exit'から始まるため

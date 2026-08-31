@@ -580,6 +580,47 @@ def test_antlr_calculation_usage_short_name():
     assert lint_ast(ast) == []
 
 
+def test_antlr_statebodyelement_bare_constraint():
+    """`constraint { DurationOf(maintenance) <= 48 [h] }`（Time
+    Constraints.sysml、state本体内）のように、`assertConstraintUsage`は
+    登録済みだが、`assert`を伴わない単純な`constraint { expr }`
+    （constraintUsage）はstate def本体で使えなかった。加えて、
+    constraintUsageの裸の`{ expr }`代替（resultExpr）は従来
+    `_usage_keyword_node`がcalcBodyElementのみをchildrenとして読むため、
+    式自体が読み落とされるバグもあった（今回の修正で同時に発見・
+    修正）。2026-08-29、730件ベースライン154件エラー要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "state healthStates { constraint { DurationOf(maintenance) <= 48 [h] } }"
+    )
+    constraint_node = ast["children"][0]["children"][0]
+    assert constraint_node["type"] == "constraint_usage"
+    assert constraint_node["name"] is None
+    assert constraint_node["children"] == []
+    assert constraint_node["result_expression"] == {
+        "type": "binary_expr", "op": "<=",
+        "left": {
+            "type": "function_call", "name": "DurationOf",
+            "arguments": [
+                {"type": "positional_argument", "value": {"type": "name_ref", "reference": "maintenance"}, "children": []},
+            ],
+            "children": [],
+        },
+        "right": {
+            "type": "quantity_literal",
+            "value": {"type": "literal", "literal_type": "int", "value": 48},
+            "unit": {"type": "name_ref", "reference": "h"},
+            "children": [],
+        },
+    }
+
+    # 既存のnamed/typed body形（calcBodyElement代替）が引き続き機能し、
+    # "result_expression"キー自体が無いことを確認する（回帰防止）。
+    named_ast = parse_sysml_antlr("constraint massLimitation { mass : Real; mass < 10; }")
+    named_node = named_ast["children"][0]
+    assert named_node["type"] == "constraint_usage"
+    assert "result_expression" not in named_node
+
+
 def test_antlr_enum_literal_type_clause():
     """`uncl : ClassificationLevel = 0;`（MetadataTest.sysml、
     pilot-implementation生データ）のように、enumLiteral自体が型節

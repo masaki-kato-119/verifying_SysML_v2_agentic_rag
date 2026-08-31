@@ -1228,7 +1228,16 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return self._usage_keyword_node("calculation_usage", ctx, ctx.calcBodyElement())
 
     def visitConstraintUsage(self, ctx: SysMLMinParser.ConstraintUsageContext) -> Dict:
-        return self._usage_keyword_node("constraint_usage", ctx, ctx.calcBodyElement())
+        # `constraint { DurationOf(maintenance) <= 48 [h] }`のように、名前も
+        # キーワード修飾子も伴わない裸のconstraint usageが、括弧内に単一の
+        # 真偽式のみを持つ形（`resultExpr`代替）を取ることがある。
+        # `_usage_keyword_node`は`calcBodyElement`のみをchildrenとして
+        # 読むため、この代替が選ばれた場合`resultExpr`が読み落とされて
+        # いた（2026-08-29、730件ベースライン154件エラー要因分析で発見）。
+        node = self._usage_keyword_node("constraint_usage", ctx, ctx.calcBodyElement())
+        if ctx.resultExpr is not None:
+            node["result_expression"] = self.visit(ctx.resultExpr)
+        return node
 
     def _usage_keyword_node(self, node_type: str, ctx, children_ctxs) -> Dict:
         """case/analysis/verification/use case/calc/constraint usageの6規則が
