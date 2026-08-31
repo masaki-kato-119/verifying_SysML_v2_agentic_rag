@@ -1131,7 +1131,15 @@ connectionEndMember
       // 発見）。
       ('crosses' crossTarget=qualifiedName)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
-      (directKind=('::>' | 'references') directTarget=namespacePath)?
+      ( (directKind=('::>' | 'references') directTarget=namespacePath)
+      // `end :>> source = producer.publicationPort;`
+      // （ServerSequenceRealization-2.sysml）のように、redefine節の
+      // ターゲットに`::>`直接参照ではなく`= value`値代入が続くことも
+      // ある（attributeUsage/portUsageと同型。2026-08-29、
+      // add_portusage_performaction_redefine_assign対応中に連鎖的に
+      // 発見）。
+      | (valueOp=('=' | ':=') value=expression)
+      )?
       // `end ref end1 ::> d1 :> q;`（ConnectionTest.sysml L53）のように、
       // `::>`直接参照の後にさらに`:>`subsets節が続くこともある（従来
       // postKind*はdirectKind節より前にしか置けなかった。同じ行で

@@ -2229,6 +2229,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "prefixMetadata": prefix_metadata,
             "reference": direct_reference,
             **({"crosses": cross_target} if cross_target is not None else {}),
+            # `end :>> source = producer.publicationPort;`
+            # （ServerSequenceRealization-2.sysml）のように、redefine節の
+            # ターゲットに`::>`直接参照ではなく`= value`値代入が続くことも
+            # ある（attributeUsage/portUsageと同型。2026-08-29、
+            # add_connectionendmember_equals_value_assign対応中に発見）。
+            **({"value": self.visit(ctx.value)} if ctx.value is not None else {}),
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 

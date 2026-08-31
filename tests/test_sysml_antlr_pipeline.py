@@ -7540,6 +7540,40 @@ def test_antlr_connectionendmember_redefine_and_direct_reference_combined():
     assert named_node["reference"] is None
 
 
+def test_antlr_connectionendmember_redefine_and_value_assign():
+    """`end :>> source = producer.publicationPort;`
+    （ServerSequenceRealization-2.sysml、sysml2-cli）のように、
+    connectionEndMemberが名前を伴わない`:>>`redefine節（postKind）の
+    ターゲットの直後に`::>`直接参照ではなく`= value`値代入を持つことも
+    ある（attributeUsage/portUsageと同型のvalueOp/value節を追加）。
+    既存の`::>`直接参照形が引き続き機能することも確認する。2026-08-29、
+    add_portusage_performaction_redefine_assign対応中に連鎖的に発見。"""
+    ast = parse_sysml_antlr(
+        "connection a: A { end :>> source = producer.publicationPort; }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "connection_end_member"
+    assert node["redefines"] == [{"kind": "redefines", "target": "source"}]
+    assert node["value"]["type"] == "name_ref"
+    assert node["reference"] is None
+
+    # `:=`初期値代入も同様に機能することを確認する。
+    walrus_ast = parse_sysml_antlr(
+        "connection a: A { end :>> source := producer.publicationPort; }"
+    )
+    walrus_node = walrus_ast["children"][0]["children"][0]
+    assert walrus_node["value"]["type"] == "name_ref"
+
+    # 既存の`::>`直接参照形が引き続き機能することを確認する
+    # （"value"キー自体が無いことも確認する）。
+    direct_ast = parse_sysml_antlr(
+        "connection a: A { end :>> source ::> producer.publicationPort; }"
+    )
+    direct_node = direct_ast["children"][0]["children"][0]
+    assert direct_node["reference"] == "producer::publicationPort"
+    assert "value" not in direct_node
+
+
 def test_antlr_connectionendmember_leading_multiplicity_and_trailing_postkind():
     """`end [1] item a : A { ... }`・`end ref end1 ::> d1 :> q;`
     （ConnectionTest.sysml L68, L53）のように、connectionEndMemberでは
