@@ -979,6 +979,15 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "name": _simple_name_text(name_ctx) if name_ctx is not None else None,
             "children": children,
             **({"isThen": True} if ctx.isThen is not None else {}),
+            # `#Security fork;`（Metadata_valid.sysml(xpect)）のような
+            # `#Type`前置メタデータ注釈（2026-08-29、
+            # add_actionusagestmt_flowcontrolnode_prefix_metadata対応中に
+            # 発見）。
+            **(
+                {"prefixMetadata": [_namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()]}
+                if ctx.prefixMetadataAnnotation()
+                else {}
+            ),
         }
 
     def visitTerminateActionStmt(self, ctx: SysMLMinParser.TerminateActionStmtContext) -> Dict:
@@ -1303,6 +1312,15 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "children": children,
             **({"isThen": True} if ctx.isThen is not None else {}),
             **({"variability": ctx.variability.text} if ctx.variability is not None else {}),
+            # `#Security action a { ... }`（Metadata_valid.sysml(xpect)）
+            # のような`#Type`前置メタデータ注釈（2026-08-29、
+            # add_actionusagestmt_flowcontrolnode_prefix_metadata対応中に
+            # 発見）。
+            **(
+                {"prefixMetadata": [_namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()]}
+                if ctx.prefixMetadataAnnotation()
+                else {}
+            ),
         }
 
     # --- フェーズ2続き: calculation usage / constraint usage ------------------------

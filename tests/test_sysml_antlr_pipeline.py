@@ -1043,6 +1043,31 @@ def test_antlr_fork_join_merge_bare():
     assert all(c["name"] is None and c["children"] == [] for c in children)
 
 
+def test_antlr_actionusagestmt_flowcontrolnode_prefix_metadata():
+    """`#Security action a { #Security fork; }`（Metadata_valid.sysml(xpect)
+    L38-39）のように、actionUsageStmt/flowControlNodeはどちらも`#Type`
+    前置メタデータ注釈を持つことがある（従来どちらも未対応だった）。
+    既存のメタデータ無し形が引き続き機能することも確認する。2026-08-29、
+    add_actionusagestmt_flowcontrolnode_prefix_metadata対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "part def P { #Security action a { #Security fork; } }"
+    )
+    action_node = ast["children"][0]["children"][0]
+    assert action_node["type"] == "action_usage"
+    assert action_node["prefixMetadata"] == ["Security"]
+    fork_node = action_node["children"][0]
+    assert fork_node["type"] == "fork_node"
+    assert fork_node["prefixMetadata"] == ["Security"]
+
+    # 既存のメタデータ無し形が引き続き機能することを確認する
+    # （"prefixMetadata"キー自体が無いことも確認する）。
+    plain_ast = parse_sysml_antlr("part def P { action a { fork; } }")
+    plain_action = plain_ast["children"][0]["children"][0]
+    plain_fork = plain_action["children"][0]
+    assert "prefixMetadata" not in plain_action
+    assert "prefixMetadata" not in plain_fork
+
+
 def test_antlr_terminate_action_statement():
     """`terminate c1;`（ActionTest.sysml）・`then terminate;`（同、
     flowControlNodeと同じ`isThen`前置修飾子）・`terminate

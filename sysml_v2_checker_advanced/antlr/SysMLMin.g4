@@ -2339,8 +2339,11 @@ direction
 // 広く使われるため、assignmentStmtと同じ`isThen`先頭修飾子を追加する
 // （2026-08-28、730件パース失敗の要因分析で発見。コーパス全体で11件の
 // パース失敗の直接原因）。
+// `#Security fork;`（Metadata_valid.sysml(xpect)）のように、`#Type`前置
+// メタデータ注釈を持つこともある（2026-08-29、
+// add_actionusagestmt_flowcontrolnode_prefix_metadata対応中に発見）。
 flowControlNode
-    : isThen='then'? kind=('decide' | 'fork' | 'join' | 'merge') simpleName? ( '{' actionBodyElement* '}' | ';' )
+    : prefixMetadataAnnotation* isThen='then'? kind=('decide' | 'fork' | 'join' | 'merge') simpleName? ( '{' actionBodyElement* '}' | ';' )
     ;
 
 // --- terminate action (Section 7.17 TerminateActionUsage) --------------------
@@ -2618,8 +2621,11 @@ defaultTargetSuccessionStmt
 // 自体に`loop`前置修飾子が付き、ループとして扱われることを示すことも
 // ある（body直後の`until`節は既存のuntilGuardで対応済み。2026-08-29、
 // 連鎖的に発見）。
+// `#Security action a { ... }`（Metadata_valid.sysml(xpect)）のように、
+// `#Type`前置メタデータ注釈を持つこともある（2026-08-29、
+// add_actionusagestmt_flowcontrolnode_prefix_metadata対応中に発見）。
 actionUsageStmt
-    : variability=('variation' | 'variant')? isThen='then'? visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? isRef='ref'? isLoop='loop'? 'action' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
+    : prefixMetadataAnnotation* variability=('variation' | 'variant')? isThen='then'? visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? isRef='ref'? isLoop='loop'? 'action' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       preMult=multiplicitySpec?
       // `action 'provide power': 'Provide Power'{ ... }`（3a-Function-based
