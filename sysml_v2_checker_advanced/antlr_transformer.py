@@ -2236,7 +2236,14 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # 宣言名（キーワード無し形では`endName`がそれを兼ねる）を優先する。
         inner_mult_ctx = None
         for m in ctx.multiplicitySpec():
-            if m is not ctx.endMult:
+            # `end mother ::> woman[1];`（family.sysml）のように、
+            # `directMult`という別のmultiplicitySpec occurrenceが追加された
+            # ため、`type_name`側の内側多重度探索から除外する必要がある
+            # （directMultは直接参照自体の多重度であり、内側型の多重度とは
+            # 別概念。2026-08-29、
+            # add_connectionendmember_directtarget_multiplicity対応中に
+            # 発見）。
+            if m is not ctx.endMult and m is not ctx.directMult:
                 inner_mult_ctx = m
                 break
         id_ctx = ctx.ID()
@@ -2260,6 +2267,10 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         direct_reference = (
             _namespace_path_text(ctx.directTarget) if ctx.directTarget is not None else None
         )
+        # `end mother ::> woman[1];`（family.sysml L204）のように、`::>`
+        # 直接参照の直後に多重度`[1]`が付くこともある（2026-08-29、
+        # add_connectionendmember_directtarget_multiplicity対応中に発見）。
+        direct_reference_mult = self._multiplicity_dict(ctx.directMult)
         # `end item cart: ShoppingCart[1] crosses selectedProduct.inCart;`
         # のように、型節・多重度の後に`crosses`節（対となる相方end側の
         # フィーチャーチェーンパス）を置くこともある（2026-08-29、
@@ -2280,6 +2291,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "redefines": redefines,
             "prefixMetadata": prefix_metadata,
             "reference": direct_reference,
+            **({"referenceMultiplicity": direct_reference_mult} if direct_reference_mult is not None else {}),
             **({"crosses": cross_target} if cross_target is not None else {}),
             # `end :>> source = producer.publicationPort;`
             # （ServerSequenceRealization-2.sysml）のように、redefine節の

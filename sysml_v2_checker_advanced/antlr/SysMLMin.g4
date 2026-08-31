@@ -1132,7 +1132,10 @@ connectionEndMember
       // 発見）。
       ('crosses' crossTarget=qualifiedName)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
-      ( (directKind=('::>' | 'references') directTarget=namespacePath)
+      // `end mother ::> woman[1];`（family.sysml L204）のように、
+      // `::>`直接参照の直後に多重度`[1]`が付くこともある（2026-08-29、
+      // add_connectionendmember_directtarget_multiplicity対応中に発見）。
+      ( (directKind=('::>' | 'references') directTarget=namespacePath directMult=multiplicitySpec?)
       // `end :>> source = producer.publicationPort;`
       // （ServerSequenceRealization-2.sysml）のように、redefine節の
       // ターゲットに`::>`直接参照ではなく`= value`値代入が続くことも

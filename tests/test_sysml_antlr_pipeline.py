@@ -7745,6 +7745,48 @@ def test_antlr_connectionendmember_redefine_and_value_assign():
     assert "value" not in direct_node
 
 
+def test_antlr_connectionendmember_directtarget_multiplicity():
+    """`end mother ::> woman[1];`（family.sysml L204）のように、
+    connectionEndMemberの`::>`直接参照の直後に多重度`[1]`が付くことが
+    ある（従来directTarget直後の多重度は未対応だった）。`directMult`と
+    いう新規ラベルが既存の`type_name`側の内側多重度探索（`endMult`除外
+    ループ）を汚染しないことも確認する。2026-08-29、
+    add_connectionendmember_directtarget_multiplicity対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "connection child : Child { end mother ::> woman[1]; "
+        "end father ::> man[1]; }"
+    )
+    mother, father = ast["children"][0]["children"]
+    assert mother["type"] == "connection_end_member"
+    assert mother["endName"] == "mother"
+    assert mother["reference"] == "woman"
+    assert mother["referenceMultiplicity"] == {
+        "size": {"min": 1, "max": 1}, "is_ordered": False, "is_unique": True
+    }
+    assert mother["multiplicity"] is None
+
+    assert father["reference"] == "man"
+
+    # 既存の多重度無し`::>`直接参照形が引き続き機能することを確認する
+    # （"referenceMultiplicity"キー自体が無いことも確認する）。
+    no_mult_ast = parse_sysml_antlr("connection a: A { end #cause ::> a; }")
+    no_mult_node = no_mult_ast["children"][0]["children"][0]
+    assert no_mult_node["reference"] == "a"
+    assert "referenceMultiplicity" not in no_mult_node
+
+    # 既存の内側型多重度（`type_name`側）が引き続き正しく読めることを
+    # 確認する（directMultとの混同が無いこと）。
+    inner_mult_ast = parse_sysml_antlr(
+        "connection a: A { end item cart: ShoppingCart[1] "
+        "crosses selectedProduct.inCart; }"
+    )
+    inner_mult_node = inner_mult_ast["children"][0]["children"][0]
+    assert inner_mult_node["multiplicity"] == {
+        "size": {"min": 1, "max": 1}, "is_ordered": False, "is_unique": True
+    }
+    assert "referenceMultiplicity" not in inner_mult_node
+
+
 def test_antlr_connectionendmember_leading_multiplicity_and_trailing_postkind():
     """`end [1] item a : A { ... }`・`end ref end1 ::> d1 :> q;`
     （ConnectionTest.sysml L68, L53）のように、connectionEndMemberでは
