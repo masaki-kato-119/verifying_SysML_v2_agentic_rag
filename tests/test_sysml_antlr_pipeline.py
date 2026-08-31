@@ -2073,6 +2073,67 @@ def test_antlr_require_usage_assume_keyword_multiplicity_and_prefix():
     assert prefix_node["prefixMetadata"] == ["goal"]
 
 
+def test_antlr_requireusage_feature_chain_target():
+    """`require vehicleSpecification.vehicleFuelEconomyRequirements;`
+    （VehicleModel_2_Simplified.sysml L314）・`require vehicleSpecification
+    ::vehicleFuelEconomyRequirements;`（VehicleModel.sysml）のように、
+    requireUsageの対象名は単一識別子ではなく`.`/`::`区切りのfeature
+    chainを取ることもある（従来`simpleName`決め打ちだった）。既存の
+    単一識別子形が引き続き機能することも確認する。2026-08-29、
+    add_requireusage_feature_chain_target対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "requirement def R { require vehicleSpecification."
+        "vehicleFuelEconomyRequirements; }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "require_usage"
+    assert node["name"] == "vehicleSpecification::vehicleFuelEconomyRequirements"
+
+    qualified_ast = parse_sysml_antlr(
+        "requirement def R { require vehicleSpecification::"
+        "vehicleFuelEconomyRequirements; }"
+    )
+    qualified_node = qualified_ast["children"][0]["children"][0]
+    assert qualified_node["name"] == "vehicleSpecification::vehicleFuelEconomyRequirements"
+
+    # 既存の単一識別子形が引き続き機能することを確認する。
+    single_ast = parse_sysml_antlr("requirement def R { require c1; }")
+    single_node = single_ast["children"][0]["children"][0]
+    assert single_node["name"] == "c1"
+
+
+def test_antlr_performactionstmt_bare_form_redefine_equals_value():
+    """`perform action2:>> action2 = ActionTree::action0.action2;`
+    （VehicleModel_2_Simplified.sysml）のように、performActionStmtの
+    裸参照形（`action`キーワード無し）にも、`action`キーワード付き形と
+    同様にredefine節の後に`= value`値代入が続くことがある（従来この
+    代替にだけ移植されていなかった）。既存のredefineのみ形（値代入
+    無し）が引き続き機能することも確認する。2026-08-29、
+    add_requireusage_feature_chain_target対応中に連鎖的に発見。"""
+    ast = parse_sysml_antlr(
+        "action def A { perform action2:>> action2 = "
+        "ActionTree::action0.action2; }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "perform_action"
+    assert node["reference"] == "action2"
+    assert node["redefines"] == [{"kind": "redefines", "target": "action2"}]
+    assert node["value"] == {
+        "type": "name_ref",
+        "reference": "ActionTree::action0::action2",
+        "segments": [("ActionTree", None), ("action0", "::"), ("action2", ".")],
+    }
+
+    # 既存のredefineのみ形（値代入無し）が引き続き機能することを確認する
+    # （"value"キー自体が無いことも確認する）。
+    plain_ast = parse_sysml_antlr(
+        "action def A { perform GroundSupportSystem::performCrewIngress "
+        ":>> performCrewIngress; }"
+    )
+    plain_node = plain_ast["children"][0]["children"][0]
+    assert "value" not in plain_node
+
+
 def test_antlr_nary_connect_and_double_colon_gt_references():
     """`#multicausation connect ( cause1 ::> causer1, cause2 ::> causer2,
     effect1 ::> effected1, effect2 ::> effected2 );`

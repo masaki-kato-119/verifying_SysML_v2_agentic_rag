@@ -1172,6 +1172,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 "children": children,
                 **({"isThen": True} if ctx.isThen is not None else {}),
                 **({"variability": ctx.variability.text} if ctx.variability is not None else {}),
+                # `perform action2:>> action2 = ActionTree::action0.action2;`
+                # （VehicleModel_2_Simplified.sysml）のように、この裸参照形
+                # にもredefine節の後に`= value`値代入が続くことがある
+                # （2026-08-29、add_requireusage_feature_chain_target対応中
+                # に連鎖的に発見）。
+                **({"value": self.visit(ctx.value)} if ctx.value is not None else {}),
             }
         # `perform action <名前> redefines <対象> { ... }`という、
         # actionUsageStmtと同型の名前付き・redefines付き・body付き形。
@@ -1544,7 +1550,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return {
             "type": "require_usage",
             "kind": ctx.kind.text,
-            "name": _simple_name_text(ctx.simpleName()),
+            # `require vehicleSpecification.vehicleFuelEconomyRequirements;`
+            # のように、対象名が`.`/`::`区切りのfeature chainを取ることが
+            # ある（2026-08-29、add_requireusage_feature_chain_target
+            # 対応中に発見）。
+            "name": _namespace_path_text(ctx.target),
             "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
             "prefixMetadata": prefix_metadata,
             "children": [self.visit(el) for el in ctx.partBodyElement()],

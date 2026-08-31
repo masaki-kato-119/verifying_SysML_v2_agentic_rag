@@ -958,8 +958,14 @@ verifyRequirementUsage
 // 別形）。`assume c1 [0..*];`（RequirementTest.sysml）のように`assume`
 // キーワードも同じ位置で使われ、多重度（`[...]`）も取りうる（2026-08-28、
 // 730件回帰チェックで発見）。
+// `require vehicleSpecification.vehicleFuelEconomyRequirements;`
+// （VehicleModel_2_Simplified.sysml）・`require vehicleSpecification::
+// vehicleFuelEconomyRequirements;`（VehicleModel.sysml）のように、対象名
+// が単一識別子ではなく`.`/`::`区切りのfeature chainを取ることがある
+// （従来`simpleName`決め打ちだった。2026-08-29、
+// add_requireusage_feature_chain_target対応中に発見）。
 requireUsage
-    : kind=('require' | 'assume') prefixMetadataAnnotation* simpleName multiplicitySpec? ( '{' partBodyElement* '}' | ';' )
+    : kind=('require' | 'assume') prefixMetadataAnnotation* target=namespacePath multiplicitySpec? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // --- interface usage (8.2.2.14) -----------------------------------------------
@@ -2500,8 +2506,15 @@ performActionStmt
     // onOffCmdPort.onOffCmd; }`（Flashlight Example.sysml）のように、
     // 裸参照形にも`action`キーワード付き形と同型のbodyが続くことがある
     // （2026-08-28、730件パース失敗の要因分析で発見）。
+    // `perform action2:>> action2 = ActionTree::action0.action2;`
+    // （VehicleModel_2_Simplified.sysml）のように、この裸参照形（`action`
+    // キーワード無し）にも、`action`キーワード付き形と同様にredefine節の
+    // 後に`= value`値代入が続くことがある（従来この代替にだけ移植されて
+    // いなかった。2026-08-29、add_requireusage_feature_chain_target対応中
+    // に連鎖的に発見）。
     : variability=('variation' | 'variant')? isThen='then'? 'perform' namespacePath
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (('=' | ':=') value=expression)?
       ( '{' actionBodyElement* '}' | ';' )
     // `perform action performLunarMission : PerformLunarMission;`
     // （MissionPackage.sysml）のように、`action`キーワード付き形にも型節が
