@@ -1412,8 +1412,12 @@ stakeholderUsage
 // 型節が`::`修飾名を取ることがある（従来は単一segmentのIDのみで、
 // stakeholderUsage（同型の姉妹規則）とも非対称だった。2026-08-29、
 // 235件パース失敗の要因分析で発見）。
+// `actor #B a;`（SemanticMetadata_valid.sysml(xpect) L38）のように、
+// `#Type`前置メタデータ注釈が`actor`キーワードの直後（名前の前）に
+// 来ることがある（他の多くの規則とは異なり、キーワードより前ではない
+// 位置。2026-08-29、add_generic_tag_def_usage_shorthand対応中に発見）。
 actorUsage
-    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'actor' simpleName?
+    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'actor' prefixMetadataAnnotation* simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       (':' typeRef=namespacePath)?
       multiplicitySpec?

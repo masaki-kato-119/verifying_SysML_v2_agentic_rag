@@ -7802,6 +7802,25 @@ def test_antlr_actorusage_at_package_level():
     assert node["name"] == "Doctor"
 
 
+def test_antlr_actorusage_prefix_metadata_after_keyword():
+    """`actor #B a;`（SemanticMetadata_valid.sysml(xpect) L38）のように、
+    `#Type`前置メタデータ注釈が`actor`キーワードの直後（名前の前）に
+    来ることがある（他の多くの規則とは異なり、キーワードより前ではない
+    位置）。既存のメタデータ無し形が引き続き機能することも確認する。
+    2026-08-29、add_generic_tag_def_usage_shorthand対応中に発見。"""
+    ast = parse_sysml_antlr("requirement def R { actor #B a; }")
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "actor_usage"
+    assert node["name"] == "a"
+    assert node["prefixMetadata"] == ["B"]
+
+    # 既存のメタデータ無し形が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr("use case def U { actor driver : RoadUser; }")
+    plain_node = plain_ast["children"][0]["children"][0]
+    assert plain_node["name"] == "driver"
+    assert plain_node["prefixMetadata"] == []
+
+
 def test_antlr_then_prefix_usecaseusage():
     """`then use case 'drive vehicle' { ... }`（Use Case Usage Example.sysml）
     のように、useCaseUsage自体に`then`前置が無かった（includeUseCaseUsage
