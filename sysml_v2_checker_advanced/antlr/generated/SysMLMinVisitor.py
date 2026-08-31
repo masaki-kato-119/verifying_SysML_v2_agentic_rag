@@ -829,6 +829,11 @@ class SysMLMinVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by SysMLMinParser#allSelectionExpr.
+    def visitAllSelectionExpr(self, ctx:SysMLMinParser.AllSelectionExprContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by SysMLMinParser#nameRefExpr.
     def visitNameRefExpr(self, ctx:SysMLMinParser.NameRefExprContext):
         return self.visitChildren(ctx)

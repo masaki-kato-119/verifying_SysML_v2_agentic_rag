@@ -3172,6 +3172,11 @@ expression
     // 名前付き引数のみ（公式コーパスで確認した3ファイル・5件すべてが
     // この形）。
     | 'new' qualifiedName '(' (newArgument (',' newArgument)*)? ')'  # newExpr
+    // `subject : Engine[1..*] = all engineChoice;`（10b-Trade-off Among
+    // Alternative Configurations.sysml）のように、KerMLの`all <ref>`
+    // コレクション選択式（指定した分類子の全インスタンスを選択）が式文法に
+    // ない（2026-08-29、730件ベースラインの154件エラー要因分析で発見）。
+    | 'all' target=namespacePath                                # allSelectionExpr
     | qualifiedName                                             # nameRefExpr
     // `::`修飾名による式（例: `MeasurementUnit::unitPowerFactors`、
     // `calcParameter`の値束縛`in x = MeasurementUnit::y;`で使用）。既存の

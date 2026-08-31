@@ -3165,6 +3165,25 @@ def test_antlr_new_expr_positional_argument():
     ]
 
 
+def test_antlr_expression_all_selection():
+    """`subject : Engine[1..*] = all engineChoice;`（10b-Trade-off Among
+    Alternative Configurations.sysml L76）のように、KerMLの`all <ref>`
+    コレクション選択式（指定した分類子の全インスタンスを選択）が式文法に
+    無かった。`::`区切りの型参照も受理できることを確認する。2026-08-29、
+    add_expression_all_selection対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "analysis def A { subject : Engine[1..*] = all engineChoice; }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["value"] == {"type": "all_selection", "type_name": "engineChoice"}
+
+    qualified_ast = parse_sysml_antlr(
+        "analysis def A { subject : Engine[1..*] = all Choices::engineChoice; }"
+    )
+    qualified_node = qualified_ast["children"][0]["children"][0]
+    assert qualified_node["value"] == {"type": "all_selection", "type_name": "Choices::engineChoice"}
+
+
 def test_antlr_state_usage_at_package_body_level():
     """d75_state_usage_package_body_element_missing: States.sysmlの
     `abstract state stateActions: StateAction[0..*] nonunique :>

@@ -2708,6 +2708,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "children": [],
         }
 
+    def visitAllSelectionExpr(self, ctx: SysMLMinParser.AllSelectionExprContext) -> Dict:
+        # `all engineChoice`というKerMLのコレクション選択式（指定した分類子
+        # の全インスタンスを選択、2026-08-29、
+        # add_expression_all_selection対応中に発見）。
+        return {"type": "all_selection", "type_name": _namespace_path_text(ctx.target)}
+
     def visitNameRefExpr(self, ctx: SysMLMinParser.NameRefExprContext) -> Dict:
         return {"type": "name_ref", "reference": _qualified_name_text(ctx.qualifiedName())}
 
