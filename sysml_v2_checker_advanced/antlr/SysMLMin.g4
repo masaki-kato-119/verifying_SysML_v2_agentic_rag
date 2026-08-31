@@ -1003,10 +1003,15 @@ interfaceUsage
     // `connect`キーワードすべてを省略した最小形（ドット区切りパス同士を
     // 直接`to`で接続）もある。`connect`キーワード自体を任意化することで
     // 対応する（2026-08-29、235件パース失敗の要因分析で発見）。
+    // `abstract interface i = i1;`（InterfaceTest.sysml）のように、
+    // `connect`節を伴わず既存のinterface usageへ`= value`で直接値代入
+    // することがある（2026-08-29、730件ベースライン154件エラー要因分析
+    // で発見）。
     | isAbstract='abstract'? 'interface' simpleName?
       (':' ID)?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      ('=' value=expression)?
       ( 'connect'? connectorEndPath 'to' connectorEndPath
       | 'connect' '(' naryEnds+=connectorEndPath (',' naryEnds+=connectorEndPath)+ ')'
       )?

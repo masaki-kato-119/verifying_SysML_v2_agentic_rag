@@ -2053,6 +2053,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             # 持ちうる（2026-08-28、730件パース失敗の要因分析で発見）。
             "interface_part": bare_interface_part,
             **({"ends": [self.visit(e) for e in nary_ends]} if nary_ends else {}),
+            # `abstract interface i = i1;`（InterfaceTest.sysml）のように、
+            # `connect`節を伴わず`= value`で直接値代入することがある
+            # （2026-08-29、730件ベースライン154件エラー要因分析で発見）。
+            # 既存のexact-equality辞書テストを壊さないよう、無い場合は
+            # キー自体を省略する。
+            **({"value": self.visit(ctx.value)} if ctx.value is not None else {}),
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 

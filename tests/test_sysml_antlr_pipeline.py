@@ -7332,6 +7332,30 @@ def test_antlr_interfaceusage_nary_connect_form():
     assert [e["reference"] for e in bare_node["ends"]] == ["a::p", "b::q", "c::r"]
 
 
+def test_antlr_interfaceusage_value_assignment():
+    """`abstract interface i = i1;`（InterfaceTest.sysml）のように、
+    `connect`節を伴わず既存のinterface usageへ`= value`で直接値代入
+    することがある（従来interfaceUsageには`= value`代入が無かった）。
+    2026-08-29、730件ベースライン154件エラー要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "part def A { interface i1 : I1; abstract interface i = i1; }"
+    )
+    node = ast["children"][0]["children"][-1]
+    assert node["type"] == "interface_usage"
+    assert node["name"] == "i"
+    assert node["isAbstract"] is True
+    assert node["value"] == {"type": "name_ref", "reference": "i1"}
+    assert node["interface_part"] is None
+
+    # 既存の`connect`節付き形が引き続き機能し、"value"キー自体が無いことを
+    # 確認する（回帰防止）。
+    connect_ast = parse_sysml_antlr(
+        "part def X { interface named : Type connect a.p to b.q; }"
+    )
+    connect_node = connect_ast["children"][0]["children"][0]
+    assert "value" not in connect_node
+
+
 def test_antlr_connectionendmember_redefine_and_direct_reference_combined():
     """`end :>> source ::> producer.publicationPort;`
     （ServerSequenceOutsideRealization-2.sysml）のように、
