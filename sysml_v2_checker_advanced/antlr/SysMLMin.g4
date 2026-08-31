@@ -318,8 +318,11 @@ occurrenceDef
 // `individual occurrence ind : Ind, Occ { ... }`（OccurrenceTest.sysml）の
 // ように、`individual`先頭修飾子も持ちうる（occurrenceDef/partDef等と
 // 同じ設計。2026-08-29、730件ベースライン154件エラー要因分析で発見）。
+// `#cause occurrence 'battery depleted' { ... }`（14c-Language
+// Extensions.sysml）のように、`#Type`前置メタデータ注釈を持つことがある
+// （2026-08-29、add_occurrenceusage_itemdef_prefix_metadata対応中に発見）。
 occurrenceUsage
-    : direction? isIndividual='individual'? isAbstract='abstract'? isConstant='constant'? isRef='ref'? 'occurrence' simpleName?
+    : prefixMetadataAnnotation* direction? isIndividual='individual'? isAbstract='abstract'? isConstant='constant'? isRef='ref'? 'occurrence' simpleName?
       (':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
@@ -1248,8 +1251,12 @@ partDef
 // `public item def A { ... }`（ItemTest.sysml）のように、
 // visibilityIndicatorが付くことがある（partDefと同型のギャップ。
 // 2026-08-29、235件パース失敗の要因分析で発見）。
+// `#fmea item def 'Glucose FMEA Item' { ... }`（14c-Language
+// Extensions.sysml）のように、`#Type`前置メタデータ注釈を持つことがある
+// （portDef/attributeDef等と同型。2026-08-29、
+// add_occurrenceusage_itemdef_prefix_metadata対応中に発見）。
 itemDef
-    : visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? 'item' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : visibilityIndicator? prefixMetadataAnnotation* isIndividual='individual'? isAbstract='abstract'? 'item' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // `ref item :>> localClock : Clock[1] default Time::universalClock { ... }`

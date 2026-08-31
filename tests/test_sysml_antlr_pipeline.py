@@ -3960,6 +3960,35 @@ def test_antlr_occurrence_usage_is_new_clean_shape():
     }
 
 
+def test_antlr_occurrenceusage_itemdef_prefix_metadata():
+    """`#fmea item def 'Glucose FMEA Item' { #cause occurrence 'battery
+    depleted' { ... } }`（14c-Language Extensions.sysml L161-165）の
+    ように、itemDef/occurrenceUsageはどちらも`#Type`前置メタデータ注釈を
+    持つことがある（従来どちらも未対応だった）。既存のメタデータ無し形が
+    引き続き機能することも確認する。2026-08-29、
+    add_occurrenceusage_itemdef_prefix_metadata対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "package P { #fmea item def 'Glucose FMEA Item' { "
+        "#cause occurrence 'battery depleted' { } } }"
+    )
+    item_node = ast["children"][0]
+    assert item_node["type"] == "item_def"
+    assert item_node["prefixMetadata"] == ["fmea"]
+    occ_node = item_node["children"][0]
+    assert occ_node["type"] == "occurrence_usage"
+    assert occ_node["prefixMetadata"] == ["cause"]
+
+    # 既存のメタデータ無し形が引き続き機能することを確認する
+    # （"prefixMetadata"キー自体が無いことも確認する）。
+    plain_item_ast = parse_sysml_antlr("package P { item def A { } }")
+    plain_item = plain_item_ast["children"][0]
+    assert "prefixMetadata" not in plain_item
+
+    plain_occ_ast = parse_sysml_antlr("occurrence A;")
+    plain_occ = plain_occ_ast["children"][0]
+    assert "prefixMetadata" not in plain_occ
+
+
 def test_antlr_occurrence_usage_constant_ref_multiple_redefines():
     """d49_actions_sysml_occurrence_investigation:
     CausationConnections.sysmlの`abstract constant ref occurrence

@@ -231,6 +231,15 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "isAbstract": ctx.isAbstract is not None,
             "isIndividual": ctx.isIndividual is not None,
             "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
+            # `#fmea item def 'Glucose FMEA Item' { ... }`（14c-Language
+            # Extensions.sysml）のような`#Type`前置メタデータ注釈
+            # （2026-08-29、add_occurrenceusage_itemdef_prefix_metadata
+            # 対応中に発見）。
+            **(
+                {"prefixMetadata": [_namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()]}
+                if ctx.prefixMetadataAnnotation()
+                else {}
+            ),
             "children": children,
         }
 
@@ -3406,6 +3415,15 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
             "type_name": type_names[0] if type_names else None,
             **({"type_names": type_names} if len(type_names) > 1 else {}),
+            # `#cause occurrence 'battery depleted' { ... }`（14c-Language
+            # Extensions.sysml）のような`#Type`前置メタデータ注釈
+            # （2026-08-29、add_occurrenceusage_itemdef_prefix_metadata
+            # 対応中に発見）。
+            **(
+                {"prefixMetadata": [_namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()]}
+                if ctx.prefixMetadataAnnotation()
+                else {}
+            ),
             "children": children,
         }
 
