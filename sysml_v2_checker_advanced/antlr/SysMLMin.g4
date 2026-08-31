@@ -1049,7 +1049,13 @@ allocationUsage
         )
       )?
       ( '{' partBodyElement* '}' | ';' )
-    | 'allocate' connectorEndPath 'to' connectorEndPath ';'
+    // `allocate torqueGenerator to powerTrain { allocate
+    // torqueGenerator.generateTorque to powerTrain.engine.generateTorque; }`
+    // （Allocation Usage Example.sysml、12b-Allocation.sysml）のように、
+    // 裸形（第2alt）にもbody（ネストした裸allocate文を含む）を持ちうる
+    // （従来`;`終端のみだった。2026-08-29、730件ベースライン154件エラー
+    // 要因分析で発見）。
+    | 'allocate' connectorEndPath 'to' connectorEndPath ( '{' partBodyElement* '}' | ';' )
     ;
 
 // 本体は他の全ての_def（part_def, item_def, port_def, interface_def等）と

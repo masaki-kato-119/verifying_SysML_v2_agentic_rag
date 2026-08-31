@@ -3000,6 +3000,34 @@ def test_antlr_allocationusage_nary_allocate_form():
     assert "ends" not in binary_node
 
 
+def test_antlr_allocationusage_bare_body():
+    """`allocate torqueGenerator to powerTrain { allocate
+    torqueGenerator.generateTorque to powerTrain.engine.generateTorque; }`
+    （Allocation Usage Example.sysml、12b-Allocation.sysml）のように、
+    allocationUsageの裸形（名前・型節省略の第2alt）にもbody（ネストした
+    裸allocate文を含む）を持ちうる（従来この代替は`;`終端のみだった）。
+    2026-08-29、730件ベースライン154件エラー要因分析で発見。"""
+    ast = parse_sysml_antlr(
+        "part def P { allocate torqueGenerator to powerTrain { "
+        "allocate torqueGenerator.generateTorque to powerTrain.engine.generateTorque; "
+        "} }"
+    )
+    outer = ast["children"][0]["children"][0]
+    assert outer["type"] == "allocation_usage"
+    assert outer["name"] is None
+    assert outer["connector_part"]["from_end"]["reference_subsetting"]["referenced_feature"] == "torqueGenerator"
+    assert len(outer["children"]) == 1
+    inner = outer["children"][0]
+    assert inner["type"] == "allocation_usage"
+    assert inner["connector_part"]["from_end"]["reference_subsetting"]["referenced_feature"] == "torqueGenerator::generateTorque"
+
+    # 既存の`;`終端形（body無し）が引き続き機能することを確認する
+    # （回帰防止）。
+    plain_ast = parse_sysml_antlr("part def P { allocate a to b; }")
+    plain_node = plain_ast["children"][0]["children"][0]
+    assert plain_node["children"] == []
+
+
 def test_antlr_named_multiplicity_binding_connector():
     """d74_named_multiplicity_binding_connector_missing: ShapeItems.sysmlの
     `binding [1] bind [0..*] base.edges = [0..*] be;`（公式コーパス
