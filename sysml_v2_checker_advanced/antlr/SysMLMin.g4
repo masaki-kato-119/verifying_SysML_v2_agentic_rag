@@ -877,9 +877,15 @@ constraintUsage
 // （Drone_BaseArchitecture.sysml）のように、`satisfy`対象の参照名も`::`
 // 修飾を取りうる（simpleNameではなくnamespacePathを使う。2026-08-28、
 // 730件パース失敗の要因分析で発見）。
+// `satisfy r by p;`・`assert satisfy r by q;`・`not satisfy r1 by p;`・
+// `assert not satisfy r1 by q;`（RequirementTest.sysml）のように、
+// `satisfy...by`形自体にも`assert`/`not`前置修飾子が（互いに独立して）
+// 付きうる（従来この代替は前置修飾子を一切持たず、`assert`/`not`は
+// `satisfiedBy`キーワード形にしか無かった。2026-08-29、730件ベースライン
+// 154件エラー要因分析で発見）。
 satisfyRequirementUsage
     : 'assert' ('not')? 'satisfiedBy' ( 'requirement' simpleName ':' ID | simpleName ) ';'
-    | 'satisfy' 'requirement'? nameRef=namespacePath 'by' by=namespacePath ( '{' partBodyElement* '}' | ';' )
+    | ('assert')? ('not')? 'satisfy' 'requirement'? nameRef=namespacePath 'by' by=namespacePath ( '{' partBodyElement* '}' | ';' )
     ;
 
 // `verify requirement : R;`・`verify requirement massRequirement :

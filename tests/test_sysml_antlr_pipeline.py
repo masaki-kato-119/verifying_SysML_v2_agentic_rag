@@ -5022,6 +5022,49 @@ def test_antlr_satisfy_requirement_omitted_keyword_and_qualified_name():
     assert with_keyword_node["name"] == "flr-R001"
 
 
+def test_antlr_assert_satisfy_by_combined_form():
+    """`satisfy r by p;`・`assert satisfy r by q;`・`not satisfy r1 by p;`・
+    `assert not satisfy r1 by q;`（RequirementTest.sysml）のように、
+    `satisfy...by`形自体にも`assert`/`not`前置修飾子が（互いに独立して）
+    付きうる（従来この代替は前置修飾子を一切持たず、`assert`/`not`は
+    別キーワード形`assert (not)? satisfiedBy ...;`にしか無かった）。
+    2026-08-29、730件ベースライン154件エラー要因分析で発見。"""
+    bare_ast = parse_sysml_antlr(
+        "part def P { requirement r : R; satisfy r by p; }\n"
+        "requirement def R;\n"
+    )
+    bare_node = bare_ast["children"][0]["children"][-1]
+    assert bare_node["type"] == "satisfy_requirement_usage"
+    assert bare_node["is_negated"] is False
+    assert bare_node["by"] == "p"
+
+    assert_ast = parse_sysml_antlr(
+        "part def P { requirement r : R; assert satisfy r by q; }\n"
+        "requirement def R;\n"
+    )
+    assert_node = assert_ast["children"][0]["children"][-1]
+    assert assert_node["is_negated"] is False
+    assert assert_node["name"] == "r"
+    assert assert_node["by"] == "q"
+
+    not_ast = parse_sysml_antlr(
+        "part def P { requirement r1 : R1; not satisfy r1 by p; }\n"
+        "requirement def R1;\n"
+    )
+    not_node = not_ast["children"][0]["children"][-1]
+    assert not_node["is_negated"] is True
+    assert not_node["by"] == "p"
+
+    assert_not_ast = parse_sysml_antlr(
+        "part def P { requirement r1 : R1; assert not satisfy r1 by q; }\n"
+        "requirement def R1;\n"
+    )
+    assert_not_node = assert_not_ast["children"][0]["children"][-1]
+    assert assert_not_node["is_negated"] is True
+    assert assert_not_node["name"] == "r1"
+    assert assert_not_node["by"] == "q"
+
+
 def test_antlr_import_statement_inside_typedef_body():
     """`part def Camera { private import PictureTaking::*; ... }`
     （camera.sysml）のように、import文が型定義スコープに閉じた形で使われる
