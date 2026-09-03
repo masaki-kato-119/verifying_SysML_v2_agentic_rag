@@ -324,6 +324,33 @@ def test_antlr_textual_representation_stmt():
     }
 
 
+def test_antlr_textualrepresentationstmt_bare_rep_keyword():
+    """`rep language "C" /* struct DocumentedPart { int id; } */`
+    （dfa-coverage-advanced.sysml L164）のように、`rep`キーワード単体で
+    名前を省略し、直後に`language`を続けることがある（従来
+    `('rep' simpleName)?`が1つの塊として任意化されており、`rep`を使う
+    なら名前も必須と誤って要求していた）。既存の名前付き`rep`形・
+    `rep`無し形が引き続き機能することも確認する。2026-08-31、
+    fix_textualrepresentationstmt_bare_rep_keyword対応中に発見。"""
+    ast = parse_sysml_antlr(
+        'part def P { rep language "C" /* struct P { int id; } */ }'
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "textual_representation"
+    assert node["identification"] is None
+    assert node["language"] == "C"
+
+    # 既存の名前付き`rep`形が引き続き機能することを確認する。
+    named_ast = parse_sysml_antlr(
+        'part def P { rep myRep language "OCL" /* body */ }'
+    )
+    named_node = named_ast["children"][0]["children"][0]
+    assert named_node["identification"] == {"type": "identification", "name": "myRep"}
+
+    # 既存の`rep`無し形（test_antlr_textual_representation_stmt）が
+    # 引き続き機能することは別テストで確認済み。
+
+
 def test_antlr_textualrep_stmt_in_partbodyelement():
     """`assert constraint x_constraint { rep inOCL language "ocl" /* ...
     */ }`・`action def setX { ... language "alf" /* ... */ }`

@@ -436,7 +436,12 @@ textualRepresentationStmt
     // 新設した`locale=STRING_LITERAL`と合わせて`ctx.STRING_LITERAL()`が
     // リストを返すようになり、既存の`ctx.STRING_LITERAL().getText()`呼び
     // 出しと衝突するため。requirementUsageのshortName追加時と同じ問題）。
-    : ('rep' simpleName)? 'language' language=STRING_LITERAL ('locale' locale=STRING_LITERAL)? DOC_COMMENT
+    // `rep language "C" /* ... */`（dfa-coverage-advanced.sysml）のように、
+    // `rep`キーワード単体で名前を省略し、直後に`language`を続ける形も
+    // ある（従来`('rep' simpleName)?`が1つの塊として任意化されており、
+    // `rep`を使うなら名前も必須と誤って要求していた。2026-08-31、
+    // fix_textualrepresentationstmt_bare_rep_keyword対応中に発見）。
+    : 'rep'? simpleName? 'language' language=STRING_LITERAL ('locale' locale=STRING_LITERAL)? DOC_COMMENT
     ;
 
 // 公式コーパスは`doc`/`comment`キーワードを一切伴わない裸の`/* ... */`
