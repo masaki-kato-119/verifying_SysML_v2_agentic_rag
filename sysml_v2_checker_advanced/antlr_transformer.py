@@ -511,12 +511,16 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             kind = "redefines"
         elif kind_token.text == "specializes":
             kind = "specializes"
-        elif kind_token.text == "::>":
+        elif kind_token.text in ("::>", "references"):
             # `#cause causeA ::> a;`（CauseAndEffectExample.sysml）のように、
             # `::>`は`references`キーワードの記号形の同義語であり、
             # subsets/redefinesとは異なるKerMLの関係種別（References）。
             # featureUsageのみがpreKind/postKindの選択肢として持つ
-            # （2026-08-28、発見）。
+            # （2026-08-28、発見）。`perform action takePhoto[*] ordered
+            # references takePicture;`（Action Performance Example.sysml）
+            # のように、performActionStmtは記号形`::>`ではなくtextual形
+            # 'references'キーワード自体を使う（2026-09、参照実装比較
+            # レポートで発見）。
             kind = "references"
         else:
             kind = "subsets"

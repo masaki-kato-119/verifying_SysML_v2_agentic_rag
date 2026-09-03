@@ -7609,6 +7609,37 @@ def test_antlr_performactionstmt_action_form_multiplicity():
     assert plain_node["multiplicity"] is None
 
 
+def test_antlr_performactionstmt_action_form_references_postkind():
+    """`perform action takePhoto[*] ordered\\n\\t\\treferences
+    takePicture;`（Action Performance Example.sysml L10-11）のように、
+    performActionStmtの`action`キーワード付き形のpostKindには`::>`の
+    記号同義語である'references'キーワード自体が含まれていなかった
+    （従来':>'/':>>'/'subsets'/'redefines'のみ）。多重度直後の裸
+    'ordered'修飾子自体は既存のmultiplicitySpecで受理できていたことも
+    確認する。2026-09-03、
+    extend_performactionstmt_ordered_and_references対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "part def P { action takePicture; "
+        "perform action takePhoto[*] ordered references takePicture; }"
+    )
+    node = ast["children"][0]["children"][-1]
+    assert node["type"] == "perform_action"
+    assert node["name"] == "takePhoto"
+    assert node["multiplicity"] == {
+        "size": {"min": "*", "max": "*"},
+        "is_ordered": True,
+        "is_unique": True,
+    }
+    assert node["redefines"] == [{"kind": "references", "target": "takePicture"}]
+
+    # 既存の':>'記号形が引き続き機能することを確認する（回帰防止）。
+    symbol_ast = parse_sysml_antlr(
+        "part def P { action takePicture; perform action takePhoto[*] :> takePicture; }"
+    )
+    symbol_node = symbol_ast["children"][0]["children"][-1]
+    assert symbol_node["redefines"] == [{"kind": "subsets", "target": "takePicture"}]
+
+
 def test_antlr_accept_after_duration_trigger():
     """`then accept sig after 10[SI::s];`（ActionTest.sysml）、
     `accept after 48[h] then normal;`（Change and Time Triggers.sysml）の

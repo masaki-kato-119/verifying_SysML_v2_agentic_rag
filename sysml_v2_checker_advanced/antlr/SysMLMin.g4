@@ -2590,7 +2590,11 @@ performActionStmt
     | variability=('variation' | 'variant')? isThen='then'? 'perform' hasActionKeyword='action' actionName=simpleName?
       mult=multiplicitySpec?
       (':' typeRef=namespacePath)?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      // `perform action takePhoto[*] ordered references takePicture;`
+      // （Action Performance Example.sysml）のように、postKindが`::>`の
+      // 記号同義語である'references'キーワード自体を欠いていた
+      // （2026-09、参照実装比較レポートで発見）。
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | 'references') postTarget+=namespacePathList)*
       // `perform action :>> doXorY = doX;`（7a1-Variant Configuration...-a.sysml）
       // のように、attributeUsageと同様、redefine節の後に`= value`で値代入
       // できる（従来performActionStmtには移植されていなかった。2026-08-29、
