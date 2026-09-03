@@ -2641,8 +2641,11 @@ ifActionStmt
 // `ifActionStmt`と曖昧性なく区別できる。連鎖の意味解釈はbareThenStmt/
 // bareFirstStmtと同じ方針でlinter.py側の仕事とし、本パーサの範囲外と
 // する。参照対象は`::`区切りも実在するため`namespacePath`を使う。
+// `if (true) then action pathA;`（dfa-coverage-advanced.sysml）のように、
+// 遷移先参照の前に`action`キーワードが付くこともある（2026-08-31、
+// add_guardedtargetsuccession_action_prefix_target対応中に発見）。
 guardedTargetSuccessionStmt
-    : 'if' guard=expression 'then' target=namespacePath ';'
+    : 'if' guard=expression 'then' 'action'? target=namespacePath ';'
     ;
 
 defaultTargetSuccessionStmt

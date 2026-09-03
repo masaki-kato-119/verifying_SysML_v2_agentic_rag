@@ -1552,6 +1552,30 @@ def test_antlr_bare_guarded_target_succession_if_then_else():
     assert braced_if["type"] == "if_stmt"
 
 
+def test_antlr_guardedtargetsuccession_action_prefix_target():
+    """`decide; if (true) then action pathA; if (false) then action
+    pathB; merge;`（dfa-coverage-advanced.sysml L210-213）のように、
+    guardedTargetSuccessionStmt（波括弧なしの`if <式> then <参照>;`
+    ガード付きsuccession短縮形）の遷移先参照の前に`action`キーワードが
+    付くこともある（従来`target`はキーワード無しの裸参照のみ
+    受理していた）。既存のキーワード無し形が引き続き機能することも
+    確認する。2026-08-31、
+    add_guardedtargetsuccession_action_prefix_target対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "action def M { decide; if (true) then action pathA; merge; }"
+    )
+    decide, guarded, merge = ast["children"][0]["children"]
+    assert guarded["type"] == "guarded_then_stmt"
+    assert guarded["name"] == "pathA"
+
+    # 既存のキーワード無し形が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr(
+        "action def A { if x == 0 then A2; }"
+    )
+    plain_node = plain_ast["children"][0]["children"][0]
+    assert plain_node["name"] == "A2"
+
+
 def test_antlr_action_usage_stmt_bare_matches_old_lark_shape_loosely():
     """空bodyのbare形は旧Lark実装でも構文エラーにはならないが、旧実装は
     `usage`サブ辞書に包む独自形かつbody内容を常に捨てる（1文でも書くと構文
