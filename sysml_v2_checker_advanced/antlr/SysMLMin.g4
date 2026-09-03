@@ -2788,7 +2788,10 @@ actionUsageStmt
       // ある（従来`ID | QUOTED_NAME`単体決め打ちだったため`namespacePath`
       // へ差し替える。2026-08-29、
       // add_actionusagestmt_qualified_type対応中に発見）。
-      (':' typeRef=namespacePath)?
+      // `action b: ABlock, AnActivity;`（ActionUsage_invalid.sysml）の
+      // ように、型節がカンマ区切りの複数型を取ることがある（従来単一型
+      // のみだった。2026-09、参照実装比較レポートで発見）。
+      (':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
       postMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ('=' value=expression)?

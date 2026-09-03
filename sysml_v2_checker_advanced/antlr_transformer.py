@@ -1352,6 +1352,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # ctx.ID()（無ラベル参照が2箇所になり複数トークンのリストを返す
         # ようになった）ではなくこちらを使う。
         type_ref_ctx = ctx.typeRef
+        # `action b: ABlock, AnActivity;`（ActionUsage_invalid.sysml）の
+        # ように、型節がカンマ区切りの複数型を取ることがある（従来単一型
+        # のみだった。2026-09、参照実装比較レポートで発見）。
+        type_names = (
+            [_namespace_path_text(type_ref_ctx)] if type_ref_ctx is not None else []
+        ) + [_namespace_path_text(t) for t in ctx.extraTypeRefs]
         redefines = self._redefine_list_namespace(ctx.preKind, ctx.preTarget) + self._redefine_list_namespace(
             ctx.postKind, ctx.postTarget
         )
@@ -1361,7 +1367,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "name": _optional_simple_name_text(ctx.simpleName()),
             # `action <'xxx'> Name { ... }`のようなShortName注釈。
             "shortName": ctx.shortName.text if ctx.shortName is not None else None,
-            "type_name": _namespace_path_text(type_ref_ctx) if type_ref_ctx is not None else None,
+            "type_name": type_names[0] if type_names else None,
+            **({"type_names": type_names} if len(type_names) > 1 else {}),
             # `action subfunctions[*] : Function :>> subactions;`（多重度が
             # 型節より先）・通常順の両方があるため、preMult/postMultの
             # どちらか一方（両方同時に現れる実例は無い）を読む。

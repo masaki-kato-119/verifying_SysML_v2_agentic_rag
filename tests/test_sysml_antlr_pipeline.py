@@ -1758,6 +1758,29 @@ def test_antlr_actionusagestmt_qualified_type():
     assert quoted_node["type_name"] == "Provide Power"
 
 
+def test_antlr_actionusagestmt_multitype():
+    """`action b: ABlock, AnActivity;`（ActionUsage_invalid.sysml L18、
+    xpect validation/invalid）のように、actionUsageStmtの型節がカンマ
+    区切りの複数型を取れなかった（従来単一型のみ）。既存の単一型形が
+    引き続き機能することも確認する。2026-09-03、
+    extend_actionusagestmt_multitype対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "action def ABlock; action def AnActivity; action b: ABlock, AnActivity;"
+    )
+    node = ast["children"][2]
+    assert node["type"] == "action_usage"
+    assert node["name"] == "b"
+    assert node["type_name"] == "ABlock"
+    assert node["type_names"] == ["ABlock", "AnActivity"]
+
+    # 既存の単一型形（bareの完全一致辞書）が引き続き機能することを確認する
+    # （"type_names"キー自体が無いことも確認する）。
+    plain_ast = parse_sysml_antlr("action def Act { action retryLoop { x = 1; } }")
+    plain_node = plain_ast["children"][0]["children"][0]
+    assert plain_node["type_name"] is None
+    assert "type_names" not in plain_node
+
+
 def test_antlr_action_usage_stmt_equals_value():
     """d54_bare_action_keyword_feature_usage: Flows.sysmlの`private ref
     action thisConnection = self;`のように、他のusage規則（item/
