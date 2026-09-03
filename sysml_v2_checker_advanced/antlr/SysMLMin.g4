@@ -1347,7 +1347,11 @@ itemUsage
       // 取ることがある（単一`ID`のままでは受理できない。2026-08-28、730件
       // パース失敗の要因分析で発見）。`typeRef`という専用ラベルを使う
       // （_usage_keyword_nodeが自動で読む）。
-      (':' typeRef=namespacePath)?
+      // `item i7: PartDef, AttDef;`（ItemUsage_invalid.sysml）のように、
+      // 型節がカンマ区切りの複数型を取ることがある（従来単一型のみ
+      // だった。extraTypeRefsも_usage_keyword_nodeが自動で読む。2026-09、
+      // 参照実装比較レポートで発見）。
+      (':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
       postMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( 'default' '='? defaultValue=expression | '=' value=expression )?

@@ -4921,6 +4921,30 @@ def test_antlr_item_usage_redefine_with_equals_value():
     assert node["defaultValue"] is None
 
 
+def test_antlr_itemusage_multitype():
+    """`item i7: PartDef, AttDef;`（ItemUsage_invalid.sysml L27、xpect
+    validation/invalid）のように、itemUsageの型節がカンマ区切りの複数型
+    を取れなかった（従来単一型のみ）。既存の単一型形が引き続き機能する
+    ことも確認する。2026-09-03、extend_itemusage_multitype対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "part def PartDef; part def AttDef; item i7: PartDef, AttDef;"
+    )
+    node = ast["children"][2]
+    assert node["type"] == "item_usage"
+    assert node["name"] == "i7"
+    assert node["type_name"] == "PartDef"
+    assert node["type_names"] == ["PartDef", "AttDef"]
+
+    # 既存の単一型形が引き続き機能することを確認する
+    # （"type_names"キー自体が無いことも確認する）。
+    single_ast = parse_sysml_antlr(
+        "part def Box; part def P { item boundingBox : Box [1]; } "
+    )
+    single_node = single_ast["children"][1]["children"][0]
+    assert single_node["type_name"] == "Box"
+    assert "type_names" not in single_node
+
+
 def test_antlr_flow_def_abstract_with_inheritance_and_body():
     """d51_flow_def_missing: Flows.sysmlの`abstract flow def MessageAction
     :> Action, Link { doc ... }`のように、`flow def`という定義形自体が
