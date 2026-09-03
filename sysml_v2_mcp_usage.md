@@ -112,7 +112,38 @@ SysMLファイルの完全解析（パース + リント + AST JSON）を行い�
 - `summary`: 問題の集計
 - `ast_json`: AST JSON文字列
 
-### 7. `get_server_info`
+### 7. `get_semantic_model_file`
+SysMLファイルのSemantic Model（安定ID・元テキスト上の位置・参照エッジ）を取得します。
+
+AST（パース木そのもの）とは別に、再解析に依存しない安定した要素ID
+（`stable_id`）、元テキスト上の範囲（`source_range`）、および
+specialization/feature_typing/connection/satisfy/verify等の参照関係
+（`edges`）を提供します。詳細は `SysMLv2_SemanticModel_拡張仕様書.md`
+（内部文書、非公開）を参照してください。
+
+**パラメータ:**
+- `file_path`: SysMLファイルのパス
+
+**戻り値:**
+- `success`: 成功/失敗
+- `error`: エラーメッセージ（失敗時）
+- `semantic_model`: `{"root_id", "nodes": {stable_id: {type, name, parent_id, source_range, children_ids}}, "edges": [{from_id, to_id, kind, resolved, resolution_status, reference_text}]}`
+- `file_path`: ファイルの絶対パス
+- `file_size`: ファイルサイズ（バイト）
+
+### 8. `get_semantic_model_text`
+SysMLテキストを直接指定してSemantic Modelを取得します（`get_semantic_model_file`のテキスト版）。
+
+**パラメータ:**
+- `sysml_text`: SysMLのテキスト内容
+
+**戻り値:**
+- `success`: 成功/失敗
+- `error`: エラーメッセージ（失敗時）
+- `semantic_model`: `get_semantic_model_file`と同じ形
+- `text_length`: テキスト長（文字数）
+
+### 9. `get_server_info`
 MCPサーバーの情報を取得します。
 
 **戻り値:**
@@ -137,6 +168,8 @@ package TestPackage {
 }
 
 >> SysMLファイルのASTをJSON形式で取得して、RAG用のデータとして使いたいです
+
+>> このSysMLモデルのSemantic Model（要素の安定IDと参照関係）を取得してください
 ```
 
 ### プログラムからの直接呼び出し例

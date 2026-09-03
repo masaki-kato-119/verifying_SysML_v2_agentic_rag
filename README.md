@@ -17,7 +17,9 @@
 
 > **公開インターフェースについて**: このリポジトリが外部に対して保証する公開契約は、
 > 下記の **3 つの MCP サーバ（stdio 経由）** と、SysML v2 Checker が別途エクスポートする
-> Python API（`sysml_v2_checker_advanced.parse_sysml`/`lint_sysml` 等、詳細は同パッケージの
+> Python API（`sysml_v2_checker_advanced.parse_sysml`/`lint_sysml`、
+> `sysml_v2_checker_advanced.antlr_transformer.parse_sysml_with_semantic_model`、
+> `sysml_v2_checker_advanced.semantic_model.build_semantic_model` 等、詳細は同パッケージの
 > docstring 参照）です。`HybridRAG/rag/`・`GraphRAG/graphrag/` 配下の各モジュールは
 > 内部実装であり、シグネチャの安定性は保証されません。
 
@@ -45,6 +47,7 @@
 - **構文チェック**: エラー・警告・情報の検出
 - **AST 生成**: JSON 形式での抽象構文木出力
 - **完全解析**: パース + リント + AST を一括実行
+- **Semantic Model 生成**: 要素の安定ID・元テキスト上の位置・参照関係（specialization/feature_typing/connection/satisfy/verify）を取得（`get_semantic_model_file`/`get_semantic_model_text`。詳細は `sysml_v2_mcp_usage.md`）
 
 ---
 
