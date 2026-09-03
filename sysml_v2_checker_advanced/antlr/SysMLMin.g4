@@ -3098,9 +3098,14 @@ transitionTrigger
 // （単純参照のみ）は再利用せず、この文脈専用に`expression`を使う。
 // また`sendActionStmt`は独自の`;`終端を持つため、`then`まで続く
 // transitionStmt本体には埋め込めない（終端記号が重複してしまう）。
+// `do action undockFromStation : UndockFromStation {in undockCommand = ...;}`
+// （MiningFrigate.sysml）のように、'action'代替は無名参照だけでなく、
+// 型節（':' typeRef）・インライン本体（'{' actionBodyElement* '}'）を
+// 持つ名前付きアクション定義も取りうる（2026-09、参照実装比較レポートで
+// 発見）。
 transitionEffect
     : 'send' payload=expression ( 'to' sendTarget=namespacePath | 'via' sendVia=namespacePath )?
-    | ('action')? effect=namespacePath
+    | ('action')? effect=namespacePath (':' typeRef=namespacePath)? ('{' actionBodyElement* '}')?
     ;
 
 // `then launch { doc /* ... */ }`（MissionPackage.sysml）のように、

@@ -823,7 +823,9 @@ def test_antlr_transition_full_form_with_trigger_guard_effect():
     transition = ast["children"][0]["children"][2]
     assert transition["name"] == "T1"
     assert transition["trigger"] == {"kind": "trigger", "reference": "Trig"}
-    assert transition["effect"] == {"kind": "effect", "action_reference": "Y"}
+    assert transition["effect"] == {
+        "kind": "effect", "action_reference": "Y", "type_name": None, "children": [],
+    }
     guard = transition["guard"]
     assert guard["kind"] == "guard"
     assert guard["expression"] == {
@@ -833,6 +835,46 @@ def test_antlr_transition_full_form_with_trigger_guard_effect():
         "right": {"type": "literal", "literal_type": "int", "value": 0},
     }
     assert lint_ast(ast) == []
+
+
+def test_antlr_transitioneffect_named_typed_action_body():
+    """`do action undockFromStation : UndockFromStation
+    {in undockCommand = pilotPodUndockCommand;}`（MiningFrigate.sysml
+    L69）のように、transitionEffectの'action'代替は無名参照専用で、
+    名前・型節・インライン本体を持つアクション定義形を受理できな
+    かった（entry/do/exitActionMemberと同様の拡張が必要）。既存の
+    無名参照形（'action'あり/なし）が引き続き機能することも確認する。
+    2026-09-03、add_transitioneffect_named_typed_action_body対応中に
+    発見。"""
+    ast = parse_sysml_antlr(
+        "state def S { state def A; state def B; "
+        "transition first A do action undockFromStation : UndockFromStation "
+        "{in undockCommand = pilotPodUndockCommand;} then B; }"
+    )
+    transition = ast["children"][0]["children"][2]
+    effect = transition["effect"]
+    assert effect["kind"] == "effect"
+    assert effect["action_reference"] == "undockFromStation"
+    assert effect["type_name"] == "UndockFromStation"
+    assert len(effect["children"]) == 1
+
+    # 既存の無名参照形（'action'あり）が引き続き機能することを確認する。
+    with_keyword_ast = parse_sysml_antlr(
+        "state def S { state def A; state def B; transition first A do action D then B; }"
+    )
+    with_keyword_effect = with_keyword_ast["children"][0]["children"][2]["effect"]
+    assert with_keyword_effect == {
+        "kind": "effect", "action_reference": "D", "type_name": None, "children": [],
+    }
+
+    # 既存の無名参照形（'action'なし）が引き続き機能することを確認する。
+    without_keyword_ast = parse_sysml_antlr(
+        "state def S { state def A; state def B; transition first A do D then B; }"
+    )
+    without_keyword_effect = without_keyword_ast["children"][0]["children"][2]["effect"]
+    assert without_keyword_effect == {
+        "kind": "effect", "action_reference": "D", "type_name": None, "children": [],
+    }
 
 
 def test_antlr_transition_accept_when_and_at_triggers():
@@ -900,7 +942,9 @@ def test_antlr_implicit_transition_first_omitted():
     assert transition["source"] is None
     assert transition["target"] == "S2"
     assert transition["trigger"] == {"kind": "trigger", "reference": "s", "type_name": "Sig"}
-    assert transition["effect"] == {"kind": "effect", "action_reference": "D"}
+    assert transition["effect"] == {
+        "kind": "effect", "action_reference": "D", "type_name": None, "children": [],
+    }
     assert lint_ast(ast) is not None
 
     accept_then_ast = parse_sysml_antlr("state def S { accept Exit then S1; state S1; }")
@@ -919,7 +963,9 @@ def test_antlr_implicit_transition_first_omitted():
     do_then_transition = do_then_ast["children"][-1]["children"][0]
     assert do_then_transition["trigger"] is None
     assert do_then_transition["guard"] is None
-    assert do_then_transition["effect"] == {"kind": "effect", "action_reference": "D"}
+    assert do_then_transition["effect"] == {
+        "kind": "effect", "action_reference": "D", "type_name": None, "children": [],
+    }
 
     # 既存の`then X;`のみの暗黙初期遷移（initialTransitionMember）とは
     # 曖昧にならず、両立して使える。

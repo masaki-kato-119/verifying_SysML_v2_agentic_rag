@@ -1979,7 +1979,19 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                     },
                 }
             elif effect_ctx.effect is not None:
-                effect = {"kind": "effect", "action_reference": _namespace_path_text(effect_ctx.effect)}
+                # `do action undockFromStation : UndockFromStation
+                # {in undockCommand = ...;}`（MiningFrigate.sysml）のように、
+                # 無名参照だけでなく型節・インライン本体を持つ名前付き
+                # アクション定義も取りうる（entry/do/exitActionMemberと
+                # 同型の設計。2026-09、参照実装比較レポートで発見）。
+                effect = {
+                    "kind": "effect",
+                    "action_reference": _namespace_path_text(effect_ctx.effect),
+                    "type_name": _namespace_path_text(effect_ctx.typeRef)
+                    if effect_ctx.typeRef is not None
+                    else None,
+                    "children": [self.visit(el) for el in effect_ctx.actionBodyElement()],
+                }
 
         return trigger, guard, effect
 
