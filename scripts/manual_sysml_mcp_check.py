@@ -107,13 +107,33 @@ async def test_sysml_mcp():
             
             text_result_raw = await client.call_tool("parse_sysml_text", {"sysml_text": test_sysml_text})
             text_result = text_result_raw.data
-            
+
             if text_result.get("success"):
                 print("✅ テキスト解析成功")
                 print(f"  テキスト長: {text_result.get('text_length')} 文字")
             else:
                 print(f"❌ テキスト解析エラー: {text_result.get('error')}")
-            
+
+            # Semantic Model取得をテスト（stable ID・source range・参照エッジ）
+            print("\n🔍 Semantic Modelの取得をテスト中...")
+            semantic_result_raw = await client.call_tool(
+                "get_semantic_model_text", {"sysml_text": test_sysml_text}
+            )
+            semantic_result = semantic_result_raw.data
+
+            if semantic_result.get("success"):
+                semantic_model = semantic_result.get("semantic_model", {})
+                nodes = semantic_model.get("nodes", {})
+                edges = semantic_model.get("edges", [])
+                print("✅ Semantic Model取得成功")
+                print(f"  root_id: {semantic_model.get('root_id')}")
+                print(f"  ノード数: {len(nodes)}")
+                print(f"  エッジ数: {len(edges)}")
+                for stable_id, entry in list(nodes.items())[:5]:
+                    print(f"    - {stable_id} ({entry.get('type')})")
+            else:
+                print(f"❌ Semantic Model取得エラー: {semantic_result.get('error')}")
+
             print("\n🎉 全てのテストが完了しました！")
             
     except ImportError as e:

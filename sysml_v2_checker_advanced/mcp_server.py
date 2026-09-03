@@ -21,6 +21,10 @@ from fastmcp import FastMCP  # noqa: E402
 # 前者が失敗する状況(パッケージ自体が壊れている等)では後者も同じ原因で
 # 失敗するため、実質デッドコードだった(SYSML_CHECKER_STANDALONE_AUDIT参照)。
 from sysml_v2_checker_advanced.parser import lint_sysml, parse_sysml  # noqa: E402
+from sysml_v2_checker_advanced.semantic_model import (  # noqa: E402
+    build_semantic_model,
+    semantic_model_to_json_dict,
+)
 from sysml_v2_checker_advanced.utils import ast_to_json  # noqa: E402
 
 # MCPサーバーインスタンスを作成
@@ -360,10 +364,101 @@ def analyze_sysml_complete(file_path: str) -> Dict[str, Any]:
         }
 
 @mcp.tool()
+def get_semantic_model_file(file_path: str) -> Dict[str, Any]:
+    """
+    SysMLファイルのSemantic Modelを取得（stable ID・source range・参照エッジ）
+
+    AST（パース木そのもの）と異なり、Semantic Modelは各要素へ再解析に依存しない
+    安定したID（stable_id）、元テキスト上の位置（source_range）、および
+    specialization/feature_typing/connection/satisfy/verify等の参照エッジを
+    付与した索引（SysMLv2_SemanticModel_拡張仕様書.md 4,6,7,8章）。
+    Viewer等でテキスト⇔図の同期やトレーサビリティを実現する土台。
+
+    Args:
+        file_path: SysMLファイルのパス
+
+    Returns:
+        Semantic Model（ノード索引・エッジ）とメタデータを含む辞書
+    """
+    try:
+        path = Path(file_path)
+        if not path.exists():
+            return {
+                "success": False,
+                "error": f"ファイル '{file_path}' が見つかりません",
+                "semantic_model": None
+            }
+
+        text = path.read_text(encoding="utf-8")
+        ast, model = build_semantic_model(text)
+
+        if ast.get("type") == "error":
+            return {
+                "success": False,
+                "error": f"パースエラー: {ast.get('message')}",
+                "semantic_model": None
+            }
+
+        return {
+            "success": True,
+            "error": None,
+            "semantic_model": semantic_model_to_json_dict(model),
+            "file_path": str(path.absolute()),
+            "file_size": len(text)
+        }
+
+    # MCPツール境界: 想定外の例外もクライアントへのエラー応答に変換するため意図的に広く捕捉する
+    except Exception as e:  # noqa: BLE001
+        return {
+            "success": False,
+            "error": f"予期しないエラー: {str(e)}",
+            "semantic_model": None
+        }
+
+@mcp.tool()
+def get_semantic_model_text(sysml_text: str) -> Dict[str, Any]:
+    """
+    SysMLテキストのSemantic Modelを直接取得（stable ID・source range・参照エッジ）
+
+    get_semantic_model_fileと同じSemantic Model（拡張仕様書4,6,7,8章）を、
+    ファイルではなくテキストから直接構築する。
+
+    Args:
+        sysml_text: SysMLのテキスト内容
+
+    Returns:
+        Semantic Model（ノード索引・エッジ）とメタデータを含む辞書
+    """
+    try:
+        ast, model = build_semantic_model(sysml_text)
+
+        if ast.get("type") == "error":
+            return {
+                "success": False,
+                "error": f"パースエラー: {ast.get('message')}",
+                "semantic_model": None
+            }
+
+        return {
+            "success": True,
+            "error": None,
+            "semantic_model": semantic_model_to_json_dict(model),
+            "text_length": len(sysml_text)
+        }
+
+    # MCPツール境界: 想定外の例外もクライアントへのエラー応答に変換するため意図的に広く捕捉する
+    except Exception as e:  # noqa: BLE001
+        return {
+            "success": False,
+            "error": f"予期しないエラー: {str(e)}",
+            "semantic_model": None
+        }
+
+@mcp.tool()
 def get_server_info() -> Dict[str, Any]:
     """
     SysML v2 Advanced Checker MCPサーバーの情報を取得
-    
+
     Returns:
         サーバー情報を含む辞書
     """
@@ -376,15 +471,18 @@ def get_server_info() -> Dict[str, Any]:
             "SysMLテキストの直接パース",
             "構文チェック（リント）",
             "AST生成（JSON形式）",
-            "完全解析（パース + リント + AST）"
+            "完全解析（パース + リント + AST）",
+            "Semantic Model生成（stable ID・source range・参照エッジ）"
         ],
         "tools": [
             "parse_sysml_file",
-            "parse_sysml_text", 
+            "parse_sysml_text",
             "lint_sysml_file",
             "lint_sysml_text",
             "get_ast_json",
             "analyze_sysml_complete",
+            "get_semantic_model_file",
+            "get_semantic_model_text",
             "get_server_info"
         ]
     }

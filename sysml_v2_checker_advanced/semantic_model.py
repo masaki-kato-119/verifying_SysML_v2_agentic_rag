@@ -247,3 +247,33 @@ def build_semantic_model(text: str, known_external_types: Optional[Set[str]] = N
 
     model["edges"] = build_relation_edges(ast, model["nodes"], known_external_types=known_external_types)
     return ast, model
+
+
+def semantic_model_to_json_dict(semantic_model: Dict) -> Dict:
+    """semantic_model（{"nodes", "root_id", "edges"}）をJSON化可能なdictへ変換する（拡張仕様書10章）。
+
+    各ノードの `"node"`（生のASTノードへのPython参照）はJSON化できないため除外し、
+    代わりに `"children_ids"`（`parent_id`が自分と一致する他ノードのstable_id一覧）を
+    computed fieldとして追加する。完全なノード内容（属性値等）が必要な場合は、
+    `element_id` を既存の `get_ast_json` の出力と突き合わせて参照する想定
+    （ast自体は既存ツールで既に取得可能なため、ここでは重複させない）。
+    """
+    children_by_parent: Dict[Optional[str], List[str]] = {}
+    for stable_id, entry in semantic_model["nodes"].items():
+        children_by_parent.setdefault(entry["parent_id"], []).append(stable_id)
+
+    nodes_json = {}
+    for stable_id, entry in semantic_model["nodes"].items():
+        nodes_json[stable_id] = {
+            "type": entry["type"],
+            "name": entry["name"],
+            "parent_id": entry["parent_id"],
+            "source_range": entry["source_range"],
+            "children_ids": children_by_parent.get(stable_id, []),
+        }
+
+    return {
+        "root_id": semantic_model["root_id"],
+        "nodes": nodes_json,
+        "edges": semantic_model["edges"],
+    }

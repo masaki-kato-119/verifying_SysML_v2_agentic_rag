@@ -18,6 +18,8 @@ EXPECTED_TOOLS = {
     "lint_sysml_text",
     "get_ast_json",
     "analyze_sysml_complete",
+    "get_semantic_model_file",
+    "get_semantic_model_text",
     "get_server_info",
 }
 
@@ -70,3 +72,21 @@ async def test_analyze_sysml_complete_round_trip(sysml_client):
 
     assert result.data["success"] is True
     assert "ast_json" in result.data
+
+
+async def test_get_semantic_model_text_round_trip(sysml_client):
+    result = await sysml_client.call_tool("get_semantic_model_text", {"sysml_text": VALID_SYSML_TEXT})
+
+    assert result.data["success"] is True
+    semantic_model = result.data["semantic_model"]
+    assert semantic_model["root_id"] == "$root"
+    assert "$root::SimplePart" in semantic_model["nodes"]
+    assert semantic_model["nodes"]["$root::SimplePart"]["type"] == "part_def"
+    assert isinstance(semantic_model["edges"], list)
+
+
+async def test_get_semantic_model_text_parse_error(sysml_client):
+    result = await sysml_client.call_tool("get_semantic_model_text", {"sysml_text": "this is not valid sysml {{{"})
+
+    assert result.data["success"] is False
+    assert result.data["semantic_model"] is None
