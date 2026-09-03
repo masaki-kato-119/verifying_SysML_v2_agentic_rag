@@ -3405,7 +3405,13 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         }
 
     def visitPortionUsageStmt(self, ctx: SysMLMinParser.PortionUsageStmtContext) -> Dict:
-        redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
+        # `snapshot leftFrontWheel_t0 : Wheel_1 :>> leftFrontWheel;`
+        # （Individuals and Roles-1.sysml）のように、型節・多重度の後にも
+        # redefine節を持ちうる（従来型節の前(preKind)にしか無かった。
+        # 2026-09、参照実装比較レポートで発見）。
+        redefines = self._redefine_list_namespace(ctx.preKind, ctx.preTarget) + self._redefine_list_namespace(
+            ctx.postKind, ctx.postTarget
+        )
         return {
             "type": "portion_usage",
             "kind": ctx.kind.text,

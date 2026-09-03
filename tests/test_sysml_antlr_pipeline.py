@@ -4172,6 +4172,35 @@ def test_antlr_portion_usage_redefine_clause_and_type():
     assert node["type_name"] == "Apollo11MissionContext"
 
 
+def test_antlr_portionusagestmt_posttype_redefine():
+    """`snapshot leftFrontWheel_t0 : Wheel_1 :>> leftFrontWheel;`
+    （Individuals and Roles-1.sysml L15、同型がL19）のように、
+    portionUsageStmtは型節（':' typeRef）より前（preKind、旧postKind
+    ラベル）にしかredefine節を持たず、型節の後（postKind）のredefine
+    節に未対応だった。既存の型節前のredefine節形が引き続き機能する
+    ことも確認する（回帰防止）。2026-09-03、
+    add_portionusagestmt_posttype_redefine対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "part def Wheel_1; part def P { part leftFrontWheel : Wheel_1; "
+        "snapshot leftFrontWheel_t0 : Wheel_1 :>> leftFrontWheel; }"
+    )
+    node = ast["children"][1]["children"][1]
+    assert node["type"] == "portion_usage"
+    assert node["name"] == "leftFrontWheel_t0"
+    assert node["type_name"] == "Wheel_1"
+    assert node["redefines"] == [{"kind": "redefines", "target": "leftFrontWheel"}]
+
+    # 既存の型節前のredefine節形が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr(
+        "part def P { part apollo11MissionSystem; "
+        "snapshot missionSystemAtIngress :> apollo11MissionSystem { } }"
+    )
+    plain_node = plain_ast["children"][0]["children"][1]
+    assert plain_node["redefines"] == [
+        {"kind": "subsets", "target": "apollo11MissionSystem"}
+    ]
+
+
 def test_antlr_perform_action_bare_with_redefine():
     """`perform GroundSupportSystem::performCrewIngress :>> performCrewIngress;`
     （Apollo11MissionExecutionPackage.sysml）のように、`action`キーワードを

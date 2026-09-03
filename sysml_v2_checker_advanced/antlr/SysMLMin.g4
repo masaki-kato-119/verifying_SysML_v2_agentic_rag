@@ -270,7 +270,7 @@ portionUsageStmt
       // と同様のredefine節（`:>`/`:>>`/subsets/redefines）を持ちうる。
       // P0-2対応時に本体・多重度・値代入・then連鎖は追加したがこの節を
       // 見落としていた（2026-08-28、730件回帰チェックで発見）。
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
       // `snapshot groundSystemAtIngress :> context : Apollo11MissionContext
       // { ... }`のように、redefine節の後に型節も持ちうる。
       (':' typeRef=namespacePath)?
@@ -279,6 +279,11 @@ portionUsageStmt
       // 付きうる（partUsage/actionUsageStmtと同型のpreMult/postMult順序、
       // 2026-08-28、730件パース失敗の要因分析で発見）。
       postMult=multiplicitySpec?
+      // `snapshot leftFrontWheel_t0 : Wheel_1 :>> leftFrontWheel;`
+      // （Individuals and Roles-1.sysml）のように、型節・多重度の後にも
+      // redefine節を持ちうる（従来型節の前(preKind、旧postKindラベル)
+      // にしか無かった。2026-09、参照実装比較レポートで発見）。
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ('=' value=expression)?
       ( '{' partBodyElement* '}' | ';' )
     ;
