@@ -116,6 +116,11 @@ packageBodyElement
     | bindingConnector
     | successionStmt
     | actionUsageStmt
+    // `perform b;`・`perform b.a;`（ActionUsage_invalid.sysml、package
+    // トップレベル直下）のように、performActionStmtはpartBodyElement内
+    // には登録済みだがpackageBodyElementには未登録だった（2026-09、
+    // 参照実装比較レポートで発見）。
+    | performActionStmt
     | dependencyStmt
     | eventOccurrenceUsageStmt
     | exhibitStateUsageStmt

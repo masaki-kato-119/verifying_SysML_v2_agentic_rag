@@ -7242,6 +7242,31 @@ def test_antlr_packagebodyelement_bare_filter_stmt():
     }
 
 
+def test_antlr_performactionstmt_at_package_body_level():
+    """`perform b;`・`perform b.a;`（ActionUsage_invalid.sysml L24,35、
+    xpect validation/invalid、packageトップレベル直下）のように、
+    performActionStmtはpartBodyElement内には登録済みだがpackage
+    BodyElement（package/topLevelElement直下）には未登録だった。既存の
+    partBodyElement内perform文が引き続き機能することも確認する。
+    2026-09-03、add_performactionstmt_to_packagebodyelement対応中に
+    発見。"""
+    ast = parse_sysml_antlr(
+        "action def B; ref b : B; perform b; perform b.a;"
+    )
+    bare_node = ast["children"][2]
+    assert bare_node["type"] == "perform_action"
+    assert bare_node["reference"] == "b"
+    dotted_node = ast["children"][3]
+    assert dotted_node["type"] == "perform_action"
+    assert dotted_node["reference"] == "b::a"
+
+    # 既存のpartBodyElement内perform文が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr("action def B; part def P { ref b : B; perform b; }")
+    plain_node = plain_ast["children"][1]["children"][-1]
+    assert plain_node["type"] == "perform_action"
+    assert plain_node["reference"] == "b"
+
+
 def test_antlr_bracket_multiplicity_after_type_clause():
     """`timeslice asPresident : Person [0..*] { ... }`（型節の後に多重度）・
     `timeslice item UnitedStatesWhenJohnIsPresident[*] : UnitedStates
