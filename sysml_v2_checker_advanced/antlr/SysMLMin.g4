@@ -1081,8 +1081,12 @@ interfaceUsage
 // connectionUsage/interfaceUsageと同じ`naryEnds`設計）も取りうる
 // （2026-08-29、add_interfaceusage_nary_connect_form対応中に連鎖的に
 // 発見）。
+// `allocation :P allocate b to c;`（AllocationUsage_Invalid.sysml）の
+// ように、名前を省略して型節から直接始める無名allocation usageも
+// ある（他の多くのUsage規則と同様simpleNameを省略可能にする。2026-09、
+// 参照実装比較レポートで発見）。
 allocationUsage
-    : isAbstract='abstract'? 'allocation' simpleName
+    : isAbstract='abstract'? 'allocation' simpleName?
       ( ':' ID )?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*

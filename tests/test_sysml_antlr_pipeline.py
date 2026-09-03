@@ -3449,6 +3449,31 @@ def test_antlr_allocationusage_bare_body():
     assert plain_node["children"] == []
 
 
+def test_antlr_allocationusage_optional_name():
+    """`allocation :P allocate b to c;`（AllocationUsage_Invalid.sysml
+    L21、同型がL23,25、xpect validation/invalid）のように、
+    allocationUsageの第1代替（'allocation'キーワード付き形）は
+    simpleNameが必須で、名前を省略して型節`:P`から直接始める無名形を
+    受理できなかった。既存の名前付き形が引き続き機能することも確認する。
+    2026-09-03、fix_allocationusage_optional_name対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "part def P; part b; part c; allocation :P allocate b to c;"
+    )
+    node = ast["children"][3]
+    assert node["type"] == "allocation_usage"
+    assert node["name"] is None
+    assert node["type_name"] == "P"
+    assert node["connector_part"]["from_end"]["reference_subsetting"]["referenced_feature"] == "b"
+
+    # 既存の名前付き形が引き続き機能することを確認する。
+    named_ast = parse_sysml_antlr(
+        "part def P; part b; part c; allocation myAlloc : P allocate b to c;"
+    )
+    named_node = named_ast["children"][3]
+    assert named_node["name"] == "myAlloc"
+    assert named_node["type_name"] == "P"
+
+
 def test_antlr_named_multiplicity_binding_connector():
     """d74_named_multiplicity_binding_connector_missing: ShapeItems.sysmlの
     `binding [1] bind [0..*] base.edges = [0..*] be;`（公式コーパス
