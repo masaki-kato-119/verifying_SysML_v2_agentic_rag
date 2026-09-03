@@ -6757,6 +6757,28 @@ def test_antlr_view_expose_and_filter():
     }
 
 
+def test_antlr_viewusage_quoted_type_ref():
+    """`view batmobileParts : 'Part list' { ... }`（DontPanic-SysMLv2-
+    Batmobile.sysml L252）・`view 'vehicle structure view' : 'Part
+    Structure View' { ... }`（Views Example.sysml L11）のように、
+    viewUsageの型節が記号を含む名前をQUOTED_NAME形式で書いた型参照を
+    取ることがある（従来`ID`単体決め打ちだった）。既存のID型が引き続き
+    機能することも確認する。2026-08-31、add_viewusage_quoted_type_ref
+    対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "part def P { view batmobileParts : 'Part list' { } }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "view_usage"
+    assert node["name"] == "batmobileParts"
+    assert node["type_name"] == "Part list"
+
+    # 既存のID型が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr("part def P { view v : Ordinary { } }")
+    plain_node = plain_ast["children"][0]["children"][0]
+    assert plain_node["type_name"] == "Ordinary"
+
+
 def test_antlr_packagebodyelement_bare_filter_stmt():
     """`package 'Safety Features' { public import vehicle::**; filter
     @Safety; }`（Filtering Example-1.sysml）のように、`filterStmt`は

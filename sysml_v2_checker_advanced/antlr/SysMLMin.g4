@@ -629,10 +629,16 @@ viewDef
 // redefinition機能一式（visibility・ref・名前省略・型節+多重度・pre/post
 // redefine節）を持つ。`view vw specializes V1;`のように`specializes`
 // キーワードも使うため、case等の規則と同様`specializes`を含める。
+// `view batmobileParts : 'Part list' { ... }`（DontPanic-SysMLv2-
+// Batmobile.sysml）・`view 'vehicle structure view' : 'Part Structure
+// View' { ... }`（Views Example.sysml）のように、型節が記号を含む名前を
+// QUOTED_NAME形式で書いた型参照を取ることがある（他の多くの規則で
+// 既に行っているID→QUOTED_NAME許容拡張と同型。2026-08-31、
+// add_viewusage_quoted_type_ref対応中に発見）。
 viewUsage
     : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'view' simpleName?
       (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
-      (':' ID)?
+      (':' typeRef=(ID | QUOTED_NAME))?
       multiplicitySpec?
       (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )
