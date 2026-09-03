@@ -3941,6 +3941,32 @@ def test_antlr_dependency_single_and_multi_client_supplier():
     }
 
 
+def test_antlr_dependencystmt_body():
+    """`dependency DependsOnBaseArchitecture from DSRE to DSBA
+    { doc /* ... */ }`（The-SysMLv2-Book-DroneSystemModel-Example.sysml
+    L24）のように、dependencyStmtは末尾が`;`必須で、他の多くの規則と
+    同様の`{ ... }`本体形に未対応だった。既存の`;`終端形が引き続き
+    機能することも確認する。2026-09-03、add_dependencystmt_body対応中に
+    発見。"""
+    ast = parse_sysml_antlr(
+        "part def DSRE; part def DSBA; "
+        "dependency DependsOnBaseArchitecture from DSRE to DSBA "
+        "{ doc /* explains the dependency */ }"
+    )
+    dependency = ast["children"][-1]["children"][0]
+    assert dependency["type"] == "dependency"
+    assert dependency["clients"] == ["DSRE"]
+    assert dependency["suppliers"] == ["DSBA"]
+    assert len(dependency["children"]) == 1
+    assert dependency["children"][0]["type"] == "documentation"
+
+    # 既存の`;`終端形が引き続き機能することを確認する（"children"キーが
+    # 空リストのままであることも確認する）。
+    semi_ast = parse_sysml_antlr("part def A; part def B; dependency A to B;")
+    semi_dependency = semi_ast["children"][-1]["children"][0]
+    assert semi_dependency["children"] == []
+
+
 def test_antlr_dependency_prefix_metadata_annotation():
     """`#refinement dependency X to Y;`のような#Typeプレフィックスメタデータ
     注釈（2026-08-28、参照実装比較レポートP0-4で発見。apollo-11-sysml-v2の

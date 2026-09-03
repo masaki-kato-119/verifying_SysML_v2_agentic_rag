@@ -3345,12 +3345,16 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         prefix_metadata = [
             _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
         ]
+        # `dependency DependsOnBaseArchitecture from DSRE to DSBA
+        # { doc /* ... */ }`（The-SysMLv2-Book-DroneSystemModel-Example.sysml）
+        # のように、`;`終端の代わりに`{ partBodyElement* }`本体を持つ
+        # ことがある（2026-09、参照実装比較レポートで発見）。
         dependency_node = {
             "type": "dependency",
             "clients": clients,
             "suppliers": suppliers,
             "prefixMetadata": prefix_metadata,
-            "children": [],
+            "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
         return {"type": "special_stmt", "children": [dependency_node]}
 

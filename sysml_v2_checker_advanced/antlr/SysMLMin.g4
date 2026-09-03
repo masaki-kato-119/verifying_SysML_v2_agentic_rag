@@ -168,8 +168,12 @@ prefixMetadataAnnotation
 // 無名dependency文にも`from`節が付く（名前と`from`が常にペアという
 // 従来の前提を外し、両者を独立に任意とする。2026-08-28、730件パース失敗の
 // 要因分析で発見）。
+// `dependency DependsOnBaseArchitecture from DSRE to DSBA { doc /* ... */ }`
+// （The-SysMLv2-Book-DroneSystemModel-Example.sysml）のように、末尾が
+// `;`単一ではなく他の多くの規則と同様の`{ ... }`本体形も取りうる
+// （2026-09、参照実装比較レポートで発見）。
 dependencyStmt
-    : prefixMetadataAnnotation* 'dependency' simpleName? 'from'? clients=namespacePathList 'to' suppliers=namespacePathList ';'
+    : prefixMetadataAnnotation* 'dependency' simpleName? 'from'? clients=namespacePathList 'to' suppliers=namespacePathList ( '{' partBodyElement* '}' | ';' )
     ;
 
 // --- event occurrence usage (8.2.2.9) -------------------------------------------
