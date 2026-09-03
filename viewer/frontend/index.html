@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<title>SysML v2 Viewer</title>
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div id="layout">
+    <div id="explorer" class="pane">
+      <h2>Explorer</h2>
+      <div id="explorer-tree"></div>
+    </div>
+    <div id="text-editor" class="pane">
+      <h2>SysML v2 Text</h2>
+      <div id="monaco-container"></div>
+    </div>
+    <div id="diagram" class="pane">
+      <h2>Diagram</h2>
+      <div id="diagram-container"></div>
+    </div>
+    <div id="inspector" class="pane">
+      <h2>Inspector</h2>
+      <div id="inspector-content">要素を選択してください</div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs/loader.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
