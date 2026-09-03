@@ -3247,6 +3247,11 @@ implicitTransitionStmt
 expression
     : '-' expression                                            # unaryMinusExpr
     | 'not' expression                                          # notExpr
+    // `filter ~(as A).z;`・`x = ~3;`（MetadataUsage_Invalid.sysml）のように、
+    // KerMLのUnaryExpressionには'-'/'not'に加えて'~'（ビット否定/補数）
+    // 単項演算子もある（従来'~'はportUsage等の型節の共役修飾専用だった。
+    // 2026-09、参照実装比較レポートで発見）。
+    | '~' expression                                            # bitwiseNotExpr
     | expression '#' '(' expression ')'                         # indexExpr
     // `(that as Action).this`（Actions.sysml）・`(that as Occurrence)`・
     // `(edges#(i).vertices#(2) as Item).matingOccurrences`

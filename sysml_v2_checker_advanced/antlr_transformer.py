@@ -2701,6 +2701,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
     def visitNotExpr(self, ctx: SysMLMinParser.NotExprContext) -> Dict:
         return {"type": "unary_expr", "op": "not", "operand": self.visit(ctx.expression())}
 
+    def visitBitwiseNotExpr(self, ctx: SysMLMinParser.BitwiseNotExprContext) -> Dict:
+        # `filter ~(as A).z;`・`x = ~3;`（MetadataUsage_Invalid.sysml）
+        # というKerMLのビット否定/補数単項演算子（2026-09、参照実装比較
+        # レポートで発見）。
+        return {"type": "unary_expr", "op": "~", "operand": self.visit(ctx.expression())}
+
     def visitParenExpr(self, ctx: SysMLMinParser.ParenExprContext) -> Dict:
         # 括弧はグルーピングのみの意味なので、内側の式をそのまま返す。
         return self.visit(ctx.expression())

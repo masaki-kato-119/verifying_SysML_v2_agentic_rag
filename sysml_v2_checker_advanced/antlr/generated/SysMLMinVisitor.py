@@ -739,6 +739,11 @@ class SysMLMinVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by SysMLMinParser#bitwiseNotExpr.
+    def visitBitwiseNotExpr(self, ctx:SysMLMinParser.BitwiseNotExprContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by SysMLMinParser#parenExpr.
     def visitParenExpr(self, ctx:SysMLMinParser.ParenExprContext):
         return self.visitChildren(ctx)

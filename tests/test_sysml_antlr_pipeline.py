@@ -72,6 +72,34 @@ def test_antlr_unary_minus_binds_tighter_than_relational():
     }
 
 
+def test_antlr_bitwise_not_unary_operator():
+    """`filter ~(as A).z;`、`x = ~3;`（MetadataUsage_Invalid.sysml L18,33、
+    xpect validation/invalid）のように、KerMLのUnaryExpressionには
+    '-'（unaryMinusExpr）/'not'（notExpr）に加えて'~'（ビット否定/補数）
+    単項演算子があるが、expression規則に'~'単項が未定義だった（従来
+    '~'はportUsage等の型節の共役修飾専用）。既存の共役型節用法・
+    '-'/'not'単項が引き続き機能することも確認する。2026-09-03、
+    add_expression_tilde_unary_operator対応中に発見。"""
+    ast = parse_sysml_antlr("attribute x = ~3;")
+    node = ast["children"][0]
+    assert node["value"] == {
+        "type": "unary_expr",
+        "op": "~",
+        "operand": {"type": "literal", "literal_type": "int", "value": 3},
+    }
+
+    # 既存の型節の共役('~')修飾が引き続き機能することを確認する
+    # （expressionの単項'~'と衝突しないことの確認）。
+    conjugated_ast = parse_sysml_antlr("part def P { port p2 : ~P; }")
+    conjugated_node = conjugated_ast["children"][0]["children"][0]
+    assert conjugated_node["type_name"] == "~P"
+
+    # 既存の'-'/'not'単項が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr("attribute x = -3; attribute y = not true;")
+    assert plain_ast["children"][0]["value"]["op"] == "-"
+    assert plain_ast["children"][1]["value"]["op"] == "not"
+
+
 def test_antlr_parenthesized_expression_overrides_precedence():
     ast = parse_sysml_antlr("constraint def C { (x + 1) * 2 == 3; }")
     expr = ast["children"][0]["children"][0]["expression"]
