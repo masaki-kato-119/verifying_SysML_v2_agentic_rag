@@ -797,6 +797,18 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 "multiplicity": self._multiplicity_dict(ctx.typeMult),
                 "isAbstract": ctx.isAbstract is not None,
                 "redefines": redefines,
+                # `flow : FuelFlow of Fuel from tankAssy... to eng...;`
+                # （Flow Definition Example.sysml）のように、型節を持つこの
+                # 代替も`of`ペイロード型節・`from...to`端点節を併用できる
+                # （2026-09、参照実装比較レポートで発見）。既存の
+                # `"item_type" not in def_node`という既存exact-equality
+                # 前提（test_antlr_flowusage_of_type_multiplicity）を壊さ
+                # ないよう、無い場合はキー自体を省略する。
+                **({"item_type": ctx.ofType.text} if ctx.ofType is not None else {}),
+                **({"from_end": _namespace_path_text(ctx.fromEnd)} if ctx.fromEnd is not None else {}),
+                **({"to_end": _namespace_path_text(ctx.toEnd)} if ctx.toEnd is not None else {}),
+                **({"item_multiplicity": self._multiplicity_dict(ctx.ofMult)} if ctx.ofMult is not None else {}),
+                **({"item_name": _simple_name_text(ctx.ofName)} if ctx.ofName is not None else {}),
                 "children": [self.visit(el) for el in ctx.partBodyElement()],
             }
         # fromEnd/toEndは`.`/`::`混在パスを受理する`namespacePath`

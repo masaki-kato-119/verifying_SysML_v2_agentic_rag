@@ -2213,6 +2213,16 @@ flowUsage
       // 発見・対応）。
       (':' typeRef=namespacePath)?
       typeMult=multiplicitySpec?
+      // `flow : FuelFlow of Fuel from tankAssy... to eng...;`
+      // （Flow Definition Example.sysml）・`flow fuelTransfer : FuelFlow
+      // from system.a.outPort to system.b.inPort;`（comprehensive_data_loss.sysml）
+      // のように、型節を持つこの代替も第1代替と同じ`of`ペイロード型節・
+      // `from...to`端点節を併用できる（2026-09、参照実装比較レポートで
+      // 発見）。
+      ( 'of' (ofName=simpleName ':')? ofType=ID ofMult=multiplicitySpec? )?
+      ( 'from' fromEnd=namespacePath 'to' toEnd=namespacePath
+      | fromEnd=namespacePath 'to' toEnd=namespacePath
+      )?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )
     ;

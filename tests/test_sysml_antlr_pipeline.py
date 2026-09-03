@@ -8639,6 +8639,40 @@ def test_antlr_flowusage_of_type_multiplicity():
     assert "item_type" not in def_node
 
 
+def test_antlr_flowusage_typed_alt_of_and_fromto():
+    """`flow : FuelFlow of Fuel from tankAssy.fuelTankPort.fuelSupply to
+    eng.engineFuelPort.fuelSupply;`（Flow Definition Example.sysml
+    L16）・`flow fuelTransfer : FuelFlow from system.a.outPort to
+    system.b.inPort;`（comprehensive_data_loss.sysml L236）のように、
+    flowUsageの型節を持つ代替（第2代替）は`of`ペイロード型節・
+    `from...to`端点節を併用できなかった（従来postKindとbodyのみ）。
+    既存の型定義形（of/from-to無し）が引き続き機能することも確認する
+    （test_antlr_flowusage_of_type_multiplicityの回帰防止と重複）。
+    2026-09-03、extend_flowusage_typed_of_and_fromto対応中に発見。"""
+    of_ast = parse_sysml_antlr(
+        "part def Fuel; part def FuelFlow; part def P { "
+        "flow : FuelFlow of Fuel from tankAssy.fuelTankPort.fuelSupply "
+        "to eng.engineFuelPort.fuelSupply; }"
+    )
+    of_node = of_ast["children"][2]["children"][0]
+    assert of_node["type"] == "flow_usage"
+    assert of_node["type_name"] == "FuelFlow"
+    assert of_node["item_type"] == "Fuel"
+    assert of_node["from_end"] == "tankAssy::fuelTankPort::fuelSupply"
+    assert of_node["to_end"] == "eng::engineFuelPort::fuelSupply"
+
+    named_ast = parse_sysml_antlr(
+        "part def FuelFlow; part def P { flow fuelTransfer : FuelFlow "
+        "from system.a.outPort to system.b.inPort; }"
+    )
+    named_node = named_ast["children"][1]["children"][0]
+    assert named_node["name"] == "fuelTransfer"
+    assert named_node["type_name"] == "FuelFlow"
+    assert named_node["from_end"] == "system::a::outPort"
+    assert named_node["to_end"] == "system::b::inPort"
+    assert "item_type" not in named_node
+
+
 def test_antlr_then_prefix_stateusage():
     """`then state wait;`（AssignmentTest.sysml）のように、stateUsage自体
     に`then`前置が無かった（他の多くの規則（performActionStmt等）では
