@@ -1708,6 +1708,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "name": _optional_simple_name_text(ctx.simpleName()),
             "visibility": visibility_ctx.getText() if visibility_ctx is not None else None,
             "isFlow": True,
+            # `succession flow of Command from receive to validate;`
+            # （dfa-coverage-advanced.sysml）のように、flowUsageと同型の
+            # ペイロード型節`of Type`を持つこともある（2026-08-31、
+            # add_successionusageflow_of_type_clause対応中に発見）。
+            **({"item_type": _namespace_path_text(ctx.itemType)} if ctx.itemType is not None else {}),
             "fromEnd": _namespace_path_text(ctx.fromEnd),
             "toEnd": _namespace_path_text(ctx.toEnd),
             "children": [],

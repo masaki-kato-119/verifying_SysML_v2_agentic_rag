@@ -2945,7 +2945,13 @@ successionUsage
     // 短縮形もある（flowUsageの`from`省略bare形と同型のギャップ。
     // 2026-08-29、add_nested_packagedef_in_partbody対応中に連鎖的に
     // 発見）。
+    // `succession flow of Command from receive to validate;`
+    // （dfa-coverage-advanced.sysml）のように、flowUsageと同様のペイロード
+    // 型節`of Type`を持つこともある（従来この代替は型節を一切持たな
+    // かった。2026-08-31、add_successionusageflow_of_type_clause対応中に
+    // 発見）。
     | visibilityIndicator? 'succession' 'flow' simpleName?
+      ( 'of' itemType=namespacePath )?
       ( 'from' fromEnd=namespacePath 'to' toEnd=namespacePath
       | fromEnd=namespacePath 'to' toEnd=namespacePath
       ) ';'                                                             # successionUsageFlow

@@ -4879,6 +4879,32 @@ def test_antlr_successionusageflow_bare_from_omitted():
     assert explicit_node["fromEnd"] == "a::x"
 
 
+def test_antlr_successionusageflow_of_type_clause():
+    """`succession flow of Command from receive to validate;`
+    （dfa-coverage-advanced.sysml L134-135）のように、successionUsageの
+    `succession flow`複合キーワード形はflowUsageと同様のペイロード型節
+    `of Type`を持つこともある（従来この代替は型節を一切持たなかった）。
+    既存の型節無し形が引き続き機能することも確認する。2026-08-31、
+    add_successionusageflow_of_type_clause対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "action def A { action receive; action validate; "
+        "succession flow of Command from receive to validate; }"
+    )
+    node = ast["children"][0]["children"][-1]
+    assert node["type"] == "succession_usage"
+    assert node["item_type"] == "Command"
+    assert node["fromEnd"] == "receive"
+    assert node["toEnd"] == "validate"
+
+    # 既存の型節無し形が引き続き機能することを確認する
+    # （"item_type"キー自体が無いことも確認する）。
+    plain_ast = parse_sysml_antlr(
+        "part def B { succession flow x.p to a1.aa.receiver; }"
+    )
+    plain_node = plain_ast["children"][0]["children"][-1]
+    assert "item_type" not in plain_node
+
+
 def test_antlr_power_expression():
     """d59_ampersand_caret_operators_lexer_missing: SI.sysmlの`s^-1`・
     ShapeItems.sysmlの`Triangle::length^2 + Triangle::width^2`のように、
