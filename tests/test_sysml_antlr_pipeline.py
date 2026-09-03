@@ -7519,6 +7519,55 @@ def test_antlr_messageusage_redefine_qualified_type_clause():
     assert value_node["value"]["type"] == "name_ref"
 
 
+def test_antlr_messageusage_type_clause_with_of_and_multitype():
+    """`message heatExchange : Interfaces::HeatFlow of Interfaces::Heat
+    from environment.msgHeatSend to droneSystem.msgHeatReceive;`
+    （The-SysMLv2-Book-DroneSystemModel-Example.sysml L92）、`message :
+    F, G from b to c;`（FlowConnectionUsage_Invalid.sysml L26、xpect
+    validation/invalid）のように、messageUsage先頭の型節が`':' ID`と
+    `'of' ...`の排他選択しか持たず、`::`修飾型参照・複数型・`of`との
+    併用のいずれにも対応できなかった。既存の`': ID'`単独形・`'of'`単独形
+    が引き続き機能することも確認する。2026-09-03、
+    extend_messageusage_type_clause対応中に発見。"""
+    both_ast = parse_sysml_antlr(
+        "part def HeatFlow; part def Heat; part def P { "
+        "message heatExchange : HeatFlow of Heat "
+        "from environment.msgHeatSend to droneSystem.msgHeatReceive; }"
+    )
+    both_node = both_ast["children"][2]["children"][0]
+    assert both_node["type"] == "message_usage"
+    assert both_node["type_name"] == "HeatFlow"
+    assert both_node["payload_type"] == "Heat"
+    assert both_node["from_end"] == "environment::msgHeatSend"
+    assert both_node["to_end"] == "droneSystem::msgHeatReceive"
+
+    multitype_ast = parse_sysml_antlr(
+        "part def F; part def G; message : F, G from b to c;"
+    )
+    multitype_node = multitype_ast["children"][2]
+    assert multitype_node["type_name"] == "F"
+    assert multitype_node["type_names"] == ["F", "G"]
+    assert "payload_type" not in multitype_node
+
+    # 既存の`': ID'`単独形が引き続き機能することを確認する。
+    id_ast = parse_sysml_antlr(
+        "part def P { message messages : Message; } item def Message;"
+    )
+    id_node = id_ast["children"][0]["children"][0]
+    assert id_node["type_name"] == "Message"
+    assert "payload_type" not in id_node
+
+    # 既存の`'of'`単独形が引き続き機能することを確認する
+    # （type_nameがpayload型を兼ねる後方互換）。
+    of_ast = parse_sysml_antlr(
+        "part def P { message publish_message of Pkg::Publish[1]; } "
+        "item def Publish;"
+    )
+    of_node = of_ast["children"][0]["children"][0]
+    assert of_node["type_name"] == "Pkg::Publish"
+    assert "payload_type" not in of_node
+
+
 def test_antlr_flowusage_named_payload_of_clause_omitted_name():
     """`flow of fuel : Fuel from pump.fuelOutPort.fuel to
     vehicle.fuelInPort.fuel;`（3d-Function-based Behavior-item.sysml

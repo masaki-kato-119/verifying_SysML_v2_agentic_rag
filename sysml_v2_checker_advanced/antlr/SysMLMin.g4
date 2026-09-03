@@ -2651,8 +2651,16 @@ messageStmt
 // (:>>)の後に`= value`値代入を持つこともある（attributeUsage/portUsageと
 // 同型。2026-08-29、add_messageusage_redefine_equals_value対応中に発見）。
 messageUsage
+    // `message heatExchange : Interfaces::HeatFlow of Interfaces::Heat
+    // from environment.msgHeatSend to droneSystem.msgHeatReceive;`
+    // （The-SysMLv2-Book-DroneSystemModel-Example.sysml）・`message : F, G
+    // from b to c;`（FlowConnectionUsage_Invalid.sysml）のように、先頭の
+    // 型節が(1)`::`修飾型参照・カンマ区切り複数型を取り、(2)`of`ペイロード
+    // 型節と併用できる（従来`':' ID`と`'of' ...`が排他的代替で、`':'`側は
+    // 単一IDのみだった。2026-09、参照実装比較レポートで発見）。
     : isThen='then'? isAbstract='abstract'? 'message' messageName=simpleName?
-      ( ':' ID | 'of' (payloadName=simpleName ':')? payloadType=namespacePath )?
+      (':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
+      ('of' (payloadName=simpleName ':')? payloadType=namespacePath)?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       // `message :>> publish_message: Transfers::MessageTransfer { ... }`

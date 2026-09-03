@@ -2505,21 +2505,35 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # `abstract message messages: Message[0..*] nonunique :> transfers,
         # actions { ... }`（Flows.sysml）という、`from`/`to`を伴わない
         # 裸の`message`usage形。
-        id_ctx = ctx.ID()
         redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
-        # `of Publish[1]`というペイロード型節（2026-08-28、参照実装比較
-        # レポートP2-1で発見）。`: ID`形との排他的代替。
-        if ctx.payloadType is not None:
-            type_name = _namespace_path_text(ctx.payloadType)
-        elif id_ctx is not None:
-            type_name = id_ctx.getText()
+        # `message heatExchange : Interfaces::HeatFlow of Interfaces::Heat
+        # from ...;`（The-SysMLv2-Book-DroneSystemModel-Example.sysml）の
+        # ように、先頭の`':' typeRef`型節と`'of' ...`ペイロード型節を
+        # 併用できる（従来排他的代替だった。2026-09、参照実装比較レポート
+        # で発見）。`': F, G'`のようにtypeRef側がカンマ区切り複数型を
+        # 取ることもある。
+        payload_type = _namespace_path_text(ctx.payloadType) if ctx.payloadType is not None else None
+        if ctx.typeRef is not None:
+            type_names = [_namespace_path_text(ctx.typeRef)] + [
+                _namespace_path_text(t) for t in ctx.extraTypeRefs
+            ]
+            type_name = type_names[0]
+        elif payload_type is not None:
+            # `message publish_message of Publish[1];`（17b-Sequence-Modeling.sysml）
+            # のように、先頭型節が無く`of`ペイロード型節のみの場合は、
+            # 既存の後方互換のためtype_nameにpayload型を反映する
+            # （2026-08-28、参照実装比較レポートP2-1で発見）。
+            type_names = [payload_type]
+            type_name = payload_type
         # `message :>> publish_message: Transfers::MessageTransfer { ... }`
         # （ServerSequenceRealization-2.sysml）のように、redefine節の
         # postTargetの直後に修飾名の型節が続くこともある（2026-08-31、
         # add_messageusage_redefine_qualified_type_clause対応中に発見）。
         elif ctx.postTypeRef is not None:
-            type_name = _namespace_path_text(ctx.postTypeRef)
+            type_names = [_namespace_path_text(ctx.postTypeRef)]
+            type_name = type_names[0]
         else:
+            type_names = []
             type_name = None
         # `message Statement1 of applicableLaw : ApplicableLaw from ...;`
         # のように、`of`節が「名前:型」のnamed payload形を取ることがある。
@@ -2532,6 +2546,13 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "type": "message_usage",
             "name": _optional_simple_name_text(ctx.messageName),
             "type_name": type_name,
+            **({"type_names": type_names} if len(type_names) > 1 else {}),
+            # `message heatExchange : Interfaces::HeatFlow of
+            # Interfaces::Heat from ...;`のように、先頭型節と`of`ペイロード
+            # 型節が両方現れる場合のみ、ペイロード型を`payload_type`として
+            # 別途持たせる（`of`単独時は既存通り`type_name`がpayload型を
+            # 兼ねるため、このキー自体を省略する）。
+            **({"payload_type": payload_type} if payload_type is not None and ctx.typeRef is not None else {}),
             **({"payload_name": _simple_name_text(ctx.payloadName)} if ctx.payloadName is not None else {}),
             "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
             "isAbstract": ctx.isAbstract is not None,
