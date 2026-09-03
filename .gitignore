@@ -1,0 +1,63 @@
+# Reference implementation vendor assets (large downloaded binaries; see
+# eval/sysml_reference/reference_driver.py for how to re-fetch and rebuild
+# them). Not tracked in the repo to avoid bloating it.
+eval/sysml_reference/vendor/*.conda
+eval/sysml_reference/vendor/_extracted/
+eval/sysml_reference/vendor/*.class
+eval/sysml_reference/sysml.library/
+eval/sysml_reference/__pycache__/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.Python
+
+# --- ���z�� ---
+venv/
+.venv/
+
+# --- �L���b�V�� / �c�[�� ---
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# --- �@����� ---
+.env
+.env.*
+*.key
+secrets.json
+
+# --- �����f�[�^ / �C���f�b�N�X�i�Đ����\�E����j ---
+data/
+GraphRAG/data/
+HybridRAG/data/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite3
+*.pkl
+
+# --- ���s���O ---
+logs/
+*.log
+
+# --- ��e�ʂ̊O������ ---
+*.pdf
+
+# --- �ꎞ�t�@�C�� ---
+*.bak
+*~
+
+# --- Claude Code ���[�J���ݒ�E���[�N�c���[ ---
+.claude/settings.local.json
+.claude/worktrees/
+
+# --- 内部文書（社外非公開） ---
+SysMLv2_SemanticModel_拡張仕様書.md
+SysMLv2_SemanticModel_作業計画書.md
+SysMLv2_Viewer_構想書.md
+SysML_Language_Specification_v2.pdf
