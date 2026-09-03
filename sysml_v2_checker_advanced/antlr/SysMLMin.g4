@@ -900,7 +900,11 @@ calculationUsage
       // Analysis.sysml）のように、型節がQUOTED_NAME型参照を取ることも
       // ある（従来`ID`決め打ちだった。2026-08-29、
       // add_calculationusage_quoted_type_ref対応中に発見）。
-      (':' typeRef=(ID | QUOTED_NAME) (',' extraTypeRefs+=(ID | QUOTED_NAME))*)?
+      // `calc f4: A::f1;`（CalculationUsage_Invalid1.sysml）のように、
+      // '::'区切りの型参照も取りうる（従来ID/QUOTED_NAME単一セグメント
+      // のみだった。requirementUsageと同じnamespacePathに拡張。2026-09、
+      // 参照実装比較レポートで発見）。
+      (':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ( '{' calcBodyElement* '}' | ';' )

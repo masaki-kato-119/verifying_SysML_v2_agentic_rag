@@ -682,6 +682,34 @@ def test_antlr_calculationusage_quoted_type_ref():
     assert multi_node["type_names"] == ["F1", "F2"]
 
 
+def test_antlr_calculationusage_double_colon_type_ref():
+    """`calc f4: A::f1;`（CalculationUsage_Invalid1.sysml L26、xpect
+    validation/invalid）のように、calculationUsageの型節はID/QUOTED_NAME
+    単一セグメントのみで、'::'区切りの型参照を受理できなかった
+    （requirementUsageと同じnamespacePathに拡張）。既存のID型・
+    QUOTED_NAME型・カンマ区切り複数型が引き続き機能することも確認する。
+    2026-09-03、extend_calculationusage_namespacepath_type対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "part def A { calc f1; } calc f4: A::f1;"
+    )
+    node = ast["children"][1]
+    assert node["type"] == "calculation_usage"
+    assert node["name"] == "f4"
+    assert node["type_name"] == "A::f1"
+
+    # 既存のQUOTED_NAME型が引き続き機能することを確認する。
+    quoted_ast = parse_sysml_antlr(
+        "part def P { calc 'Solve for Pressure1' : 'Ideal Gas Law'; }"
+    )
+    quoted_node = quoted_ast["children"][0]["children"][0]
+    assert quoted_node["type_name"] == "Ideal Gas Law"
+
+    # 既存のID型・カンマ区切り複数型が引き続き機能することを確認する。
+    multi_ast = parse_sysml_antlr("part def P { calc f1 : F1, F2; }")
+    multi_node = multi_ast["children"][0]["children"][0]
+    assert multi_node["type_names"] == ["F1", "F2"]
+
+
 def test_antlr_statebodyelement_bare_constraint():
     """`constraint { DurationOf(maintenance) <= 48 [h] }`（Time
     Constraints.sysml、state本体内）のように、`assertConstraintUsage`は
