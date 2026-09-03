@@ -32,6 +32,8 @@ dependencies = [
     # wheel が無くソースビルドに落ちる（Windows・非ASCIIパス環境ではビルド自体が
     # 失敗する）ため、1.x に固定する方が実害が大きいと判断した。
     "numpy>=1.26",
+    "fastapi>=0.115",         # SysML v2 Viewer バックエンドAPI（viewer/backend/）
+    "uvicorn>=0.30",          # 同上、ASGIサーバー
 ]
 
 [project.optional-dependencies]
