@@ -131,6 +131,33 @@ def _unquote_text(text: str) -> str:
 class SysMLMinASTVisitor(SysMLMinVisitor):
     """パース木の各ノードをAST dictに組み立てる。"""
 
+    def __init__(self):
+        super().__init__()
+        # Semantic Model基盤（SysMLv2_SemanticModel_拡張仕様書.md 5.1章）。
+        # visitXxx群が返すASTノードdict自体は一切書き換えず、id(node)をキーに
+        # 元のctx（ParserRuleContext）を退避するだけの副作用。stable_id/
+        # source_rangeの計算はparse_sysml_with_semantic_model()側の別パスで
+        # このマップを使って行う（visit()はpost-orderで呼ばれるため、visit()の
+        # 中では親のstable_idがまだ決まっておらずここでは計算できない）。
+        self._ctx_by_node_id: Dict[int, object] = {}
+
+    def visit(self, tree):
+        node = super().visit(tree)
+        if isinstance(node, dict) and "type" in node:
+            self._register(tree, node)
+        return node
+
+    def _register(self, ctx, node: Dict) -> None:
+        """visit()ディスパッチを経由しない箇所からctxを明示的に紐付ける口。
+
+        `*_stmt`ラッパー内で組み立てるinnerノード（flow_from_stmt等）や
+        `_binary_part()`の結果（interface_part/connector_part）は、
+        自身が`self.visit()`の戻り値そのものにならない（他ノードの
+        入れ子フィールド値になる）ため、visit()のオーバーライドだけでは
+        ctxが登録されない。拡張仕様書5.2章のカバレッジギャップへの対応。
+        """
+        self._ctx_by_node_id[id(node)] = ctx
+
     # --- フェーズ1 ---------------------------------------------------------
 
     def visitModel(self, ctx: SysMLMinParser.ModelContext) -> Dict:
@@ -754,7 +781,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "segments": _namespace_path_segments(ctx.namespacePath()),
         }
 
-    def _binary_part(self, part_type: str, from_ctx, to_ctx) -> Dict:
+    def _binary_part(self, part_type: str, from_ctx, to_ctx, span_ctx=None) -> Dict:
         """interface_usage/allocation_usageの `interface_part`/`connector_part` を組み立てる。
 
         linter.pyの _check_interface_usage / _check_allocation_usage が読む
@@ -764,6 +791,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         またはConnectorEndPathContext（namespacePath、`::`混在対応）のいずれか
         （2026-08-28、investigate_connectorend_coloncolonでinterfaceUsage/
         allocationUsageをconnectorEndPathへ切り替えたため両対応にした）。
+
+        `span_ctx`（呼び出し元のinterfaceUsage/allocationUsage自体のctx）を
+        渡すと、戻り値をSemantic Modelのソースレンジ収集対象として登録する
+        （拡張仕様書5.2章。戻り値はvisit()ディスパッチの直接の戻り値には
+        ならず入れ子フィールド値になるため、visit()のオーバーライドだけでは
+        捕捉できない）。省略時（span_ctx=None）は従来通り登録しない。
         """
 
         def _end(ctx):
@@ -774,7 +807,10 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 reference = _namespace_path_text(ctx.namespacePath())
             return {"reference_subsetting": {"referenced_feature": reference}}
 
-        return {"type": part_type, "from_end": _end(from_ctx), "to_end": _end(to_ctx)}
+        result = {"type": part_type, "from_end": _end(from_ctx), "to_end": _end(to_ctx)}
+        if span_ctx is not None:
+            self._register(span_ctx, result)
+        return result
 
     # --- フェーズ2: flow -------------------------------------------------------
 
@@ -1843,6 +1879,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "to_port": _qualified_name_text(ctx.toPath),
             "children": [],
         }
+        self._register(ctx, flow_node)
         return {"type": "flow_stmt", "children": [flow_node]}
 
     def visitActionFlowShort(self, ctx: SysMLMinParser.ActionFlowShortContext) -> Dict:
@@ -1852,6 +1889,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "to_port": _qualified_name_text(ctx.toPath),
             "children": [],
         }
+        self._register(ctx, flow_node)
         return {"type": "flow_stmt", "children": [flow_node]}
 
     def visitEntryActionMember(self, ctx: SysMLMinParser.EntryActionMemberContext) -> Dict:
@@ -2270,7 +2308,10 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         nary_ends = ctx.naryEnds
         if ctx.typeRef is not None:
             ends = ctx.connectorEndPath()
-            interface_part = self._binary_part("binary_interface_part", ends[0], ends[1]) if len(ends) == 2 else None
+            interface_part = (
+                self._binary_part("binary_interface_part", ends[0], ends[1], span_ctx=ctx)
+                if len(ends) == 2 else None
+            )
             # `interface original: FuelInterface, FuelInterface2 connect
             # tankAssy.fuelTankPort to eng.engineFuelPort;`
             # （InterfaceUsage_Invalid.sysml）のように、型節がカンマ区切りの
@@ -2297,7 +2338,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
         bare_ends = ctx.connectorEndPath()
         bare_interface_part = (
-            self._binary_part("binary_interface_part", bare_ends[0], bare_ends[1])
+            self._binary_part("binary_interface_part", bare_ends[0], bare_ends[1], span_ctx=ctx)
             if len(bare_ends) == 2 else None
         )
         return {
@@ -2340,6 +2381,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             **({"filter": filter_expr} if filter_expr is not None else {}),
             "children": [],
         }
+        self._register(ctx, expose_node)
         return {"type": "special_stmt", "children": [expose_node]}
 
     def visitFilterStmt(self, ctx: SysMLMinParser.FilterStmtContext) -> Dict:
@@ -2352,6 +2394,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "expression": self.visit(ctx.expression()),
             "children": [],
         }
+        self._register(ctx, filter_node)
         return {"type": "special_stmt", "children": [filter_node]}
 
     # --- フェーズ2続き: type def --------------------------------------------------
@@ -2507,7 +2550,10 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             ends_field = [self.visit(e) for e in nary_ends]
         else:
             ends = ctx.connectorEndPath()
-            connector_part = self._binary_part("binary_connector_part", ends[0], ends[1]) if len(ends) == 2 else None
+            connector_part = (
+                self._binary_part("binary_connector_part", ends[0], ends[1], span_ctx=ctx)
+                if len(ends) == 2 else None
+            )
             ends_field = None
         name_ctx = ctx.simpleName()
         type_ctx = ctx.ID()
@@ -3071,6 +3117,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "prefixMetadata": prefix_metadata,
             "children": children,
         }
+        self._register(ctx, inner)
         return {"type": "constraint_stmt", "children": [inner]}
 
     # --- フェーズ2続き: case / analysis case / verification case / use case ---------
@@ -3436,6 +3483,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "prefixMetadata": prefix_metadata,
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
+        self._register(ctx, dependency_node)
         return {"type": "special_stmt", "children": [dependency_node]}
 
     def visitEventOccurrenceUsageStmt(self, ctx: SysMLMinParser.EventOccurrenceUsageStmtContext) -> Dict:
@@ -3711,11 +3759,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         }
 
 
-def parse_sysml_antlr(text: str) -> Dict:
-    """ANTLR4（SysMLMin.g4）でパースする。
+def _parse_to_tree(text: str):
+    """字句・構文解析のみを行い、(tree, errors) を返す共通処理。
 
-    範囲外の構文はparse_sysml()と同じ{"type": "error", "message": "..."}形式で
-    失敗を報告する。
+    parse_sysml_antlr()とparse_sysml_with_semantic_model()の両方から使う。
+    ここを共有することで、両者の構文解析結果（成功/エラー判定）が
+    食い違うことがないようにする。
     """
     input_stream = InputStream(text)
     error_listener = _CollectingErrorListener()
@@ -3730,8 +3779,127 @@ def parse_sysml_antlr(text: str) -> Dict:
     parser.addErrorListener(error_listener)
 
     tree = parser.model()
+    return tree, error_listener.errors
 
-    if error_listener.errors:
-        return {"type": "error", "message": "; ".join(error_listener.errors)}
+
+def parse_sysml_antlr(text: str) -> Dict:
+    """ANTLR4（SysMLMin.g4）でパースする。
+
+    範囲外の構文はparse_sysml()と同じ{"type": "error", "message": "..."}形式で
+    失敗を報告する。
+    """
+    tree, errors = _parse_to_tree(text)
+
+    if errors:
+        return {"type": "error", "message": "; ".join(errors)}
 
     return SysMLMinASTVisitor().visit(tree)
+
+
+def _extract_source_range(ctx) -> Dict:
+    """ParserRuleContextからsource_rangeを取り出す（拡張仕様書7章）。
+
+    ctx.stopはANTLRのエラー回復パスでNoneのままルールが確定することが
+    あるため、その場合はctx.startで代用する（構想書12-6 Graceful incompleteness）。
+    """
+    start = ctx.start
+    stop = ctx.stop if ctx.stop is not None else start
+    return {
+        "start_line": start.line,
+        "start_column": start.column,
+        "end_line": stop.line,
+        "end_column": stop.column,
+        "start_offset": start.start,
+        "end_offset": stop.stop,
+    }
+
+
+def _assign_semantic_ids(
+    value,
+    ctx_by_node_id: Dict[int, object],
+    parent_id,
+    sibling_counters: Dict,
+    nodes: Dict[str, Dict],
+    is_root: bool = False,
+) -> None:
+    """astを走査し、元のノードdictを一切書き換えずに、並行するnodesテーブルへ
+    stable_id・source_range・parent_idを積む（拡張仕様書4,6.1章）。
+
+    命名規則:
+    - ルート（is_root=True）は "$root" 固定
+    - name（真値）を持つノードは "parent_id::name"。同一親内に同名ノードが
+      複数存在する場合（SysML上合法なオーバーロード等）は、発見順に
+      "parent_id::name#2", "#3", ... を付与する（2026-09-03、P2-0でユーザー
+      確認の上確定。拡張仕様書6.2章）
+    - name を持たないノードは "parent_id/type#同種同親内での出現順インデックス"
+      （出現順は同一入力に対しては決定的だが、兄弟ノードの増減で
+      ずれうる既知の制約。拡張仕様書6.2章参照）
+
+    "type"キーを持たないdict（multiplicityのsize等、ノードでなく単なる
+    値の入れ子）はノードとして登録せず、現在のparent_id/sibling_countersを
+    引き継いだまま透過的に子孫を探索する。
+    """
+    if isinstance(value, dict):
+        if "type" in value:
+            node_type = value["type"]
+            name = value.get("name")
+            if is_root:
+                stable_id = "$root"
+            elif name:
+                base_id = f"{parent_id}::{name}"
+                if base_id not in nodes:
+                    stable_id = base_id
+                else:
+                    suffix = 2
+                    while f"{base_id}#{suffix}" in nodes:
+                        suffix += 1
+                    stable_id = f"{base_id}#{suffix}"
+            else:
+                key = (parent_id, node_type)
+                index = sibling_counters.get(key, 0)
+                sibling_counters[key] = index + 1
+                stable_id = f"{parent_id}/{node_type}#{index}"
+
+            ctx = ctx_by_node_id.get(id(value))
+            nodes[stable_id] = {
+                "type": node_type,
+                "name": name,
+                "parent_id": None if is_root else parent_id,
+                "source_range": _extract_source_range(ctx) if ctx is not None else None,
+                "node": value,
+            }
+
+            child_counters: Dict = {}
+            for child_value in value.values():
+                _assign_semantic_ids(child_value, ctx_by_node_id, stable_id, child_counters, nodes)
+        else:
+            for child_value in value.values():
+                _assign_semantic_ids(child_value, ctx_by_node_id, parent_id, sibling_counters, nodes)
+    elif isinstance(value, list):
+        for item in value:
+            _assign_semantic_ids(item, ctx_by_node_id, parent_id, sibling_counters, nodes)
+
+
+def parse_sysml_with_semantic_model(text: str):
+    """parse_sysml_antlr()に加えて、並行するSemantic Model（4章）を返す。
+
+    戻り値は (ast, semantic_model) のタプル。ast は parse_sysml_antlr(text) と
+    完全に同一の内容・オブジェクトであり（拡張仕様書3,4章の後方互換制約）、
+    既存の parse_sysml()/parse_sysml_antlr() 呼び出し元・既存テストには
+    一切影響しない。semantic_model は
+    {"nodes": {stable_id: {type, name, parent_id, source_range, node}}, "root_id": "$root"}
+    の形。ast がパースエラー（{"type": "error", ...}）の場合は
+    semantic_model は空（{"nodes": {}, "root_id": None}）を返す。
+    """
+    tree, errors = _parse_to_tree(text)
+
+    if errors:
+        return {"type": "error", "message": "; ".join(errors)}, {"nodes": {}, "root_id": None}
+
+    visitor = SysMLMinASTVisitor()
+    ast = visitor.visit(tree)
+
+    nodes: Dict[str, Dict] = {}
+    _assign_semantic_ids(ast, visitor._ctx_by_node_id, None, {}, nodes, is_root=True)
+
+    return ast, {"nodes": nodes, "root_id": "$root"}
