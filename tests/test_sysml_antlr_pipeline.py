@@ -8729,6 +8729,27 @@ def test_antlr_actionparameter_compound_kind():
     assert "isRef" not in bare_item_param
 
 
+def test_antlr_actionparameter_port_kind():
+    """`in port materialIn : ~MaterialPortDef;`（Fischertechnik.sysml
+    L97、同型がL98-100,106-108,113-114等多数）のように、direction付き
+    ポート宣言を導入する場合、actionParameterのkind列挙（'item'/
+    'attribute'/'part'/'calc'/'action'）に'port'が含まれておらず、
+    'in'/'out'方向修飾子直後の'port'キーワードを受理できなかった。
+    2026-09-03、add_actionparameter_port_kind対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "part def MaterialPortDef; action def A { in port materialIn : ~MaterialPortDef; }"
+    )
+    param = ast["children"][1]["params"][0]
+    assert param["type"] == "param"
+    assert param["kind"] == "port"
+    assert param["type_name"] == "~MaterialPortDef"
+
+    # 既存の他kindが引き続き機能することを確認する（回帰防止）。
+    other_kinds_ast = parse_sysml_antlr("action def A { in part p : T; in calc c : T; in action a : T; }")
+    other_params = other_kinds_ast["children"][0]["params"]
+    assert [p["kind"] for p in other_params] == ["part", "calc", "action"]
+
+
 def test_antlr_actionparameter_general_body_content():
     """`private in ref y: A, B { part B_b redefines B::b; port B_x
     redefines B::x; }`（PartTest.sysml L38、private port def C本体内）の
