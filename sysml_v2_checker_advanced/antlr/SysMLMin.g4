@@ -1937,8 +1937,12 @@ attributeUsage
 // 値束縛リデファイン文（例: `:>> quantity = isq.L;`）。継承した機能を
 // 再定義しつつ具体的な値を束縛する、KerMLの一般的なイディオム。
 // linter.py側の対応チェックは無い（構文サポートのみ）。
+// `:>> problemStatement := "...";`（DontPanic-SysMLv2-Batmobile.sysml）の
+// ように、`=`だけでなく`:=`（初期値、下流で変更可能）代入演算子も使える
+// （他の多くのfeatureUsage系規則ではすでに両方許可しているのと同型。
+// 2026-08-31、add_valuebindingstmt_walrus_assign_operator対応中に発見）。
 valueBindingStmt
-    : kind=(':>' | ':>>') target=qualifiedName '=' value=expression ';'
+    : kind=(':>' | ':>>') target=qualifiedName ('=' | ':=') value=expression ';'
     ;
 
 // `[n..m]` に続けて `ordered`/`nonunique` 修飾子を付けられる

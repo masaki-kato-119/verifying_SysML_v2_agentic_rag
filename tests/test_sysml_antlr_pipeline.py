@@ -6878,6 +6878,29 @@ def test_antlr_enum_literal_bare_redefine_shorthand():
     ]
 
 
+def test_antlr_valuebindingstmt_walrus_assign_operator():
+    """`:>> problemStatement := "As a Hero, Batman needs a cool vehicle.";`
+    （DontPanic-SysMLv2-Batmobile.sysml L79-80）のように、valueBindingStmt
+    （`:>> target = expr;`という値束縛リデファイン文）は`=`だけでなく
+    `:=`代入演算子も使える（他の多くのfeatureUsage系規則では既に両方
+    許可しているのと同型）。既存の`=`形が引き続き機能することも確認
+    する。2026-08-31、add_valuebindingstmt_walrus_assign_operator対応中に
+    発見。"""
+    ast = parse_sysml_antlr(
+        'part def P { :>> problemStatement := "As a Hero"; }'
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "value_binding"
+    assert node["kind"] == "redefines"
+    assert node["target"] == "problemStatement"
+    assert node["value"] == {"type": "literal", "literal_type": "string", "value": "As a Hero"}
+
+    # 既存の`=`形が引き続き機能することを確認する。
+    equals_ast = parse_sysml_antlr('part def P { :>> problemStatement = "As a Hero"; }')
+    equals_node = equals_ast["children"][0]["children"][0]
+    assert equals_node["value"] == {"type": "literal", "literal_type": "string", "value": "As a Hero"}
+
+
 def test_antlr_enumusage_and_anonymous_literal():
     """`enum color : ColorKind;`・`enum color1 = ColorKind::blue;`・
     `enum size: SizeChoice = 60.0;`（EnumerationTest.sysml）のように、
