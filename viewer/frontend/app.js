@@ -831,6 +831,82 @@ function setupViewTypeTabs() {
   refreshActiveState();
 }
 
+// 3ペイン(Explorer/Text/Diagram)＋Inspectorのレイアウトをドラッグで可変にする。
+// grid-template-columns/rowsは普段はCSSの1fr指定のままにしておき、実際に
+// ドラッグを開始した瞬間（=ページのレイアウトが確定済みであることが保証される
+// タイミング）にだけ、その時点の実測pxへ切り替える。ページ読み込み直後の
+// スクリプト実行時点でgetComputedStyleを読んで先に固定してしまうと、
+// このプレビュー環境ではまだビューポートが0×0を報告する瞬間があり、
+// 極端に小さいpx値でレイアウトが壊れる不具合があったため、この設計にした。
+function setupSplitters() {
+  const layout = document.getElementById("layout");
+
+  function currentColumns() {
+    return getComputedStyle(layout).gridTemplateColumns.split(" ").map(parseFloat);
+  }
+  function currentRows() {
+    return getComputedStyle(layout).gridTemplateRows.split(" ").map(parseFloat);
+  }
+
+  const MIN_TRACK_PX = 80;
+
+  function setupColumnSplitter(splitterEl) {
+    const leftIndex = Number(splitterEl.dataset.leftIndex); // 0始まり: 0=explorer, 2=text-editor
+    splitterEl.addEventListener("mousedown", (startEvent) => {
+      startEvent.preventDefault();
+      splitterEl.classList.add("dragging");
+      const startX = startEvent.clientX;
+      const columns = currentColumns(); // ドラッグ開始時点で初めてpxへ固定する
+      const startLeftWidth = columns[leftIndex];
+      const startRightWidth = columns[leftIndex + 2]; // splitter自身(leftIndex+1)を挟んだ次のトラック
+
+      function onMove(moveEvent) {
+        const dx = moveEvent.clientX - startX;
+        const leftWidth = Math.max(MIN_TRACK_PX, startLeftWidth + dx);
+        const rightWidth = Math.max(MIN_TRACK_PX, startRightWidth - dx);
+        columns[leftIndex] = leftWidth;
+        columns[leftIndex + 2] = rightWidth;
+        layout.style.gridTemplateColumns = columns.map((w) => `${w}px`).join(" ");
+      }
+      function onUp() {
+        splitterEl.classList.remove("dragging");
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+      }
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
+  }
+
+  function setupRowSplitter(splitterEl) {
+    splitterEl.addEventListener("mousedown", (startEvent) => {
+      startEvent.preventDefault();
+      splitterEl.classList.add("dragging");
+      const startY = startEvent.clientY;
+      const rows = currentRows(); // ドラッグ開始時点で初めてpxへ固定する
+      const startTopHeight = rows[0];
+      const startBottomHeight = rows[2];
+
+      function onMove(moveEvent) {
+        const dy = moveEvent.clientY - startY;
+        rows[0] = Math.max(MIN_TRACK_PX, startTopHeight + dy);
+        rows[2] = Math.max(MIN_TRACK_PX, startBottomHeight - dy);
+        layout.style.gridTemplateRows = rows.map((h) => `${h}px`).join(" ");
+      }
+      function onUp() {
+        splitterEl.classList.remove("dragging");
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+      }
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
+  }
+
+  document.querySelectorAll(".col-splitter").forEach(setupColumnSplitter);
+  document.querySelectorAll(".row-splitter").forEach(setupRowSplitter);
+}
+
 // Monacoのカーソル位置(絶対offset)を含むノードのうち、source_rangeが最も
 // 狭い（＝最も深くネストした）ものを探す（8.3節、Text→Diagram/Explorer）。
 // 数千要素規模までは全ノード線形走査で十分という判断（8.3節に明記の既知の
@@ -854,6 +930,7 @@ function findNarrowestNodeAtOffset(offset) {
 }
 
 loadViewState(); // Group3 b13(L2): 初回モデル取得より前に、保存済みのフィルタ・折りたたみ・レイアウト状態を復元しておく。
+setupSplitters(); // Monacoの読み込みを待たずに使える（editor自体には依存しない）。
 
 require.config({
   paths: { vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs" },

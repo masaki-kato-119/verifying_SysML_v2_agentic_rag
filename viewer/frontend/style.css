@@ -5,11 +5,33 @@ html, body {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
+/* 列: Explorer / splitter / Text Editor / splitter / Diagram、
+   行: (Explorer+Text+Diagram) / splitter / Inspector。
+   px単位の初期値はJS側(setupSplitters)で実測値に置き換えられ、以降は
+   ドラッグ操作でgrid-template-columns/rowsを直接書き換えて可変にする
+   （ユーザー要望：3ペインのスプリッターを可変にしたい）。 */
 #layout {
   display: grid;
-  grid-template-columns: 220px 1fr 1fr;
-  grid-template-rows: 1fr 220px;
+  grid-template-columns: 220px 6px 1fr 6px 1fr;
+  grid-template-rows: 1fr 6px 220px;
   height: 100vh;
+}
+
+.splitter {
+  background: #444;
+}
+
+.splitter:hover,
+.splitter.dragging {
+  background: #1a73e8;
+}
+
+.col-splitter {
+  cursor: col-resize;
+}
+
+.row-splitter {
+  cursor: row-resize;
 }
 
 .pane {
@@ -33,7 +55,7 @@ html, body {
 
 #text-editor {
   grid-row: 1;
-  grid-column: 2;
+  grid-column: 3;
   display: flex;
   flex-direction: column;
 }
@@ -45,7 +67,22 @@ html, body {
 
 #diagram {
   grid-row: 1;
-  grid-column: 3;
+  grid-column: 5;
+}
+
+#col-splitter-1 {
+  grid-row: 1;
+  grid-column: 2;
+}
+
+#col-splitter-2 {
+  grid-row: 1;
+  grid-column: 4;
+}
+
+#row-splitter {
+  grid-row: 2;
+  grid-column: 1 / span 5;
 }
 
 #diagram-container {
@@ -109,8 +146,8 @@ html, body {
 }
 
 #inspector {
-  grid-row: 2;
-  grid-column: 1 / span 3;
+  grid-row: 3;
+  grid-column: 1 / span 5;
 }
 
 .explorer-node {
@@ -229,7 +266,8 @@ html, body {
   margin-top: 4px;
   padding: 4px 6px;
   border: 1px dashed #8a6d3b;
-  background: #2a2412;
+  background: #e8e6e0;
+  color: #222222;
   font-size: 11px;
 }
 
@@ -262,7 +300,8 @@ html, body {
   margin-top: 4px;
   padding: 4px 6px;
   border: 1px dashed #8a6d3b;
-  background: #2a2412;
+  background: #e8e6e0;
+  color: #222222;
   font-size: 11px;
 }
 

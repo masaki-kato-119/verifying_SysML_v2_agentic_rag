@@ -89,3 +89,40 @@ def test_svg_output_matches_golden_fixture():
 def test_empty_view_ir_still_produces_valid_svg():
     svg = render_svg({"view_type": "structure", "nodes": [], "edges": []})
     assert svg == '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"></svg>'
+
+
+def test_negative_node_position_stays_within_viewbox():
+    """手動ドラッグ配置（Group3 b11/b12, pinned_positions）で左・上方向に
+    動かした要素は負の座標になりうる。viewBoxの原点が0固定のままだと、
+    そのノードがviewBox外に出て完全に不可視になってしまう不具合があったため、
+    viewBoxの原点も負の座標を含むよう動かすことを確認する。"""
+    view_ir = {
+        "view_type": "structure",
+        "nodes": [
+            {"id": "$root::a", "type": "part_def", "label": "A", "source_range": None,
+             "x": -50, "y": -30, "width": 90, "height": 40},
+            {"id": "$root::b", "type": "part_def", "label": "B", "source_range": None,
+             "x": 100, "y": 100, "width": 90, "height": 40},
+        ],
+        "edges": [],
+    }
+    svg = render_svg(view_ir)
+    assert 'viewBox="-58 -38 256 186"' in svg
+    # 負座標のノード自体はそのままの座標で描画される(移動しているのはviewBoxの原点だけ)。
+    assert 'x="-50" y="-30"' in svg
+
+
+def test_all_non_negative_positions_keep_viewbox_origin_at_zero():
+    """既存の（pinned_positions未使用の）通常レイアウトでは常にx,y>=8のため、
+    負のノードが無いケースでviewBoxの原点が動いてしまわないことを確認する
+    （後方互換：ゴールデンファイルテストが暗黙に前提としている挙動の明示化）。"""
+    view_ir = {
+        "view_type": "structure",
+        "nodes": [
+            {"id": "$root::a", "type": "part_def", "label": "A", "source_range": None,
+             "x": 8, "y": 8, "width": 90, "height": 40},
+        ],
+        "edges": [],
+    }
+    svg = render_svg(view_ir)
+    assert 'viewBox="0 0 106 56"' in svg

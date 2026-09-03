@@ -70,10 +70,20 @@ def render_svg(view_ir: Dict) -> str:
     """
     nodes = view_ir["nodes"]
     if nodes:
-        canvas_width = max(n["x"] + n["width"] for n in nodes) + _MARGIN
-        canvas_height = max(n["y"] + n["height"] for n in nodes) + _MARGIN
+        # pinned_positions（手動ドラッグ配置、Group3 b11/b12）は既定の座標計算
+        # （常に非負）と異なり負の座標にもなりうる。viewBoxの原点を0固定のまま
+        # にすると、左・上方向へドラッグした要素がviewBox外に出て完全に不可視に
+        # なってしまう（ドラッグできる範囲が不自然に狭く見える原因）。最小値も
+        # 併せて計算し、viewBoxの原点をずらすことで負の座標も可視範囲に含める。
+        min_x = min(n["x"] for n in nodes) - _MARGIN
+        min_y = min(n["y"] for n in nodes) - _MARGIN
+        max_x = max(n["x"] + n["width"] for n in nodes) + _MARGIN
+        max_y = max(n["y"] + n["height"] for n in nodes) + _MARGIN
     else:
-        canvas_width = canvas_height = _MARGIN * 2
+        min_x = min_y = 0
+        max_x = max_y = _MARGIN * 2
+    canvas_width = max_x - min_x
+    canvas_height = max_y - min_y
 
     # エッジ(中心同士を結ぶ直線)を先に描画する。ノードは不透明な矩形なので
     # 後から重ねて描くと、線のうちボックス内部にある区間はボックスの下に
@@ -81,7 +91,7 @@ def render_svg(view_ir: Dict) -> str:
     # 見た目上は「ボックスの縁から縁」に近い自然な線になる）。
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{canvas_width}"'
-        f' height="{canvas_height}" viewBox="0 0 {canvas_width} {canvas_height}">'
+        f' height="{canvas_height}" viewBox="{min_x} {min_y} {canvas_width} {canvas_height}">'
     ]
     parts.extend(_render_edge(e) for e in view_ir["edges"])
     parts.extend(_render_node(n) for n in nodes)
