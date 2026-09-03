@@ -1282,6 +1282,7 @@ def test_antlr_action_def_separates_params_from_control_flow_children():
             "direction": "in",
             "is_item": True,
             "kind": "item",
+            "isIndividual": False,
             "visibility": None,
             "name": "x",
             "type_spec": {"name": "T"},
@@ -4532,6 +4533,7 @@ def test_antlr_interaction_def_separates_params_from_children():
             "direction": "in",
             "is_item": False,
             "kind": None,
+            "isIndividual": False,
             "visibility": None,
             "name": "a",
             "type_spec": {"name": "Boolean"},
@@ -6705,6 +6707,7 @@ def test_antlr_perform_bare_reference_with_body():
             "direction": "out",
             "is_item": False,
             "kind": None,
+            "isIndividual": False,
             "visibility": None,
             "name": "onOffCmd",
             "type_spec": None,
@@ -8894,6 +8897,31 @@ def test_antlr_actionparameter_port_kind():
     other_kinds_ast = parse_sysml_antlr("action def A { in part p : T; in calc c : T; in action a : T; }")
     other_params = other_kinds_ast["children"][0]["params"]
     assert [p["kind"] for p in other_params] == ["part", "calc", "action"]
+
+
+def test_antlr_actionparameter_individual_kind():
+    """`in individual :>> testVehicle : TestVehicle1 { ... }`
+    （Verification Case Usage Example.sysml L38、同型がL46）のように、
+    'individual'直後に'occurrence'キーワードを必須とするoccurrenceUsage
+    とは別に、actionParameterはkind列挙や先頭修飾子に'individual'を
+    持たず、'occurrence'キーワードを省略した暗黙occurrence usage形を
+    受理できなかった。2026-09-03、add_actionparameter_individual_kind
+    対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "part def Vehicle; individual def TestVehicle1 :> Vehicle; "
+        "action def A { in individual :>> testVehicle : TestVehicle1 { } }"
+    )
+    param = ast["children"][2]["params"][0]
+    assert param["type"] == "param"
+    assert param["isIndividual"] is True
+    assert param["name"] is None
+    assert param["type_name"] == "TestVehicle1"
+    assert param["redefines"] == [{"kind": "redefines", "target": "testVehicle"}]
+
+    # 既存の'individual'無し形が引き続き機能することを確認する（回帰防止）。
+    plain_ast = parse_sysml_antlr("action def A { in item x : T; }")
+    plain_param = plain_ast["children"][0]["params"][0]
+    assert plain_param["isIndividual"] is False
 
 
 def test_antlr_actionparameter_general_body_content():

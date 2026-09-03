@@ -969,6 +969,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "direction": direction_text,
             "is_item": kind_text == "item",
             "kind": kind_text,
+            # `in individual :>> testVehicle : TestVehicle1 { ... }`
+            # （Verification Case Usage Example.sysml）のように、
+            # 'occurrence'キーワードを省略した暗黙occurrence usage形の
+            # 先頭修飾子（occurrenceUsageと同じ設計。2026-09、参照実装
+            # 比較レポートで発見）。
+            "isIndividual": ctx.isIndividual is not None,
             # `private in ref item y: A, B;`（ItemTest.sysml(xpect)）のように
             # `ref`が種別キーワードと複合で現れる場合に備え、`kind`とは独立
             # に`isRef`を持たせる（`ref`単独の場合は`kind`が既に`"ref"`を

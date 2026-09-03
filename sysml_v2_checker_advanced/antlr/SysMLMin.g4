@@ -2356,6 +2356,12 @@ actionParameter
       // 受理する（2026-08-29、add_actionparameter_compound_kind対応中に
       // 発見）。
       isRef='ref'?
+      // `in individual :>> testVehicle : TestVehicle1 { ... }`
+      // （Verification Case Usage Example.sysml）のように、'occurrence'
+      // キーワードを省略した暗黙occurrence usage形（occurrenceUsageと
+      // 同じ`isIndividual`先頭修飾子）を持ちうる（2026-09、参照実装比較
+      // レポートで発見）。
+      isIndividual='individual'?
       // `in port materialIn : ~MaterialPortDef;`（Fischertechnik.sysml）
       // のように、direction付きポート宣言のkindに'port'が含まれていな
       // かった（2026-09、参照実装比較レポートで発見）。
