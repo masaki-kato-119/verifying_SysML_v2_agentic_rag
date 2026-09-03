@@ -255,7 +255,6 @@ def test_antlr_comment_with_identification():
     assert ast["children"][0] == {
         "type": "comment",
         "identification": {"type": "identification", "name": "MyComment"},
-        "about": None,
         "locale": None,
         "body": "a note",
         "children": [],
@@ -360,15 +359,42 @@ def test_antlr_comment_about_and_locale():
     書ける。"""
     ast = parse_sysml_antlr("part def C; comment about C /* about a def */")
     node = ast["children"][-1]
-    assert node["about"] == "C"
+    assert node["about"] == ["C"]
     assert node["locale"] is None
 
     named_ast = parse_sysml_antlr(
         'part def C { comment about C locale "en_US" /* ... */ }'
     )
     named_node = named_ast["children"][0]["children"][0]
-    assert named_node["about"] == "C"
+    assert named_node["about"] == ["C"]
     assert named_node["locale"] == "en_US"
+
+
+def test_antlr_commentstmt_multitarget_about():
+    """`comment about Person, Container /* These types represent the core
+    domain model entities. */`（dfa-coverage-advanced.sysml L220-221）の
+    ように、commentStmtの`about`節がカンマ区切りの複数対象を取ることが
+    ある（metadataUsageの`about`節と同型のリスト化。従来は単一対象のみ
+    だった）。既存の単一対象形・対象無し形が引き続き機能することも
+    確認する。2026-08-31、add_commentstmt_multitarget_about対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "part def Person; part def Container; "
+        "comment about Person, Container /* core domain model entities */"
+    )
+    node = ast["children"][-1]
+    assert node["type"] == "comment"
+    assert node["about"] == ["Person", "Container"]
+
+    # 既存の単一対象形が引き続き機能することを確認する。
+    single_ast = parse_sysml_antlr("part def C; comment about C /* x */")
+    single_node = single_ast["children"][-1]
+    assert single_node["about"] == ["C"]
+
+    # 既存の対象無し形が引き続き機能することを確認する
+    # （"about"キー自体が無いことも確認する）。
+    plain_ast = parse_sysml_antlr("comment MyComment /* a note */")
+    plain_node = plain_ast["children"][0]
+    assert "about" not in plain_node
 
 
 def test_antlr_documentation_and_textual_representation_locale():

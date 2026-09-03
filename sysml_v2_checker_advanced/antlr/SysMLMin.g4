@@ -416,8 +416,12 @@ operandBlock
 // `about`節を持つことがある。`locale`節（下記）も同時に持てる
 // （`comment about CommentTest locale "en_US" /* ... */`）
 // （2026-08-28、参照実装比較レポートP1-5で発見）。
+// `comment about Person, Container /* ... */`（dfa-coverage-advanced.sysml）
+// のように、`about`節がカンマ区切りの複数対象を取ることがある
+// （metadataUsageの`about`節と同型のカンマ区切りリスト化。2026-08-31、
+// add_commentstmt_multitarget_about対応中に発見）。
 commentStmt
-    : 'comment' simpleName? ('about' about=namespacePath)? ('locale' locale=STRING_LITERAL)? DOC_COMMENT
+    : 'comment' simpleName? ('about' about+=namespacePath (',' about+=namespacePath)*)? ('locale' locale=STRING_LITERAL)? DOC_COMMENT
     ;
 
 // `doc locale "en_US" /* ... */`（CommentTest.sysml）のように、ロケール

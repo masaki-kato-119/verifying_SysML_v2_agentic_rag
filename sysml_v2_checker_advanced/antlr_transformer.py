@@ -3142,8 +3142,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "type": "comment",
             "identification": self._identification(ctx.simpleName()),
             # `comment about C /* ... */`のようなコメント対象の明示
-            # （2026-08-28、参照実装比較レポートP1-5で発見）。
-            "about": _namespace_path_text(ctx.about) if ctx.about is not None else None,
+            # （2026-08-28、参照実装比較レポートP1-5で発見）。`comment about
+            # Person, Container /* ... */`（dfa-coverage-advanced.sysml）の
+            # ように、カンマ区切りの複数対象を取ることもある
+            # （metadataUsageの`about`節と同型のリスト化。2026-08-31、
+            # add_commentstmt_multitarget_about対応中に発見）。
+            **({"about": [_namespace_path_text(a) for a in ctx.about]} if ctx.about else {}),
             "locale": ctx.locale.text[1:-1] if ctx.locale is not None else None,
             "body": self._doc_comment_body_text(ctx.DOC_COMMENT()),
             "children": [],
