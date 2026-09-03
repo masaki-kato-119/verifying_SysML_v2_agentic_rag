@@ -121,6 +121,18 @@ def test_model_endpoint_collapsed_ids_excludes_descendants_from_view_ir():
     assert "$root::A::x" not in view_ir_ids
 
 
+def test_model_endpoint_pinned_positions_are_reflected_in_view_ir():
+    """Group3 b11(L1-1): pinned_positionsに指定した座標がView IR出力に反映される。"""
+    text = "package P { part def A; }"
+    response = client.post(
+        "/api/model",
+        json={"text": text, "pinned_positions": {"$root::A": {"x": 123, "y": 456}}},
+    )
+    data = response.json()
+    node = next(n for n in data["view_ir"]["nodes"] if n["id"] == "$root::A")
+    assert (node["x"], node["y"]) == (123, 456)
+
+
 def test_model_endpoint_reports_unknown_view_type_without_crashing():
     response = client.post("/api/model", json={"text": "package P { part def A; }", "view_type": "no_such_view"})
     assert response.status_code == 200

@@ -68,13 +68,100 @@ const severityFilterState = { error: true, warning: true, info: true };
 // （Graph IR/Explorerは常に全要素を保持し、折りたたみの影響を受けない）。
 const collapsedIds = new Set();
 
+// Group3 b12(L1-2): 手動レイアウト。ドラッグで確定した座標をノードidごとに
+// 保持し、リクエストごとに/api/modelへpinned_positionsとして送る
+// （viewer/view_ir.pyのbuild_view_irのpinned_positions引数、b11で追加済み）。
+const pinnedPositions = {};
+
+// Group3 b13(L2): View定義の保存。b9(フィルタ)・b10(折りたたみ)・
+// b12(手動レイアウト)の状態をlocalStorageへ保存し、次回読み込み時に復元する
+// （Group1 b4と同じ「複数人でのレビュー共有が必要になった時点でサーバー側
+// 永続化を再検討する」割り切り、作業計画書8章のリスク欄）。
+const VIEW_STATE_STORAGE_KEY = "sysmlViewerViewState";
+
+function saveViewState() {
+  try {
+    localStorage.setItem(
+      VIEW_STATE_STORAGE_KEY,
+      JSON.stringify({
+        typeFilterState,
+        severityFilterState,
+        collapsedIds: [...collapsedIds],
+        pinnedPositions,
+      })
+    );
+  } catch (e) {
+    // localStorageが使えない環境（プライベートモード等）では永続化を諦める。
+  }
+}
+
+// typeFilterStateはGraph IRの型集合に応じてrenderFilterControlsが動的に
+// 補完する（既存の型は復元値を維持、新規の型のみ既定trueで追加）ため、
+// ここでは保存済みの値をそのまま上書きコピーするだけでよい。
+function loadViewState() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(VIEW_STATE_STORAGE_KEY) || "{}");
+    Object.assign(typeFilterState, stored.typeFilterState || {});
+    Object.assign(severityFilterState, stored.severityFilterState || {});
+    for (const id of stored.collapsedIds || []) collapsedIds.add(id);
+    Object.assign(pinnedPositions, stored.pinnedPositions || {});
+  } catch (e) {
+    // 壊れた保存データは無視し、既定状態のまま続行する。
+  }
+}
+
 async function fetchModel(text) {
   const response = await fetch("/api/model", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, view_type: currentViewType, collapsed_ids: [...collapsedIds] }),
+    body: JSON.stringify({
+      text,
+      view_type: currentViewType,
+      collapsed_ids: [...collapsedIds],
+      pinned_positions: pinnedPositions,
+    }),
   });
   return response.json();
+}
+
+// SVGノードのドラッグで手動レイアウトを確定させる（Group3 b12, L1-2）。
+// ドラッグ中は<g>にtransformを当てて追従させるだけの軽量なプレビューとし、
+// mouseup時点の座標をpinnedPositionsへ確定してモデルを再取得する
+// （再取得後はView IR側の計算結果に基づく描画に置き換わり、transformは
+// 使われなくなる）。移動量が閾値未満なら「クリック」とみなしピン留めせず、
+// 既存のclick(選択)/dblclick(折りたたみ)ハンドラの動作を妨げない。
+const DRAG_THRESHOLD_PX = 3;
+
+function startNodeDrag(startEvent, g, elementId) {
+  const rect = g.querySelector("rect");
+  if (!rect) return;
+  const startX = parseFloat(rect.getAttribute("x"));
+  const startY = parseFloat(rect.getAttribute("y"));
+  const startClientX = startEvent.clientX;
+  const startClientY = startEvent.clientY;
+  let moved = false;
+
+  function onMouseMove(moveEvent) {
+    const dx = moveEvent.clientX - startClientX;
+    const dy = moveEvent.clientY - startClientY;
+    if (Math.abs(dx) > DRAG_THRESHOLD_PX || Math.abs(dy) > DRAG_THRESHOLD_PX) moved = true;
+    if (moved) g.setAttribute("transform", `translate(${dx}, ${dy})`);
+  }
+
+  function onMouseUp(upEvent) {
+    document.removeEventListener("mousemove", onMouseMove);
+    document.removeEventListener("mouseup", onMouseUp);
+    g.removeAttribute("transform");
+    if (!moved) return;
+    const dx = upEvent.clientX - startClientX;
+    const dy = upEvent.clientY - startClientY;
+    pinnedPositions[elementId] = { x: startX + dx, y: startY + dy };
+    saveViewState();
+    updateModelNow();
+  }
+
+  document.addEventListener("mousemove", onMouseMove);
+  document.addEventListener("mouseup", onMouseUp);
 }
 
 function renderDiagram(svg) {
@@ -91,6 +178,12 @@ function renderDiagram(svg) {
       event.stopPropagation();
       selectElement(elementId);
     });
+    // ドラッグで手動レイアウトを確定する（Group3 b12, L1-2）。
+    g.addEventListener("mousedown", (event) => {
+      if (event.button !== 0) return; // 左クリックのみ
+      event.stopPropagation();
+      startNodeDrag(event, g, elementId);
+    });
     // ダブルクリックで折りたたみ/展開をトグルする（Group2 b10, V4）。
     // 子を持たない葉ノードでも実害はない（送るcollapsed_idsが1件増えるだけ）。
     g.addEventListener("dblclick", (event) => {
@@ -100,6 +193,7 @@ function renderDiagram(svg) {
       } else {
         collapsedIds.add(elementId);
       }
+      saveViewState();
       updateModelNow();
     });
   });
@@ -171,6 +265,7 @@ function renderFilterControls(graphIr) {
   for (const type of types) {
     typeGroup.appendChild(makeFilterCheckbox(type, typeFilterState[type], (checked) => {
       typeFilterState[type] = checked;
+      saveViewState();
       applyNodeFilters();
     }));
   }
@@ -182,6 +277,7 @@ function renderFilterControls(graphIr) {
   for (const severity of ["error", "warning", "info"]) {
     severityGroup.appendChild(makeFilterCheckbox(severity, severityFilterState[severity], (checked) => {
       severityFilterState[severity] = checked;
+      saveViewState();
       applyNodeFilters();
     }));
   }
@@ -584,6 +680,8 @@ function findNarrowestNodeAtOffset(offset) {
   }
   return best;
 }
+
+loadViewState(); // Group3 b13(L2): 初回モデル取得より前に、保存済みのフィルタ・折りたたみ・レイアウト状態を復元しておく。
 
 require.config({
   paths: { vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs" },

@@ -129,3 +129,46 @@ def test_edges_into_collapsed_descendants_are_excluded():
     assert "$root::Engine::powerSource" not in ids
     # powerSourceのfeature_typingエッジ自体が(KeyErrorにならず)除外されている。
     assert not any("powerSource" in edge["id"] for edge in vir["edges"])
+
+
+# --- pinned_positions（Group3 b11, L1-1） ---------------------------------
+
+
+def test_default_pinned_positions_is_unchanged_behavior():
+    """既存呼び出し（pinned_positions省略時）は無変更で動作する（後方互換）。"""
+    _, model = build_semantic_model(_SAMPLE.strip())
+    gir = build_graph_ir(model)
+    assert build_view_ir(gir) == build_view_ir(gir, pinned_positions=None)
+
+
+def test_pinned_node_position_is_respected():
+    _, model = build_semantic_model(_SAMPLE.strip())
+    gir = build_graph_ir(model)
+    vir = build_view_ir(gir, pinned_positions={"$root::Engine": {"x": 500, "y": 700}})
+    by_id = {n["id"]: n for n in vir["nodes"]}
+    assert (by_id["$root::Engine"]["x"], by_id["$root::Engine"]["y"]) == (500, 700)
+
+
+def test_pinned_node_children_stay_relative_to_pinned_position():
+    """ピン留めしたノードの子孫は、通常どおりその親を起点に相対配置される
+    （包含関係を保つ）。"""
+    _, model = build_semantic_model(_SAMPLE.strip())
+    gir = build_graph_ir(model)
+    vir = build_view_ir(gir, pinned_positions={"$root::Engine": {"x": 500, "y": 700}})
+    by_id = {n["id"]: n for n in vir["nodes"]}
+    parent = by_id["$root::Engine"]
+    child = by_id["$root::Engine::power"]
+    assert child["x"] >= parent["x"]
+    assert child["y"] >= parent["y"]
+    assert child["x"] + child["width"] <= parent["x"] + parent["width"]
+    assert child["y"] + child["height"] <= parent["y"] + parent["height"]
+
+
+def test_unpinned_siblings_are_unaffected_by_a_pin():
+    _, model = build_semantic_model(_SAMPLE.strip())
+    gir = build_graph_ir(model)
+    vir_plain = build_view_ir(gir)
+    vir_pinned = build_view_ir(gir, pinned_positions={"$root::Engine": {"x": 999, "y": 999}})
+    by_id_plain = {n["id"]: n for n in vir_plain["nodes"]}
+    by_id_pinned = {n["id"]: n for n in vir_pinned["nodes"]}
+    assert by_id_plain["$root::Machine"] == by_id_pinned["$root::Machine"]

@@ -20,7 +20,7 @@ def _leaf_size(label: str) -> Tuple[int, int]:
     return width, _MIN_HEIGHT
 
 
-def build_view_ir(graph_ir: Dict, collapsed_ids=None) -> Dict:
+def build_view_ir(graph_ir: Dict, collapsed_ids=None, pinned_positions=None) -> Dict:
     """Graph IRからView IR（構造ビュー）を構築する。
 
     Args:
@@ -30,6 +30,14 @@ def build_view_ir(graph_ir: Dict, collapsed_ids=None) -> Dict:
             ノードの子孫（孫以降を含む）をレイアウト計算・出力の両方から
             除外し、指定ノード自身は子を持たない葉として最小サイズで描画する。
             省略時は従来どおり全ノードを描画する（後方互換）。
+        pinned_positions: 手動配置を尊重するノードid→{"x","y"}の辞書
+            （Group3 b11, L1-1）。指定ノードは計算結果ではなくこの座標で
+            配置し、その子孫は引き続きこの座標を起点に相対配置する
+            （包含関係を保つため）。他のノード（兄弟・非対象ノード）は
+            従来どおりの決定的アルゴリズムで計算する――ピン留めノードとの
+            重なりを解消する制約解法は行わない、既存コードの「手動調整は
+            Phase D以降の課題」という割り切り（4.2節）を踏襲した設計判断。
+            省略時は従来どおり（後方互換）。
 
     Returns:
         {"view_type": graph_irのview_type（省略時は"structure"を既定とする）,
@@ -37,6 +45,7 @@ def build_view_ir(graph_ir: Dict, collapsed_ids=None) -> Dict:
          "edges": [{"id","points": [[x,y],[x,y]]}, ...]}
     """
     collapsed_ids = collapsed_ids or set()
+    pinned_positions = pinned_positions or {}
     nodes_by_id = {n["id"]: n for n in graph_ir["nodes"]}
 
     children_by_parent: Dict[Optional[str], List[str]] = {}
@@ -85,6 +94,9 @@ def build_view_ir(graph_ir: Dict, collapsed_ids=None) -> Dict:
         return size
 
     def place(node_id: str, x: int, y: int) -> None:
+        pinned = pinned_positions.get(node_id)
+        if pinned is not None:
+            x, y = pinned["x"], pinned["y"]
         positions[node_id] = (x, y)
         children = _children_of(node_id)
         cursor_y = y + _LABEL_HEIGHT + _PADDING

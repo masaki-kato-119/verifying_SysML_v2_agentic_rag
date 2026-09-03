@@ -45,6 +45,7 @@ class ModelRequest(BaseModel):
     text: str
     view_type: str = VIEW_TYPE_STRUCTURE
     collapsed_ids: List[str] = []
+    pinned_positions: Dict[str, Dict[str, float]] = {}
 
 
 class ModelResponse(BaseModel):
@@ -90,7 +91,9 @@ def get_model(request: ModelRequest) -> ModelResponse:
         )
     except ValueError as e:
         return ModelResponse(view_type_error=str(e))
-    view_ir = build_view_ir(graph_ir, collapsed_ids=set(request.collapsed_ids))
+    view_ir = build_view_ir(
+        graph_ir, collapsed_ids=set(request.collapsed_ids), pinned_positions=request.pinned_positions
+    )
     svg = render_svg(view_ir)
 
     return ModelResponse(
