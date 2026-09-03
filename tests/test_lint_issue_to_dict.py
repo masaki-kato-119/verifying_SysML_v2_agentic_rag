@@ -21,7 +21,7 @@ def test_to_dict_without_index_returns_none_fields():
     assert issues
 
     result = issues[0].to_dict()
-    assert set(result.keys()) == {"severity", "message", "element_id", "source_range"}
+    assert set(result.keys()) == {"severity", "message", "rule", "element_id", "source_range"}
     assert result["element_id"] is None
     assert result["source_range"] is None
 
@@ -51,6 +51,17 @@ def test_element_index_requires_same_ast_object_graph():
 
     result = issues_from_a[0].to_dict(element_index_from_b)
     assert result["element_id"] is None
+
+
+def test_rule_is_captured_from_the_actual_check_method_via_real_lint():
+    """2026-09-03、Group1 b3b: ruleは`_check_*`等の実際のチェックメソッド名を
+    呼び出し元フレームから自動取得する（linter_rules/*.pyの161箇所の
+    LintIssue構築を1件も変更せずに済ませる設計。lint_issue.py参照）。"""
+    text = "package P { part def A { attribute x : NoSuchType; } }"
+    ast = parse_sysml_with_semantic_model(text)[0]
+    issues = lint_sysml(ast)
+    assert issues
+    assert issues[0].to_dict()["rule"] == "_check_attribute_def"
 
 
 def test_issue_with_no_node_returns_none_fields_even_with_index():

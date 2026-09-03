@@ -7,10 +7,23 @@ from sysml_v2_checker_advanced.parser import lint_sysml, parse_sysml
 def test_lint_issue_to_dict():
     """2026-09-03、拡張仕様書9章に基づき契約変更: 常にNoneだった"line"は
     削除され、"element_id"/"source_range"に置き換わった（element_index
-    省略時はともにNone。詳細は tests/test_lint_issue_to_dict.py）。"""
+    省略時はともにNone。詳細は tests/test_lint_issue_to_dict.py）。
+
+    2026-09-03、Group1 b3bで追加: "rule"は`__post_init__`が呼び出し元
+    フレームから自動取得する（`sys._getframe`。lint_issue.py参照）ため、
+    ここでは「このテスト関数自身の名前」になる（テストコードから直接
+    `LintIssue(...)`を呼んでいるため）。実際のlint実行時は`_check_*`等の
+    チェックメソッド名になる（tests/test_sysml_semantic_model_edges.py等の
+    実lint経由のテストで確認）。"""
     issue = LintIssue(severity="warning", message="msg")
     d = issue.to_dict()
-    assert d == {"severity": "warning", "message": "msg", "element_id": None, "source_range": None}
+    assert d == {
+        "severity": "warning",
+        "message": "msg",
+        "rule": "test_lint_issue_to_dict",
+        "element_id": None,
+        "source_range": None,
+    }
 
 
 def test_linter_lint_accepts_minimal_package_ast():
