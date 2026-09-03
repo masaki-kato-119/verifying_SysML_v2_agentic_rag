@@ -86,6 +86,21 @@ def _build_reverse_index(nodes: Dict[str, Dict]) -> Dict[int, str]:
     return {id(entry["node"]): stable_id for stable_id, entry in nodes.items()}
 
 
+def build_element_index(nodes: Dict[str, Dict]) -> Dict[int, Dict]:
+    """`LintIssue.to_dict(element_index=...)` に渡す索引を作る（拡張仕様書9章）。
+
+    `LintIssue.node` は、この `nodes`（`parse_sysml_with_semantic_model()`/
+    `build_semantic_model()` が返したものと**同じ ast** から `lint_sysml(ast)`
+    を呼んだ場合に限り、ここに登録されたノードと同一オブジェクトになる
+    （id(node)での突合が成立する）。別々にパースした2つの ast を混ぜて
+    使うと一致しないので注意。
+    """
+    return {
+        id(entry["node"]): {"element_id": stable_id, "source_range": entry["source_range"]}
+        for stable_id, entry in nodes.items()
+    }
+
+
 def _resolve_reference(reference: str, linter: SysMLAdvancedLinter) -> Optional[Dict]:
     """参照文字列(qualified name)を実ノードへ解決するベストエフォート探索。
 

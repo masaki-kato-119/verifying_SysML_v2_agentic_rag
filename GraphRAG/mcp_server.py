@@ -1732,11 +1732,19 @@ def validate_sysml_model(
     """
     try:
         # 既存の高度なリンターを使用
-        from sysml_v2_checker_advanced import lint_sysml, parse_sysml
-        
+        from sysml_v2_checker_advanced import lint_sysml
+        from sysml_v2_checker_advanced.antlr_transformer import parse_sysml_with_semantic_model
+        from sysml_v2_checker_advanced.semantic_model import build_element_index
+
         # 1. SysML v2構文解析
-        ast = parse_sysml(sysml_model_text, strict=strict_mode)
-        
+        # parse_sysml_with_semantic_model()はparse_sysml()と同じast内容を返す
+        # （strictは元々no-opの後方互換パラメータ、sysml_v2_checker_advanced/
+        # parser.pyのdocstring参照）。加えて、lint_sysml(ast)が返すLintIssue.node
+        # と同一オブジェクト同一性を持つノード索引(semantic_model)を得られる
+        # ため、_format_lint_issueが指摘の実際の位置(location)を埋められる
+        # （2026-09-03、P3-4。SysMLv2_SemanticModel_拡張仕様書.md 9,13章）。
+        ast, semantic_model = parse_sysml_with_semantic_model(sysml_model_text)
+
         if ast.get("type") == "error":
             return {
                 "success": False,
@@ -1744,10 +1752,11 @@ def validate_sysml_model(
                 "parse_error": ast.get("message"),
                 "recommendation": "SysML v2の構文を確認してください。strict_mode=Falseで後方互換モードを試すこともできます。"
             }
-        
-        # 2. 高度なリンターチェック
+
+        # 2. 高度なリンターチェック（astはSemantic Modelと同じオブジェクトグラフ）
         lint_issues = lint_sysml(ast)
-        
+        element_index = build_element_index(semantic_model["nodes"])
+
         # 3. グラフとの照合（オプション）
         graph_analysis = None
         if graph_id or _active_graph_id or _default_graph_id:
@@ -1770,9 +1779,9 @@ def validate_sysml_model(
                 "errors": len(errors),
                 "warnings": len(warnings),
                 "infos": len(infos),
-                "error_details": [_format_lint_issue(issue) for issue in errors],
-                "warning_details": [_format_lint_issue(issue) for issue in warnings],
-                "info_details": [_format_lint_issue(issue) for issue in infos]
+                "error_details": [_format_lint_issue(issue, element_index) for issue in errors],
+                "warning_details": [_format_lint_issue(issue, element_index) for issue in warnings],
+                "info_details": [_format_lint_issue(issue, element_index) for issue in infos]
             },
             "graph_analysis": graph_analysis,
             "recommendations": _generate_validation_recommendations(errors, warnings, graph_analysis),
@@ -1834,21 +1843,27 @@ def _summarize_ast(ast: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _format_lint_issue(issue) -> Dict[str, Any]:
+def _format_lint_issue(issue, element_index: Optional[Dict[int, Dict]] = None) -> Dict[str, Any]:
     """リンター問題を辞書形式にフォーマット
 
     現行の LintIssue（sysml_v2_checker_advanced/lint_issue.py）は
-    severity/message/node/line しか持たず、rule/location/suggestion は
-    存在しない。存在しない属性への直接アクセスは issue が1件でもあると
-    AttributeError となり、呼び出し元の広い except で握り潰されて
-    validate_sysml_model 全体が汎用エラーを返す原因になっていたため、
-    全フィールドを getattr の既定値取得に統一する。
+    severity/message/node/line しか持たず、rule/suggestion は存在しない
+    （存在しない属性への直接アクセスは issue が1件でもあると AttributeError
+    となり、以前は validate_sysml_model 全体が汎用エラーを返す原因に
+    なっていた。getattr の既定値取得に統一して解消済み）。
+
+    `location` は `issue.to_dict(element_index)["source_range"]` から得る。
+    `element_index` は `semantic_model.build_element_index()` で構築した、
+    `issue.node` と**同じ ast オブジェクトグラフ**から作った索引でなければ
+    解決できない（省略時・突合失敗時は None のまま。2026-09-03、P3-4。
+    SysMLv2_SemanticModel_拡張仕様書.md 9,13章）。
     """
+    location = issue.to_dict(element_index).get("source_range")
     return {
         "severity": issue.severity,
         "rule": getattr(issue, "rule", None),
         "message": issue.message,
-        "location": getattr(issue, "location", None),
+        "location": location,
         "suggestion": getattr(issue, "suggestion", None),
     }
 

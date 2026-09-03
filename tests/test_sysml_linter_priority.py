@@ -5,9 +5,12 @@ from sysml_v2_checker_advanced.parser import lint_sysml, parse_sysml
 
 
 def test_lint_issue_to_dict():
-    issue = LintIssue(severity="warning", message="msg", line=3)
+    """2026-09-03、拡張仕様書9章に基づき契約変更: 常にNoneだった"line"は
+    削除され、"element_id"/"source_range"に置き換わった（element_index
+    省略時はともにNone。詳細は tests/test_lint_issue_to_dict.py）。"""
+    issue = LintIssue(severity="warning", message="msg")
     d = issue.to_dict()
-    assert d == {"severity": "warning", "message": "msg", "line": 3}
+    assert d == {"severity": "warning", "message": "msg", "element_id": None, "source_range": None}
 
 
 def test_linter_lint_accepts_minimal_package_ast():
