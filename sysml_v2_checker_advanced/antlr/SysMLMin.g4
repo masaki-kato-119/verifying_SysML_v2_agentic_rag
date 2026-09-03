@@ -3569,8 +3569,14 @@ visibilityIndicator
 // 使われることがある。宣言名（simpleName）としての`type`とは別に、
 // 型参照位置（namespacePath）でも`participant`と同じ考え方でセグメント
 // 代替に含める。
+// `part a2: $::Definitions::A;`・`part a4 :> $::Parts::parts;`
+// （GlobalQualification.sysml、公式xpectテスト）のように、KerML/SysML v2の
+// GlobalQualification（'$'をルートスコープへの絶対修飾子とする名前修飾
+// 構文）がある。'$'を先頭segmentの代替として扱い、以降は既存の`::`区切り
+// 規則をそのまま使う（出力テキストにも`$`をそのまま含める。2026-09、
+// 参照実装比較レポートで発見）。
 namespacePath
-    : (ID | QUOTED_NAME | 'participant' | 'type' | 'interaction') (('::' | '.') (ID | QUOTED_NAME | 'participant' | 'type' | 'interaction'))*
+    : ('$' | ID | QUOTED_NAME | 'participant' | 'type' | 'interaction') (('::' | '.') (ID | QUOTED_NAME | 'participant' | 'type' | 'interaction'))*
     ;
 
 // part/port usageのredefine/subsets対象は`SpatialItem::localClock`のように

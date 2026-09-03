@@ -9124,3 +9124,32 @@ def test_antlr_visibility_modifier_on_aliasstmt():
     plain_ast = parse_sysml_antlr("alias X for Y;")
     plain_node = plain_ast["children"][0]
     assert plain_node["visibility"] is None
+
+
+def test_antlr_namespacepath_dollar_global_qualification():
+    """`part a2: $::Definitions::A;`・`part a4 :> $::Parts::parts;`
+    （GlobalQualification.sysml L12,16、xpect linking tests）のように、
+    KerML/SysML v2のGlobalQualification（'$'をルートスコープへの絶対
+    修飾子とする名前修飾構文）があるが、'$'トークン自体がレキサに
+    定義されていなかった。既存の'$'無し形が引き続き機能することも
+    確認する。2026-09-03、add_dollar_global_qualification対応中に
+    発見。"""
+    type_ast = parse_sysml_antlr(
+        "package Definitions { part def A; } "
+        "package Parts { part def A; part a2: $::Definitions::A; }"
+    )
+    type_node = type_ast["children"][1]["children"][1]
+    assert type_node["type_name"] == "$::Definitions::A"
+
+    redefine_ast = parse_sysml_antlr(
+        "package Parts { part parts; part a4 :> $::Parts::parts; }"
+    )
+    redefine_node = redefine_ast["children"][1]
+    assert redefine_node["redefines"] == [
+        {"kind": "subsets", "target": "$::Parts::parts"}
+    ]
+
+    # 既存の'$'無し形が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr("part def A; part a1: A;")
+    plain_node = plain_ast["children"][1]
+    assert plain_node["type_name"] == "A"
