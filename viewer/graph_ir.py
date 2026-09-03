@@ -28,9 +28,27 @@ _EXPLICIT_GRAPH_NODE_TYPES = {
 
 _GRAPH_NODE_SUFFIXES = ("_def", "_usage", "_instance")
 
+# Group2 b6(V1-1): 要求トレーサビリティビュー。requirement系ノード自身に加え、
+# satisfy/verifyエッジの相手側（要求を満たす部品等）も対象に含めないと、
+# エッジの片端が図に存在せず描画できない（3.3節の「両端が対象ノードで
+# なければエッジを描画しない」設計と整合させるため）。
+_REQUIREMENT_VIEW_NODE_TYPES = {
+    "requirement_def", "satisfy_requirement_usage", "verify_requirement_usage",
+}
+_REQUIREMENT_VIEW_EDGE_KINDS = {"satisfy", "verify"}
+
+VIEW_TYPE_STRUCTURE = "structure"
+VIEW_TYPE_REQUIREMENT_TRACEABILITY = "requirement_traceability"
+VIEW_TYPE_VERIFICATION = "verification"
+
+# Group2 b8(V2): 検証ビュー。Findingが付いた要素を起点に、b2(I2影響範囲ハイライト,
+# viewer/frontend/app.jsのfindImpactedElementIds)と同じBFS・既定2次までの
+# ロジックを構造ビュー候補ノード集合上で再利用する。
+_VERIFICATION_VIEW_DEPTH = 2
+
 
 def _is_graph_node_type(node_type: str) -> bool:
-    """このノード種別を構造図のノードとして描画対象に含めるか判定する。
+    """"structure"ビューでこのノード種別を描画対象に含めるか判定する。
 
     式（binary_expr等）・文（if_stmt等）・connector_end等の構造補助ノードは
     対象外（実装仕様書3.2節、拡張仕様書12章のPhase 1スコープと同じ考え方）。
@@ -42,25 +60,123 @@ def _is_graph_node_type(node_type: str) -> bool:
     return node_type.endswith(_GRAPH_NODE_SUFFIXES)
 
 
-def build_graph_ir(semantic_model: Dict) -> Dict:
+def _select_structure_view(semantic_model: Dict, finding_element_ids=None):
+    nodes_in = semantic_model["nodes"]
+    node_ids = {
+        stable_id for stable_id, entry in nodes_in.items() if _is_graph_node_type(entry["type"])
+    }
+    return node_ids, semantic_model["edges"]
+
+
+def _select_requirement_traceability_view(semantic_model: Dict, finding_element_ids=None):
+    nodes_in = semantic_model["nodes"]
+    requirement_ids = {
+        sid for sid, entry in nodes_in.items() if entry["type"] in _REQUIREMENT_VIEW_NODE_TYPES
+    }
+    node_ids = set(requirement_ids)
+    selected_edges = []
+    for edge in semantic_model["edges"]:
+        if edge["kind"] not in _REQUIREMENT_VIEW_EDGE_KINDS:
+            continue
+        if edge["from_id"] in requirement_ids:
+            selected_edges.append(edge)
+            if edge["to_id"] is not None:
+                node_ids.add(edge["to_id"])
+    return node_ids, selected_edges
+
+
+def _select_verification_view(semantic_model: Dict, finding_element_ids):
+    """Findingが付いた要素（の交差点）を起点に、resolvedエッジ上をBFSで
+    既定2次まで辿った関連要素だけに絞る（viewer/frontend/app.jsの
+    findImpactedElementIds・IMPACT_DEPTHと同じロジックをバックエンド側で
+    再利用したもの）。"""
+    nodes_in = semantic_model["nodes"]
+    candidate_ids = {
+        stable_id for stable_id, entry in nodes_in.items() if _is_graph_node_type(entry["type"])
+    }
+    resolved_edges = [
+        edge for edge in semantic_model["edges"]
+        if edge["resolved"] and edge["from_id"] in candidate_ids and edge["to_id"] in candidate_ids
+    ]
+    adjacency: Dict[str, List[str]] = {}
+    for edge in resolved_edges:
+        adjacency.setdefault(edge["from_id"], []).append(edge["to_id"])
+        adjacency.setdefault(edge["to_id"], []).append(edge["from_id"])
+
+    seeds = (finding_element_ids or set()) & candidate_ids
+    visited = set(seeds)
+    frontier = set(seeds)
+    for _ in range(_VERIFICATION_VIEW_DEPTH):
+        next_frontier = set()
+        for stable_id in frontier:
+            for neighbor in adjacency.get(stable_id, []):
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    next_frontier.add(neighbor)
+        frontier = next_frontier
+        if not frontier:
+            break
+
+    selected_edges = [
+        edge for edge in resolved_edges if edge["from_id"] in visited and edge["to_id"] in visited
+    ]
+    return visited, selected_edges
+
+
+_VIEW_SELECTORS = {
+    VIEW_TYPE_STRUCTURE: _select_structure_view,
+    VIEW_TYPE_REQUIREMENT_TRACEABILITY: _select_requirement_traceability_view,
+    VIEW_TYPE_VERIFICATION: _select_verification_view,
+}
+
+
+def build_graph_ir(
+    semantic_model: Dict,
+    view_type: str = VIEW_TYPE_STRUCTURE,
+    finding_element_ids=None,
+) -> Dict:
     """semantic_modelからGraph IRを構築する。
 
     Args:
         semantic_model: {"nodes": {stable_id: {type, name, parent_id, ...}},
             "edges": [{from_id, to_id, kind, resolved, ...}], "root_id": ...}
+        view_type: "structure"（既定、実装仕様書3章）、
+            "requirement_traceability"（Group2 b6、requirement_def/
+            satisfy_requirement_usage/verify_requirement_usageとその
+            satisfy/verify先を中心にしたビュー）、または
+            "verification"（Group2 b8、finding_element_idsを起点に
+            resolvedエッジ上をBFSで既定2次まで辿った要素に絞ったビュー）
+        finding_element_ids: view_type="verification"の起点となる要素id集合
+            （Findingが付いた要素のelement_id）。他のview_typeでは無視される。
 
     Returns:
-        {"nodes": [{"id", "type", "label", "group_id", "source_range"}, ...],
+        {"view_type", "nodes": [{"id", "type", "label", "group_id", "source_range"}, ...],
          "edges": [{"id", "from", "to", "kind"}, ...]}
-        （実装仕様書3.3節。source_rangeは5章のSVGレンダラーがトレーサビリティ
+        （実装仕様書3.3節。view_typeはview_ir.pyがView IRに引き継ぐために持たせる
+        （b7デバッグで発覚: view_ir.py側が"structure"を決め打ちしていたバグの修正）。
+        source_rangeは5章のSVGレンダラーがトレーサビリティ
         属性として埋め込むために持たせる）。エッジは resolved=True のものだけを
         含む（3.3節の設計判断：未解決参照は「宙に浮いた矢印」になるため描画しない）。
-    """
-    nodes_in = semantic_model["nodes"]
 
-    graph_node_ids = {
-        stable_id for stable_id, entry in nodes_in.items() if _is_graph_node_type(entry["type"])
-    }
+    Raises:
+        ValueError: 未知のview_typeを渡した場合。
+    """
+    if view_type not in _VIEW_SELECTORS:
+        raise ValueError(f"未知のview_typeです: {view_type!r}")
+
+    nodes_in = semantic_model["nodes"]
+    graph_node_ids, edges_source = _VIEW_SELECTORS[view_type](semantic_model, finding_element_ids)
+
+    def _effective_parent(stable_id: str):
+        """直接の親が対象外ノード種別（例: requirement_traceabilityビューでの
+        part_def等）の場合、対象に含まれる直近の祖先まで遡る。"structure"
+        ビューでは各ノードの直接の親は常に対象種別のため実質no-opだが、
+        フィルタが狭いビューでは孤立ノード（親を辿れず未配置になる）を
+        防ぐために必要。"""
+        parent_id = nodes_in[stable_id]["parent_id"]
+        while parent_id is not None and parent_id not in graph_node_ids:
+            parent_id = nodes_in[parent_id]["parent_id"]
+        return parent_id
 
     nodes_out: List[Dict] = []
     for stable_id in graph_node_ids:
@@ -69,12 +185,12 @@ def build_graph_ir(semantic_model: Dict) -> Dict:
             "id": stable_id,
             "type": entry["type"],
             "label": entry["name"] or entry["type"],
-            "group_id": entry["parent_id"],
+            "group_id": _effective_parent(stable_id),
             "source_range": entry["source_range"],
         })
 
     edges_out: List[Dict] = []
-    for index, edge in enumerate(semantic_model["edges"]):
+    for index, edge in enumerate(edges_source):
         if not edge["resolved"]:
             continue
         if edge["from_id"] not in graph_node_ids or edge["to_id"] not in graph_node_ids:
@@ -89,4 +205,4 @@ def build_graph_ir(semantic_model: Dict) -> Dict:
             "kind": edge["kind"],
         })
 
-    return {"nodes": nodes_out, "edges": edges_out}
+    return {"view_type": view_type, "nodes": nodes_out, "edges": edges_out}

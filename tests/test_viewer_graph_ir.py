@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from sysml_v2_checker_advanced.semantic_model import build_semantic_model
-from viewer.graph_ir import build_graph_ir
+from viewer.graph_ir import (
+    VIEW_TYPE_REQUIREMENT_TRACEABILITY,
+    VIEW_TYPE_VERIFICATION,
+    build_graph_ir,
+)
 
 _SAMPLE = """
 package Vehicle {
@@ -107,3 +111,107 @@ def test_edge_ids_are_unique_even_for_duplicate_from_kind_to():
     connection_edges = [e for e in gir["edges"] if e["kind"] == "connection"]
     ids = [e["id"] for e in connection_edges]
     assert len(ids) == len(set(ids))
+
+
+# --- view_type（Group2 b6, V1-1） ---------------------------------------
+
+
+def test_default_view_type_is_unchanged_structure_view():
+    """既存呼び出し（view_type省略時）が無変更で動作することを確認する
+    （実装仕様書のバックエンド拡張全般で維持している後方互換方針）。"""
+    _, model = build_semantic_model(_SAMPLE.strip())
+    assert build_graph_ir(model) == build_graph_ir(model, view_type="structure")
+
+
+_REQUIREMENT_SAMPLE = """
+package P {
+    part def System;
+    part system;
+    requirement def Req1;
+    requirement req1 : Req1;
+    satisfy requirement req1 : Req1 by system;
+    verify req1 by system;
+}
+"""
+
+
+def test_requirement_traceability_view_includes_only_requirement_nodes_and_satisfy_targets():
+    _, model = build_semantic_model(_REQUIREMENT_SAMPLE.strip())
+    gir = build_graph_ir(model, view_type=VIEW_TYPE_REQUIREMENT_TRACEABILITY)
+    types_by_id = {n["id"]: n["type"] for n in gir["nodes"]}
+    assert types_by_id == {
+        "$root::Req1": "requirement_def",
+        "$root::system": "part_instance",
+        "$root::req1#2": "satisfy_requirement_usage",
+        "$root::req1#3": "verify_requirement_usage",
+    }
+    kinds = {e["kind"] for e in gir["edges"]}
+    assert kinds == {"satisfy", "verify"}
+    # 非包含ビューのため全ノードがトップレベル(group_id=None)になる。
+    assert all(n["group_id"] is None for n in gir["nodes"])
+
+
+def test_requirement_traceability_view_excludes_unrelated_structure_nodes():
+    """構造図では出るはずのMachine/Engine等の一般的な定義・使用は、
+    要求トレーサビリティビューには含まれない。"""
+    _, model = build_semantic_model(_SAMPLE.strip())
+    gir = build_graph_ir(model, view_type=VIEW_TYPE_REQUIREMENT_TRACEABILITY)
+    assert gir["nodes"] == []
+    assert gir["edges"] == []
+
+
+def test_unknown_view_type_raises_value_error():
+    _, model = build_semantic_model(_SAMPLE.strip())
+    try:
+        build_graph_ir(model, view_type="no_such_view")
+        assert False, "ValueErrorが送出されるべき"
+    except ValueError:
+        pass
+
+
+# --- view_type="verification"（Group2 b8, V2） ---------------------------
+
+
+def test_verification_view_includes_seed_and_resolved_neighbors():
+    """viewer/frontend/app.jsのfindImpactedElementIds(既定2次)と同じBFSを
+    バックエンドで再現する。myEngineを起点にすると、feature_typing経由で
+    Engine(1次)・subsetting経由でMachine(2次)まで含まれる。"""
+    _, model = build_semantic_model(_SAMPLE.strip())
+    gir = build_graph_ir(
+        model, view_type=VIEW_TYPE_VERIFICATION, finding_element_ids={"$root::myEngine"}
+    )
+    ids = {n["id"] for n in gir["nodes"]}
+    assert ids == {"$root::myEngine", "$root::Engine", "$root::Machine"}
+    kinds_by_pair = {(e["from"], e["to"]): e["kind"] for e in gir["edges"]}
+    assert kinds_by_pair == {
+        ("$root::myEngine", "$root::Engine"): "feature_typing",
+        ("$root::Engine", "$root::Machine"): "subsetting",
+    }
+
+
+_CHAIN_SAMPLE = """
+package P {
+    part def A;
+    part def B :> A;
+    part def C :> B;
+    part def D :> C;
+}
+"""
+
+
+def test_verification_view_respects_default_depth_limit():
+    """既定2次までしか辿らないため、Dを起点にするとC・Bは含まれるが、
+    3次先のAは含まれない。"""
+    _, model = build_semantic_model(_CHAIN_SAMPLE.strip())
+    gir = build_graph_ir(
+        model, view_type=VIEW_TYPE_VERIFICATION, finding_element_ids={"$root::D"}
+    )
+    ids = {n["id"] for n in gir["nodes"]}
+    assert ids == {"$root::D", "$root::C", "$root::B"}
+
+
+def test_verification_view_with_no_finding_element_ids_is_empty():
+    _, model = build_semantic_model(_SAMPLE.strip())
+    gir = build_graph_ir(model, view_type=VIEW_TYPE_VERIFICATION, finding_element_ids=set())
+    assert gir["nodes"] == []
+    assert gir["edges"] == []

@@ -51,7 +51,61 @@ html, body {
 #diagram-container {
   overflow: auto;
   width: 100%;
-  height: calc(100% - 24px);
+  height: calc(100% - 48px);
+}
+
+/* ビュー切り替えタブ（Group2 b7, V1-2）。 */
+#view-type-tabs {
+  margin-bottom: 4px;
+}
+
+.view-type-tab {
+  font-size: 12px;
+  padding: 2px 8px;
+  margin-right: 4px;
+  cursor: pointer;
+  border: 1px solid #666;
+  background: transparent;
+  color: inherit;
+}
+
+.view-type-tab.active {
+  background: #1a73e8;
+  color: white;
+  border-color: #1a73e8;
+}
+
+/* 型/重要度フィルタ（Group2 b9, V3）。Graph IR/View IR自体は変更せず、
+   描画済みSVGノードの表示/非表示だけをJSで切り替える。 */
+#filter-controls {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.filter-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sysml-node.filtered-out {
+  display: none;
+}
+
+/* 折りたたみ中のノード（Group2 b10, V4）。ダブルクリックでトグルする。 */
+.sysml-node.collapsed rect {
+  stroke-dasharray: 4 2;
 }
 
 #inspector {

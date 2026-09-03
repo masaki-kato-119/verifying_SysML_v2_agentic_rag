@@ -74,3 +74,58 @@ def test_edges_connect_node_centers():
 def test_empty_graph_ir_produces_empty_view_ir():
     vir = build_view_ir({"nodes": [], "edges": []})
     assert vir == {"view_type": "structure", "nodes": [], "edges": []}
+
+
+# --- collapsed_ids（Group2 b10, V4） --------------------------------------
+
+
+def test_default_collapsed_ids_is_unchanged_behavior():
+    """既存呼び出し（collapsed_ids省略時）は無変更で動作する（後方互換）。"""
+    _, model = build_semantic_model(_SAMPLE.strip())
+    gir = build_graph_ir(model)
+    assert build_view_ir(gir) == build_view_ir(gir, collapsed_ids=None)
+
+
+def test_collapsed_node_excludes_descendants_from_nodes():
+    _, model = build_semantic_model(_SAMPLE.strip())
+    gir = build_graph_ir(model)
+    vir = build_view_ir(gir, collapsed_ids={"$root::Engine"})
+    ids = {n["id"] for n in vir["nodes"]}
+    assert "$root::Engine" in ids
+    assert "$root::Engine::power" not in ids
+    # 折りたたみ対象外のノード（Machine配下等）は影響を受けない。
+    assert "$root::Machine::mass" in ids
+
+
+def test_collapsed_node_is_sized_as_a_leaf():
+    """折りたたんだノードは子を含めた包含サイズではなく、ラベルのみの
+    最小サイズ（_leaf_size相当）で描画される。"""
+    _, model = build_semantic_model(_SAMPLE.strip())
+    gir = build_graph_ir(model)
+    vir_expanded = build_view_ir(gir)
+    vir_collapsed = build_view_ir(gir, collapsed_ids={"$root::Engine"})
+    by_id_expanded = {n["id"]: n for n in vir_expanded["nodes"]}
+    by_id_collapsed = {n["id"]: n for n in vir_collapsed["nodes"]}
+    assert by_id_collapsed["$root::Engine"]["height"] < by_id_expanded["$root::Engine"]["height"]
+
+
+def test_edges_into_collapsed_descendants_are_excluded():
+    """折りたたみで除外された子孫を指すエッジ（例: power(engine配下)の
+    feature_typing）は、両端の位置が存在しないため描画対象から除かれる。"""
+    text = """
+    package Vehicle {
+        part def Machine {
+            attribute mass : Real;
+        }
+        part def Engine :> Machine {
+            part powerSource : Machine;
+        }
+    }
+    """
+    _, model = build_semantic_model(text.strip())
+    gir = build_graph_ir(model)
+    vir = build_view_ir(gir, collapsed_ids={"$root::Engine"})
+    ids = {n["id"] for n in vir["nodes"]}
+    assert "$root::Engine::powerSource" not in ids
+    # powerSourceのfeature_typingエッジ自体が(KeyErrorにならず)除外されている。
+    assert not any("powerSource" in edge["id"] for edge in vir["edges"])

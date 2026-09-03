@@ -22,7 +22,7 @@ from sysml_v2_checker_advanced.semantic_model import (
     build_semantic_model,
     semantic_model_to_json_dict,
 )
-from viewer.graph_ir import build_graph_ir
+from viewer.graph_ir import VIEW_TYPE_STRUCTURE, build_graph_ir
 from viewer.svg_renderer import render_svg
 from viewer.view_ir import build_view_ir
 
@@ -43,6 +43,8 @@ def index() -> FileResponse:
 
 class ModelRequest(BaseModel):
     text: str
+    view_type: str = VIEW_TYPE_STRUCTURE
+    collapsed_ids: List[str] = []
 
 
 class ModelResponse(BaseModel):
@@ -52,6 +54,7 @@ class ModelResponse(BaseModel):
     view_ir: Optional[Dict[str, Any]] = None
     svg: Optional[str] = None
     findings: Optional[List[Dict[str, Any]]] = None
+    view_type_error: Optional[str] = None
 
 
 @app.get("/api/health")
@@ -71,16 +74,24 @@ def get_model(request: ModelRequest) -> ModelResponse:
     if ast.get("type") == "error":
         return ModelResponse(ast_error=ast.get("message"))
 
-    graph_ir = build_graph_ir(semantic_model)
-    view_ir = build_view_ir(graph_ir)
-    svg = render_svg(view_ir)
-
     # element_indexはast由来のnodeオブジェクト同一性で突合するため、
     # 同じastから得たsemantic_modelを使う必要がある（拡張仕様書9章の制約。
     # GraphRAG/mcp_server.pyのvalidate_sysml_modelと同じ呼び出し順序）。
+    # view_type="verification"（Group2 b8）がfindingの要素idを起点にする
+    # ため、Graph IR構築より先にfindingsを求める。
     issues = lint_sysml(ast)
     element_index = build_element_index(semantic_model["nodes"])
     findings = [issue.to_dict(element_index) for issue in issues]
+    finding_element_ids = {f["element_id"] for f in findings if f["element_id"]}
+
+    try:
+        graph_ir = build_graph_ir(
+            semantic_model, view_type=request.view_type, finding_element_ids=finding_element_ids
+        )
+    except ValueError as e:
+        return ModelResponse(view_type_error=str(e))
+    view_ir = build_view_ir(graph_ir, collapsed_ids=set(request.collapsed_ids))
+    svg = render_svg(view_ir)
 
     return ModelResponse(
         semantic_model=semantic_model_to_json_dict(semantic_model),

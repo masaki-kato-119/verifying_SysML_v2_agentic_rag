@@ -20,18 +20,23 @@ def _leaf_size(label: str) -> Tuple[int, int]:
     return width, _MIN_HEIGHT
 
 
-def build_view_ir(graph_ir: Dict) -> Dict:
+def build_view_ir(graph_ir: Dict, collapsed_ids=None) -> Dict:
     """Graph IRからView IR（構造ビュー）を構築する。
 
     Args:
         graph_ir: {"nodes": [{"id","type","label","group_id"}, ...],
             "edges": [{"id","from","to","kind"}, ...]}（viewer.graph_ir参照）
+        collapsed_ids: 折りたたむノードidの集合（Group2 b10, V4）。指定した
+            ノードの子孫（孫以降を含む）をレイアウト計算・出力の両方から
+            除外し、指定ノード自身は子を持たない葉として最小サイズで描画する。
+            省略時は従来どおり全ノードを描画する（後方互換）。
 
     Returns:
-        {"view_type": "structure",
+        {"view_type": graph_irのview_type（省略時は"structure"を既定とする）,
          "nodes": [{"id","x","y","width","height"}, ...]（絶対座標）,
          "edges": [{"id","points": [[x,y],[x,y]]}, ...]}
     """
+    collapsed_ids = collapsed_ids or set()
     nodes_by_id = {n["id"]: n for n in graph_ir["nodes"]}
 
     children_by_parent: Dict[Optional[str], List[str]] = {}
@@ -41,11 +46,30 @@ def build_view_ir(graph_ir: Dict) -> Dict:
     for parent_id in children_by_parent:
         children_by_parent[parent_id].sort()
 
+    # collapsed_idsで指定されたノードの子孫（孫以降を含む）を、レイアウト・
+    # 出力の両方から除外する集合として先に確定させる。
+    excluded_ids: set = set()
+
+    def _collect_descendants(node_id: str) -> None:
+        for child_id in children_by_parent.get(node_id, []):
+            if child_id not in excluded_ids:
+                excluded_ids.add(child_id)
+                _collect_descendants(child_id)
+
+    for collapsed_id in collapsed_ids:
+        if collapsed_id in nodes_by_id:
+            _collect_descendants(collapsed_id)
+
+    def _children_of(node_id) -> List[str]:
+        if node_id in collapsed_ids:
+            return []  # 折りたたみ対象自身は子を持たない葉として扱う。
+        return [c for c in children_by_parent.get(node_id, []) if c not in excluded_ids]
+
     sizes: Dict[str, Tuple[int, int]] = {}
     positions: Dict[str, Tuple[int, int]] = {}
 
     def compute_size(node_id: str) -> Tuple[int, int]:
-        children = children_by_parent.get(node_id, [])
+        children = _children_of(node_id)
         if not children:
             size = _leaf_size(nodes_by_id[node_id]["label"])
             sizes[node_id] = size
@@ -62,7 +86,7 @@ def build_view_ir(graph_ir: Dict) -> Dict:
 
     def place(node_id: str, x: int, y: int) -> None:
         positions[node_id] = (x, y)
-        children = children_by_parent.get(node_id, [])
+        children = _children_of(node_id)
         cursor_y = y + _LABEL_HEIGHT + _PADDING
         for child_id in children:
             place(child_id, x + _PADDING, cursor_y)
@@ -70,7 +94,7 @@ def build_view_ir(graph_ir: Dict) -> Dict:
 
     # group_id が None のノード（ルートのみのはず。Semantic Modelのルートは
     # 常に1個。$root自身のparent_id=Noneであるため）を最上位として配置する。
-    roots = sorted(children_by_parent.get(None, []))
+    roots = sorted(c for c in children_by_parent.get(None, []) if c not in excluded_ids)
     cursor_x = _PADDING
     for root_id in roots:
         compute_size(root_id)
@@ -90,6 +114,7 @@ def build_view_ir(graph_ir: Dict) -> Dict:
             "width": sizes[nid][0], "height": sizes[nid][1],
         }
         for nid in sorted(nodes_by_id)
+        if nid not in excluded_ids
     ]
 
     def _center(node_id: str) -> Tuple[float, float]:
@@ -100,9 +125,12 @@ def build_view_ir(graph_ir: Dict) -> Dict:
     # 非包含エッジ（specialization/feature_typing/connection等）は、ボックス
     # 配置が確定した後に両端の中心同士を直線で結ぶだけの単純な後処理とする
     # （実装仕様書4.2節：交差は許容し、手動調整はPhase D以降の課題とする）。
+    # 折りたたみで除外された子孫を指すエッジは、両端の位置が存在しないため
+    # 描画対象から除く（3.3節の「宙に浮いた矢印を避ける」設計と同じ考え方）。
     edges_out = [
         {"id": edge["id"], "points": [list(_center(edge["from"])), list(_center(edge["to"]))]}
         for edge in graph_ir["edges"]
+        if edge["from"] not in excluded_ids and edge["to"] not in excluded_ids
     ]
 
-    return {"view_type": "structure", "nodes": nodes_out, "edges": edges_out}
+    return {"view_type": graph_ir.get("view_type", "structure"), "nodes": nodes_out, "edges": edges_out}

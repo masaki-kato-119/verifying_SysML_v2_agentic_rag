@@ -55,12 +55,24 @@ let latestModel = null; // 直近成功時のAPIレスポンス（構文エラ�
 let latestFindings = [];
 let debounceTimer = null;
 let selectedElementId = null;
+let currentViewType = "structure"; // Group2 b7(V1-2)
+
+// Group2 b9(V3): 型/重要度フィルタ。Graph IR/View IR自体は変更せず、描画済み
+// SVGノードをdisplay:noneで隠すだけの低リスクな実装（作業計画書Group2(b9)の
+// 方針通り）。未登録の型/重要度は「表示」を既定値とする。
+const typeFilterState = {};
+const severityFilterState = { error: true, warning: true, info: true };
+
+// Group2 b10(V4): 階層の折りたたみ。ノードidの集合をリクエストごとに
+// /api/modelへ送り、View IR側でその子孫をレイアウトから除外してもらう
+// （Graph IR/Explorerは常に全要素を保持し、折りたたみの影響を受けない）。
+const collapsedIds = new Set();
 
 async function fetchModel(text) {
   const response = await fetch("/api/model", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({ text, view_type: currentViewType, collapsed_ids: [...collapsedIds] }),
   });
   return response.json();
 }
@@ -68,6 +80,8 @@ async function fetchModel(text) {
 function renderDiagram(svg) {
   document.getElementById("diagram-container").innerHTML = svg;
   document.querySelectorAll("#diagram-container .sysml-node").forEach((g) => {
+    const elementId = g.getAttribute("data-element-id");
+    g.classList.toggle("collapsed", collapsedIds.has(elementId));
     g.addEventListener("click", (event) => {
       // ノードは入れ子（親の中に子のSVG<g>がある）のため、stopPropagation()が
       // 無いとクリックイベントが祖先の.sysml-nodeまでバブルし、祖先側の
@@ -75,7 +89,18 @@ function renderDiagram(svg) {
       // 既存バグ。Group1 b4の動作確認中に発見し、影響が大きく修正も
       // 一行で済むためその場で修正した）。
       event.stopPropagation();
-      selectElement(g.getAttribute("data-element-id"));
+      selectElement(elementId);
+    });
+    // ダブルクリックで折りたたみ/展開をトグルする（Group2 b10, V4）。
+    // 子を持たない葉ノードでも実害はない（送るcollapsed_idsが1件増えるだけ）。
+    g.addEventListener("dblclick", (event) => {
+      event.stopPropagation();
+      if (collapsedIds.has(elementId)) {
+        collapsedIds.delete(elementId);
+      } else {
+        collapsedIds.add(elementId);
+      }
+      updateModelNow();
     });
   });
 }
@@ -103,6 +128,76 @@ function applyFindingsOverlay(findings) {
     const el = document.querySelector(`.sysml-node[data-element-id="${CSS.escape(elementId)}"]`);
     if (el) el.classList.add(RANK_TO_CLASS[rank]);
   }
+}
+
+// 現在のGraph IRノードが持つ型・現在のFindingsが持つ重要度から、SVGノードを
+// 非表示にする（Graph IR/View IR自体は変更しない、b9の完了基準）。
+function applyNodeFilters() {
+  const severitiesByElement = new Map();
+  for (const finding of latestFindings) {
+    if (!finding.element_id) continue;
+    if (!severitiesByElement.has(finding.element_id)) severitiesByElement.set(finding.element_id, new Set());
+    severitiesByElement.get(finding.element_id).add(finding.severity);
+  }
+
+  document.querySelectorAll("#diagram-container .sysml-node").forEach((el) => {
+    const type = el.getAttribute("data-type");
+    const typeVisible = typeFilterState[type] !== false;
+
+    const severities = severitiesByElement.get(el.getAttribute("data-element-id"));
+    // Findingを持たない要素は重要度フィルタの対象外（常に表示）。
+    const severityVisible = !severities || [...severities].some((s) => severityFilterState[s] !== false);
+
+    el.classList.toggle("filtered-out", !(typeVisible && severityVisible));
+  });
+}
+
+// フィルタパネルを現在のGraph IRの型集合から再構築する（b9）。チェック状態は
+// typeFilterState/severityFilterStateに保持されるため、再描画をまたいで保持される。
+function renderFilterControls(graphIr) {
+  const container = document.getElementById("filter-controls");
+  if (!container) return;
+
+  const types = [...new Set(graphIr.nodes.map((n) => n.type))].sort();
+  for (const type of types) {
+    if (!(type in typeFilterState)) typeFilterState[type] = true; // 新規の型は既定で表示
+  }
+
+  container.innerHTML = "";
+
+  const typeGroup = document.createElement("div");
+  typeGroup.className = "filter-group";
+  typeGroup.innerHTML = "<strong>型:</strong>";
+  for (const type of types) {
+    typeGroup.appendChild(makeFilterCheckbox(type, typeFilterState[type], (checked) => {
+      typeFilterState[type] = checked;
+      applyNodeFilters();
+    }));
+  }
+  container.appendChild(typeGroup);
+
+  const severityGroup = document.createElement("div");
+  severityGroup.className = "filter-group";
+  severityGroup.innerHTML = "<strong>重要度:</strong>";
+  for (const severity of ["error", "warning", "info"]) {
+    severityGroup.appendChild(makeFilterCheckbox(severity, severityFilterState[severity], (checked) => {
+      severityFilterState[severity] = checked;
+      applyNodeFilters();
+    }));
+  }
+  container.appendChild(severityGroup);
+}
+
+function makeFilterCheckbox(labelText, checked, onChange) {
+  const label = document.createElement("label");
+  label.className = "filter-checkbox";
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = checked;
+  input.addEventListener("change", () => onChange(input.checked));
+  label.appendChild(input);
+  label.appendChild(document.createTextNode(labelText));
+  return label;
 }
 
 // Graph IRのnodesを group_id からツリー化してExplorerへ表示する（6.3, 8.2節）。
@@ -413,6 +508,8 @@ function onModelUpdated(data) {
   updateErrorMarkers(null);
   renderDiagram(data.svg);
   applyFindingsOverlay(latestFindings);
+  renderFilterControls(data.graph_ir);
+  applyNodeFilters();
   renderExplorer(data.graph_ir);
   // 選択中の要素があれば、新しいfindingsを反映してInspectorを再描画する。
   if (selectedElementId) {
@@ -425,11 +522,45 @@ function scheduleModelUpdate() {
   if (debounceTimer !== null) {
     clearTimeout(debounceTimer);
   }
-  debounceTimer = setTimeout(async () => {
-    const text = editor.getValue();
-    const data = await fetchModel(text);
-    onModelUpdated(data);
-  }, DEBOUNCE_MS);
+  debounceTimer = setTimeout(updateModelNow, DEBOUNCE_MS);
+}
+
+// ビュー切り替え（Group2 b7）等、デバウンスを待たず即座に反映したい場合に使う。
+//
+// レスポンスの到着順はリクエスト送出順と一致するとは限らない（例:
+// 連続編集で複数回スケジュールされた更新が、ビュー切り替えの直後の更新より
+// 後に返ってくる）。requestSequenceで「自分が最新のリクエストか」を確認し、
+// 古い応答が新しい表示を上書きしないようにする（b7動作確認中に発見した
+// 実害のある競合状態のため、その場で修正した）。
+let requestSequence = 0;
+
+async function updateModelNow() {
+  const text = editor.getValue();
+  const sequence = ++requestSequence;
+  const data = await fetchModel(text);
+  if (sequence !== requestSequence) return; // より新しいリクエストが発行済みなら古い応答は破棄
+  onModelUpdated(data);
+}
+
+// Group2 b7(V1-2): ビュー切り替えタブ。
+function setupViewTypeTabs() {
+  const buttons = document.querySelectorAll(".view-type-tab");
+  function refreshActiveState() {
+    buttons.forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.viewType === currentViewType);
+    });
+  }
+  buttons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.viewType === currentViewType) return;
+      currentViewType = btn.dataset.viewType;
+      refreshActiveState();
+      selectedElementId = null; // 別ビューでは同じidが存在しないことがあるため選択を解除
+      renderInspector(null);
+      updateModelNow();
+    });
+  });
+  refreshActiveState();
 }
 
 // Monacoのカーソル位置(絶対offset)を含むノードのうち、source_rangeが最も
@@ -475,6 +606,8 @@ require(["vs/editor/editor.main"], function () {
   });
 
   editor.onDidChangeModelContent(scheduleModelUpdate);
+
+  setupViewTypeTabs();
 
   // 初回表示。
   scheduleModelUpdate();

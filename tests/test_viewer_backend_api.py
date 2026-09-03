@@ -70,3 +70,60 @@ def test_model_endpoint_reports_parse_error_without_crashing():
 def test_model_endpoint_requires_text_field():
     response = client.post("/api/model", json={})
     assert response.status_code == 422  # FastAPI/Pydanticの自動バリデーション
+
+
+def test_model_endpoint_defaults_to_structure_view():
+    response = client.post("/api/model", json={"text": "package P { part def A; }"})
+    data = response.json()
+    assert any(n["id"] == "$root::A" for n in data["graph_ir"]["nodes"])
+
+
+def test_model_endpoint_accepts_requirement_traceability_view_type():
+    text = (
+        "package P { part def System; part system; requirement def Req1; "
+        "requirement req1 : Req1; satisfy requirement req1 : Req1 by system; }"
+    )
+    response = client.post("/api/model", json={"text": text, "view_type": "requirement_traceability"})
+    data = response.json()
+    assert data["view_type_error"] is None
+    types = {n["type"] for n in data["graph_ir"]["nodes"]}
+    assert types == {"requirement_def", "satisfy_requirement_usage", "part_instance"}
+
+
+def test_model_endpoint_verification_view_limits_to_finding_related_nodes():
+    """Group2 b8(V2): view_type="verification"は、Findingが付いた要素
+    (ここでは$root::A::x)だけに絞られる。xのfeature_typing参照先(NoSuchType)は
+    unresolvedなので辿れず、他の要素は含まれない。"""
+    response = client.post(
+        "/api/model",
+        json={
+            "text": "package P { part def A { attribute x : NoSuchType; } }",
+            "view_type": "verification",
+        },
+    )
+    data = response.json()
+    assert data["view_type_error"] is None
+    assert [n["id"] for n in data["graph_ir"]["nodes"]] == ["$root::A::x"]
+    assert data["graph_ir"]["edges"] == []
+    assert len(data["findings"]) == 1
+
+
+def test_model_endpoint_collapsed_ids_excludes_descendants_from_view_ir():
+    """Group2 b10(V4): collapsed_idsに指定した要素の子孫はView IRから除外される
+    （Graph IRには影響しない＝Explorer等は折りたたみの影響を受けない設計）。"""
+    text = "package P { part def A { attribute x : Real; } }"
+    response = client.post("/api/model", json={"text": text, "collapsed_ids": ["$root::A"]})
+    data = response.json()
+    assert any(n["id"] == "$root::A" for n in data["graph_ir"]["nodes"])
+    assert any(n["id"] == "$root::A::x" for n in data["graph_ir"]["nodes"])
+    view_ir_ids = {n["id"] for n in data["view_ir"]["nodes"]}
+    assert "$root::A" in view_ir_ids
+    assert "$root::A::x" not in view_ir_ids
+
+
+def test_model_endpoint_reports_unknown_view_type_without_crashing():
+    response = client.post("/api/model", json={"text": "package P { part def A; }", "view_type": "no_such_view"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["view_type_error"] is not None
+    assert data["graph_ir"] is None
