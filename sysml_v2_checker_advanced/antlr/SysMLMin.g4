@@ -203,11 +203,16 @@ dependencyStmt
 // redefine節を多重度より先に置く順序のみ対応しており、この語順を
 // 受理できなかった。名前のドット区切り対応と同時に発見した同一構文の
 // 語順ギャップのためこのタスクでまとめて対応する）。
+// `event driver::setSpeedSent;`（Interaction Realization-2.sysml）の
+// ように、名前スロットが'::'区切りの参照を取ることがある（従来
+// `qualifiedName?`（'.'区切りのみ）だった。他の多くの規則と同じ
+// `namespacePath`に置き換え、型節と衝突しないよう専用ラベルを付ける。
+// 2026-09、参照実装比較レポートで発見）。
 eventOccurrenceUsageStmt
-    : isThen='then'? direction? 'event' 'occurrence'? qualifiedName?
+    : isThen='then'? direction? 'event' 'occurrence'? name=namespacePath?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
-      (':' namespacePath)?
+      (':' typeRef=namespacePath)?
       ( 'default' '='? defaultValue=expression | '=' value=expression )?
       ( '{' partBodyElement* '}' | ';' )
     ;

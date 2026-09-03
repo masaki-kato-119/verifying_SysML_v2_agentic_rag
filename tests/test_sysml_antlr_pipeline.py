@@ -7935,12 +7935,41 @@ def test_antlr_event_occurrence_usage_dotted_name_and_multiplicity_before_redefi
     )
     node = ast["children"][0]["children"][0]
     assert node["type"] == "event_occurrence_usage"
-    assert node["name"] == "producerBehavior.publish"
+    # 名前スロットが`qualifiedName`（'.'区切りのみ）から`namespacePath`へ
+    # 置き換わったため、出力は他の多くの規則と同じく常に'::'区切りへ
+    # 正規化される（2026-09、extend_eventoccurrenceusagestmt_namespacepath_name
+    # 対応中に変更）。
+    assert node["name"] == "producerBehavior::publish"
     assert node["redefines"] == [
         {"kind": "redefines", "target": "publish_source_event"}
     ]
 
     # 既存の単純名（ドット無し）が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr("event occurrence A;")
+    plain_node = plain_ast["children"][0]
+    assert plain_node["name"] == "A"
+
+
+def test_antlr_eventoccurrenceusagestmt_double_colon_name():
+    """`event driver::setSpeedSent;`（Interaction Realization-2.sysml
+    L56、同型がL63,68等）のように、eventOccurrenceUsageStmtの名前
+    スロットが`qualifiedName`（'.'区切りのみ）のため'::'区切りの名前を
+    受理できなかった（他の多くの規則と同じ`namespacePath`に置き換えて
+    対応）。既存の'.'区切り・単純名が引き続き機能することも確認する。
+    2026-09-03、extend_eventoccurrenceusagestmt_namespacepath_name
+    対応中に発見。"""
+    ast = parse_sysml_antlr("part def X { event driver::setSpeedSent; }")
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "event_occurrence_usage"
+    assert node["name"] == "driver::setSpeedSent"
+
+    # 既存の'.'区切り（フィーチャーチェーン）形が引き続き機能することを
+    # 確認する。
+    dotted_ast = parse_sysml_antlr("part def X { event a.b; }")
+    dotted_node = dotted_ast["children"][0]["children"][0]
+    assert dotted_node["name"] == "a::b"
+
+    # 既存の単純名が引き続き機能することを確認する。
     plain_ast = parse_sysml_antlr("event occurrence A;")
     plain_node = plain_ast["children"][0]
     assert plain_node["name"] == "A"
