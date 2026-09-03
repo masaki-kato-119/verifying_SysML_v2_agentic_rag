@@ -84,8 +84,49 @@ html, body {
   padding: 1px 0;
 }
 
+.edge-row {
+  cursor: pointer;
+  padding-left: 8px;
+}
+
+.edge-row:hover {
+  text-decoration: underline;
+}
+
+.evidence-row {
+  font-size: 11px;
+  opacity: 0.8;
+  padding-left: 16px;
+}
+
+.finding-status-control {
+  padding-left: 16px;
+  margin-bottom: 4px;
+}
+
+.finding-status-updated {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.finding-history {
+  list-style: none;
+  margin: 2px 0 0;
+  padding-left: 8px;
+  font-size: 11px;
+  opacity: 0.7;
+  border-left: 2px solid #444;
+}
+
 .sysml-node {
   cursor: pointer;
+}
+
+/* 選択要素からN次まで辿れる関連要素の淡いハイライト（Group1 b2）。
+   selected(青・太線)・finding-*(色付き枠)より優先度を下げるため、背景の
+   塗りだけを変え枠線は変更しない。 */
+.sysml-node.impacted rect {
+  fill: #eef3fc;
 }
 
 .sysml-node.selected rect {

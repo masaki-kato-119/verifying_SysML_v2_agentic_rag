@@ -15,6 +15,41 @@ const DEFAULT_TEXT = `package Vehicle {
 
 const DEBOUNCE_MS = 400;
 
+// Findingの状態遷移（Group1 b4, I4）。ブラウザのlocalStorageに保存する
+// （複数人でのレビュー共有が必要になった時点でサーバー側永続化を再検討する。
+// 作業計画書8章のリスク欄に明記済みの割り切り）。
+const FINDING_STATUS_STORAGE_KEY = "sysmlViewerFindingStatus";
+const FINDING_STATUSES = ["Open", "Accepted", "Resolved", "False Positive"];
+
+// 1つの要素が複数のFindingを持ちうるため、element_id単体ではキーにならない。
+// rule+messageを組み合わせた複合キーで「同じ場所の同じ種類の指摘」を識別する
+// （テキスト編集で多少内容が変わると別のFinding扱いになる既知の簡易割り切り）。
+function findingStatusKey(finding) {
+  return `${finding.element_id}::${finding.rule}::${finding.message}`;
+}
+
+function loadFindingStatuses() {
+  try {
+    return JSON.parse(localStorage.getItem(FINDING_STATUS_STORAGE_KEY) || "{}");
+  } catch (e) {
+    return {};
+  }
+}
+
+// Group1 b5(I5): 状態変更のたびに履歴を追記する。既存のstatus/updated_atは
+// 「現在値」として引き続き提供し、historyは追加のみ（削除・上書きしない）。
+function saveFindingStatus(key, status) {
+  const all = loadFindingStatuses();
+  const previous = all[key] || { history: [] };
+  const entry = { status, timestamp: new Date().toISOString() };
+  all[key] = {
+    status,
+    updated_at: entry.timestamp,
+    history: [...(previous.history || []), entry],
+  };
+  localStorage.setItem(FINDING_STATUS_STORAGE_KEY, JSON.stringify(all));
+}
+
 let editor = null;
 let latestModel = null; // 直近成功時のAPIレスポンス（構文エラー時もこれを表示し続ける。8.4節）
 let latestFindings = [];
@@ -33,7 +68,15 @@ async function fetchModel(text) {
 function renderDiagram(svg) {
   document.getElementById("diagram-container").innerHTML = svg;
   document.querySelectorAll("#diagram-container .sysml-node").forEach((g) => {
-    g.addEventListener("click", () => selectElement(g.getAttribute("data-element-id")));
+    g.addEventListener("click", (event) => {
+      // ノードは入れ子（親の中に子のSVG<g>がある）のため、stopPropagation()が
+      // 無いとクリックイベントが祖先の.sysml-nodeまでバブルし、祖先側の
+      // リスナーが後から発火して子の選択を上書きしてしまう（Phase A由来の
+      // 既存バグ。Group1 b4の動作確認中に発見し、影響が大きく修正も
+      // 一行で済むためその場で修正した）。
+      event.stopPropagation();
+      selectElement(g.getAttribute("data-element-id"));
+    });
   });
 }
 
@@ -102,6 +145,34 @@ function renderExplorer(graphIr) {
   if (tree) container.appendChild(tree);
 }
 
+// 選択要素がfrom/toになっているGraph IRエッジを一覧表示する（Group1 b1,
+// 実装仕様書6.3節「関連エッジ」。Phase Aでは未実装だった項目）。
+// クリックで相手要素へselectElementでジャンプする。
+function renderRelatedEdges(node, container) {
+  if (!latestModel) return;
+  const byId = new Map(latestModel.graph_ir.nodes.map((n) => [n.id, n]));
+  const related = latestModel.graph_ir.edges.filter((e) => e.from === node.id || e.to === node.id);
+  if (related.length === 0) return;
+
+  const heading = document.createElement("div");
+  heading.innerHTML = "<strong>関連エッジ:</strong>";
+  container.appendChild(heading);
+
+  for (const edge of related) {
+    const outgoing = edge.from === node.id;
+    const otherId = outgoing ? edge.to : edge.from;
+    const other = byId.get(otherId);
+    const otherLabel = other ? `${other.label} (${other.type})` : otherId;
+    const arrow = outgoing ? "→" : "←";
+
+    const row = document.createElement("div");
+    row.className = "edge-row";
+    row.textContent = `${arrow} ${edge.kind} ${arrow} ${otherLabel}`;
+    row.addEventListener("click", () => selectElement(otherId));
+    container.appendChild(row);
+  }
+}
+
 function renderInspector(node) {
   const container = document.getElementById("inspector-content");
   if (!node) {
@@ -125,6 +196,8 @@ function renderInspector(node) {
     container.appendChild(row);
   }
 
+  renderRelatedEdges(node, container);
+
   const relatedFindings = latestFindings.filter((f) => f.element_id === node.id);
   if (relatedFindings.length > 0) {
     const heading = document.createElement("div");
@@ -133,10 +206,78 @@ function renderInspector(node) {
     for (const finding of relatedFindings) {
       const row = document.createElement("div");
       row.className = `finding-row finding-${finding.severity}`;
-      row.textContent = `[${finding.severity}] ${finding.message}`;
+      // Group1 b3b(I3-2): ruleはLintIssueが呼び出し元フレームから自動取得した
+      // チェックメソッド名（例: "_check_attribute_def"）。省略時（古いAPI等）は表示しない。
+      const rulePrefix = finding.rule ? `(${finding.rule}) ` : "";
+      row.textContent = `[${finding.severity}] ${rulePrefix}${finding.message}`;
       container.appendChild(row);
+
+      // Group1 b3(I3-1): このFindingの対象要素が持つ参照（reference_text/
+      // resolution_status）をsemantic_model.edgesから引いて併記する。
+      // Graph IRのedgesはresolved=trueのみ（3.3節の設計判断）のため、
+      // unresolvedな（＝多くのFindingの原因そのものである）参照を見るには
+      // semantic_model.edges（解決可否を問わず全件持つ）を使う必要がある。
+      const evidenceEdges = latestModel.semantic_model.edges.filter((e) => e.from_id === finding.element_id);
+      for (const edge of evidenceEdges) {
+        const evidenceRow = document.createElement("div");
+        evidenceRow.className = "evidence-row";
+        evidenceRow.textContent = `　根拠: ${edge.kind} → "${edge.reference_text}" (${edge.resolution_status})`;
+        container.appendChild(evidenceRow);
+      }
+
+      container.appendChild(renderFindingStatusControl(finding));
     }
   }
+}
+
+// Findingの状態変更UI（Group1 b4, I4）+ レビュー履歴（Group1 b5, I5）。
+// <select>でOpen/Accepted/Resolved/False Positiveを切り替え、
+// localStorageに保存する。変更のたびに履歴（b5）ごと再描画する。
+function renderFindingStatusControl(finding) {
+  const key = findingStatusKey(finding);
+  const stored = loadFindingStatuses()[key];
+  const currentStatus = stored ? stored.status : "Open";
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "finding-status-control";
+
+  const select = document.createElement("select");
+  for (const status of FINDING_STATUSES) {
+    const option = document.createElement("option");
+    option.value = status;
+    option.textContent = status;
+    if (status === currentStatus) option.selected = true;
+    select.appendChild(option);
+  }
+  select.addEventListener("change", () => {
+    saveFindingStatus(key, select.value);
+    // 履歴（b5）を含め状態全体が変わるため、コントロール自体を作り直す。
+    const refreshed = renderFindingStatusControl(finding);
+    wrapper.replaceWith(refreshed);
+  });
+  wrapper.appendChild(select);
+
+  if (stored) {
+    const updatedLabel = document.createElement("span");
+    updatedLabel.className = "finding-status-updated";
+    updatedLabel.textContent = ` (${new Date(stored.updated_at).toLocaleString()}時点)`;
+    wrapper.appendChild(updatedLabel);
+  }
+
+  const history = (stored && stored.history) || [];
+  if (history.length > 0) {
+    const historyList = document.createElement("ul");
+    historyList.className = "finding-history";
+    // 新しいものを上に（時系列を辿りやすいよう降順）。
+    for (const entry of [...history].reverse()) {
+      const item = document.createElement("li");
+      item.textContent = `${new Date(entry.timestamp).toLocaleString()} → ${entry.status}`;
+      historyList.appendChild(item);
+    }
+    wrapper.appendChild(historyList);
+  }
+
+  return wrapper;
 }
 
 // プログラムでMonacoの選択範囲を動かしている最中はonDidChangeCursorPosition
@@ -158,6 +299,42 @@ function revealInEditor(node) {
   isProgrammaticEditorUpdate = false;
 }
 
+// 選択要素からGraph IRのエッジ（specialization/feature_typing/connection等、
+// 向きを問わない）をBFSで辿り、IMPACT_DEPTH次までの関連要素idを集める
+// （Group1 b2）。数千要素規模までは毎回の隣接表構築で十分という判断
+// （8.3節のText→Diagram同期の線形探索と同じ考え方）。
+const IMPACT_DEPTH = 2;
+
+function findImpactedElementIds(elementId, depth) {
+  if (!latestModel) return new Set();
+  const adjacency = new Map();
+  const link = (a, b) => {
+    if (!adjacency.has(a)) adjacency.set(a, new Set());
+    adjacency.get(a).add(b);
+  };
+  for (const edge of latestModel.graph_ir.edges) {
+    link(edge.from, edge.to);
+    link(edge.to, edge.from);
+  }
+
+  const visited = new Set([elementId]);
+  let frontier = [elementId];
+  for (let i = 0; i < depth && frontier.length > 0; i++) {
+    const next = [];
+    for (const id of frontier) {
+      for (const neighbor of adjacency.get(id) || []) {
+        if (!visited.has(neighbor)) {
+          visited.add(neighbor);
+          next.push(neighbor);
+        }
+      }
+    }
+    frontier = next;
+  }
+  visited.delete(elementId);
+  return visited;
+}
+
 // Explorer・Diagram・Text双方からの選択を一箇所に集約する。
 // fromEditor=true の場合はva15（カーソル位置からの逆引き）由来のため、
 // Monacoへの書き戻し（revealInEditor）はスキップする（無限ループ防止）。
@@ -166,11 +343,17 @@ function selectElement(elementId, { fromEditor = false } = {}) {
 
   document.querySelectorAll(".explorer-node.selected").forEach((el) => el.classList.remove("selected"));
   document.querySelectorAll(".sysml-node.selected").forEach((el) => el.classList.remove("selected"));
+  document.querySelectorAll(".sysml-node.impacted").forEach((el) => el.classList.remove("impacted"));
 
   const explorerEl = document.querySelector(`.explorer-node[data-element-id="${CSS.escape(elementId)}"]`);
   if (explorerEl) explorerEl.classList.add("selected");
   const diagramEl = document.querySelector(`.sysml-node[data-element-id="${CSS.escape(elementId)}"]`);
   if (diagramEl) diagramEl.classList.add("selected");
+
+  for (const impactedId of findImpactedElementIds(elementId, IMPACT_DEPTH)) {
+    const el = document.querySelector(`.sysml-node[data-element-id="${CSS.escape(impactedId)}"]`);
+    if (el) el.classList.add("impacted");
+  }
 
   const node = latestModel && latestModel.graph_ir.nodes.find((n) => n.id === elementId);
   renderInspector(node);
