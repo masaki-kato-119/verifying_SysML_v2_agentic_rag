@@ -3079,6 +3079,42 @@ def test_antlr_bare_implicit_return_expression():
     assert terminated_result["expression"]["type"] == "arrow_call"
 
 
+def test_antlr_arrowexpr_namespacepath_opname():
+    """`filter (as A).y->ControlFunctions::collect {in ref x; x};`
+    （MetadataUsage_Invalid.sysml L20、xpect validation/invalid）のように、
+    arrowLambdaExpr/arrowCallExprの演算子名`opName`が単一セグメントの
+    simpleNameのみで、'::'修飾されたライブラリ関数のフルパス参照を
+    受理できなかった。既存の単純名形が引き続き機能することも確認する。
+    2026-09-03、extend_arrowlambdaexpr_namespacepath_opname対応中に
+    発見。"""
+    lambda_ast = parse_sysml_antlr(
+        "part def A; metadata def M { filter (self as A)->"
+        "ControlFunctions::collect {in ref x; x}; }"
+    )
+    lambda_node = lambda_ast["children"][1]["children"][0]["children"][0]["expression"]
+    assert lambda_node["type"] == "arrow_lambda"
+    assert lambda_node["name"] == "ControlFunctions::collect"
+
+    call_ast = parse_sysml_antlr(
+        "attribute x = (derivedRequirements->Lib::excludes(originalRequirement));"
+    )
+    call_node = call_ast["children"][0]["value"]
+    assert call_node["type"] == "arrow_call"
+    assert call_node["name"] == "Lib::excludes"
+
+    # 既存の単純名形が引き続き機能することを確認する。
+    plain_call_ast = parse_sysml_antlr(
+        "attribute x = derivedRequirements->excludes(originalRequirement);"
+    )
+    assert plain_call_ast["children"][0]["value"]["name"] == "excludes"
+
+    plain_lambda_ast = parse_sysml_antlr(
+        "attribute x = basisDirections->forAll { in basisDirection : "
+        "VectorQuantityValue; basisDirection };"
+    )
+    assert plain_lambda_ast["children"][0]["value"]["name"] == "forAll"
+
+
 def test_antlr_action_parameter_nested():
     """d69_action_parameter_nesting_missing: SampledFunctions.sysmlの
     `in calc calculation { in x; }`のように、calc種別のパラメータ自身の

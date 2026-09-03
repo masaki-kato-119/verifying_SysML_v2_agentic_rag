@@ -2825,7 +2825,10 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return {
             "type": "arrow_call",
             "receiver": self.visit(receiver_ctx),
-            "name": _simple_name_text(ctx.opName),
+            # `->ControlFunctions::collect(...)`のように、演算子名が'::'
+            # 修飾されることがある（従来simpleName単一セグメントのみ
+            # だった。2026-09、参照実装比較レポートで発見）。
+            "name": _namespace_path_text(ctx.opName),
             "arguments": [self.visit(e) for e in arg_ctxs],
             "children": [],
         }
@@ -2854,7 +2857,10 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return {
             "type": "arrow_lambda",
             "receiver": self.visit(ctx.expression()),
-            "name": _simple_name_text(ctx.opName),
+            # `->ControlFunctions::collect {...}`のように、演算子名が'::'
+            # 修飾されることがある（従来simpleName単一セグメントのみ
+            # だった。2026-09、参照実装比較レポートで発見）。
+            "name": _namespace_path_text(ctx.opName),
             "param": param,
             "body": self.visit(body_ctx.expression()),
             "children": [self.visit(el) for el in body_ctx.partBodyElement()],

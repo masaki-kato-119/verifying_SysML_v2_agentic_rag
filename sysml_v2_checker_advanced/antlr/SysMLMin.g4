@@ -3292,8 +3292,12 @@ expression
     // 演算（例: `basisDirections->forAll { in basisDirection :
     // VectorQuantityValue; ... }`）。`#()`と同様、メンバアクセスに準じる
     // 強い結合の後置演算子として扱い、indexExprの直後に置く。
-    | expression '->' opName=simpleName '(' (expression (',' expression)*)? ')'  # arrowCallExpr
-    | expression '->' opName=simpleName '{' arrowLambdaBody '}'                   # arrowLambdaExpr
+    // `filter (as A).y->ControlFunctions::collect {in ref x; x};`
+    // （MetadataUsage_Invalid.sysml）のように、演算子名が'::'修飾された
+    // ライブラリ関数のフルパス参照を取ることがある（従来simpleName単一
+    // セグメントのみだった。2026-09、参照実装比較レポートで発見）。
+    | expression '->' opName=namespacePath '(' (expression (',' expression)*)? ')'  # arrowCallExpr
+    | expression '->' opName=namespacePath '{' arrowLambdaBody '}'                   # arrowLambdaExpr
     // `Triangle::length^2 + Triangle::width^2`のように、`^`べき乗演算子が
     // 公式コーパス17ファイルで使われている（`s^-1`等の単位式が大半）。
     // 算術演算子より強く結合するため`mulDivExpr`より前に置く。
