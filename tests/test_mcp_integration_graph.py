@@ -65,3 +65,35 @@ async def test_find_path_uses_deduplicated_graph_if_present(graph_client):
 
     if result.data.get("success"):
         assert result.data["path"] == ["requirement", "requirement usage"]
+
+
+_SYSML_WITH_LINT_WARNING = """
+package TestPackage {
+    part def Vehicle {
+        attribute mass : NonExistentType;
+    }
+}
+"""
+
+
+async def test_validate_sysml_model_does_not_crash_on_lint_issues(graph_client):
+    """回帰テスト: _format_lint_issue が存在しない issue.rule/issue.location を
+    直接参照してAttributeErrorになり、validate_sysml_modelが指摘事項を含む
+    モデルに対して汎用エラーしか返せなくなっていた既存バグの再発防止
+    （SysMLv2_SemanticModel_作業計画書.md Phase0）。
+    """
+    result = await graph_client.call_tool(
+        "validate_sysml_model", {"sysml_model_text": _SYSML_WITH_LINT_WARNING}
+    )
+
+    assert result.data["success"] is True
+    lint_results = result.data["lint_results"]
+    assert lint_results["total_issues"] >= 1
+    all_details = (
+        lint_results["error_details"]
+        + lint_results["warning_details"]
+        + lint_results["info_details"]
+    )
+    assert all_details
+    for detail in all_details:
+        assert set(detail) == {"severity", "rule", "message", "location", "suggestion"}

@@ -1835,13 +1835,21 @@ def _summarize_ast(ast: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _format_lint_issue(issue) -> Dict[str, Any]:
-    """リンター問題を辞書形式にフォーマット"""
+    """リンター問題を辞書形式にフォーマット
+
+    現行の LintIssue（sysml_v2_checker_advanced/lint_issue.py）は
+    severity/message/node/line しか持たず、rule/location/suggestion は
+    存在しない。存在しない属性への直接アクセスは issue が1件でもあると
+    AttributeError となり、呼び出し元の広い except で握り潰されて
+    validate_sysml_model 全体が汎用エラーを返す原因になっていたため、
+    全フィールドを getattr の既定値取得に統一する。
+    """
     return {
         "severity": issue.severity,
-        "rule": issue.rule,
+        "rule": getattr(issue, "rule", None),
         "message": issue.message,
-        "location": issue.location,
-        "suggestion": getattr(issue, 'suggestion', None)
+        "location": getattr(issue, "location", None),
+        "suggestion": getattr(issue, "suggestion", None),
     }
 
 
