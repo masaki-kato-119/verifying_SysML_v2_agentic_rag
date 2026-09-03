@@ -2120,9 +2120,15 @@ connectionUsage
     // 内）のように、Variability機能の先頭修飾子がここにも付く（partDef/
     // attributeUsageと同じ理由。2026-08-29、
     // add_connectionusage_variant_prefix対応中に発見）。
+    // `connection de : DE, BC connect b to c;`（ConnectionUsage_Invalid.sysml）
+    // のように、名前付き代替の型節がカンマ区切りの複数型を取ることが
+    // ある（従来単一IDのみだった。第1代替の`typeRef`とは別のラベル
+    // （`namedTypeRef`）を使う（`ctx.typeRef is not None`が代替の判別に
+    // 使われているため、同じラベルを再利用すると判別が壊れる）。2026-09、
+    // 参照実装比較レポートで発見）。
     | variability=('variation' | 'variant')? prefixMetadataAnnotation* isAbstract='abstract'? 'connection' simpleName?
       preMult=multiplicitySpec?
-      (':' ID)?
+      (':' namedTypeRef=namespacePath (',' namedExtraTypeRefs+=namespacePath)*)?
       postMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       // `connection link : DataLink connect tx.txPort to rx.rxPort;`

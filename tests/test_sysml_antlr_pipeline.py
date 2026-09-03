@@ -7456,6 +7456,33 @@ def test_antlr_connectionusage_named_typed_inline_connect():
     assert bare_node["thenEnd"] is None
 
 
+def test_antlr_connectionusage_named_alt_multitype():
+    """`connection de : DE, BC connect b to c;`（ConnectionUsage_Invalid.sysml
+    L21、xpect validation/invalid）のように、connectionUsageの名前付き
+    代替の型節がカンマ区切りの複数型を取れなかった（従来単一IDのみ）。
+    既存の単一型形が引き続き機能することも確認する。2026-09-03、
+    extend_connectionusage_multitype対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "part def DE; part def BC; part def P { "
+        "connection de : DE, BC connect b to c; }"
+    )
+    node = ast["children"][2]["children"][0]
+    assert node["type"] == "connection_usage"
+    assert node["name"] == "de"
+    assert node["type_name"] == "DE"
+    assert node["type_names"] == ["DE", "BC"]
+
+    # 既存の単一型形が引き続き機能することを確認する
+    # （"type_names"キー自体が無いことも確認する）。
+    single_ast = parse_sysml_antlr(
+        "part def DataLink; part def P { "
+        "connection link : DataLink connect tx.txPort to rx.rxPort; }"
+    )
+    single_node = single_ast["children"][1]["children"][0]
+    assert single_node["type_name"] == "DataLink"
+    assert "type_names" not in single_node
+
+
 def test_antlr_connectionusage_variant_prefix():
     """`variant connection adoption_certificate_TypeB1 : Adoption_Certificate
     connect (parent1 ::> woman, adoptiveParent_1 ::> adult, certifiedChild

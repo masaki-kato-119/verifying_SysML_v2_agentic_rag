@@ -693,7 +693,6 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # `abstract connection connections: Connection[0..*] nonunique :>
         # linkObjects, parts { ... }`という、`connect`を伴わない裸の形
         # （itemUsage/partUsage等と同型）。
-        id_ctx = ctx.ID()
         redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
         # `preMult`/`postMult`のどちらか一方にのみ多重度が現れる（両方同時に
         # 現れる実例は無い）。`connect`節自体のfirstMult/thenMultとは別の
@@ -706,10 +705,17 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # `connect`節が続きうる（2026-08-29、235件パース失敗の要因分析で
         # 発見）。
         nary_ends = ctx.naryEnds
+        # `connection de : DE, BC connect b to c;`（ConnectionUsage_Invalid.sysml）
+        # のように、型節がカンマ区切りの複数型を取ることがある（従来
+        # 単一IDのみだった。2026-09、参照実装比較レポートで発見）。
+        named_type_names = (
+            [_namespace_path_text(ctx.namedTypeRef)] if ctx.namedTypeRef is not None else []
+        ) + [_namespace_path_text(t) for t in ctx.namedExtraTypeRefs]
         return {
             "type": "connection_usage",
             "name": _optional_simple_name_text(ctx.simpleName()),
-            "type_name": id_ctx.getText() if id_ctx is not None else None,
+            "type_name": named_type_names[0] if named_type_names else None,
+            **({"type_names": named_type_names} if len(named_type_names) > 1 else {}),
             "multiplicity": self._multiplicity_dict(redefine_mult),
             "isAbstract": ctx.isAbstract is not None,
             "redefines": redefines,
