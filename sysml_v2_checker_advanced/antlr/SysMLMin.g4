@@ -1164,7 +1164,11 @@ connectionEndMember
       kind=('occurrence' | 'port' | 'item' | 'part')?
       isRef='ref'?
       innerName=simpleName?
-      (':' conjugated='~'? ID)?
+      // `end heatPortSource : Interfaces::HeatPort;`
+      // （The-SysMLv2-Book-DroneSystemModel-Example.sysml）のように、
+      // 型節が'::'区切りの型参照を取ることがある（従来ID単一セグメント
+      // のみだった。2026-09、参照実装比較レポートで発見）。
+      (':' conjugated='~'? typeRef=namespacePath)?
       multiplicitySpec?
       // `end item cart: ShoppingCart[1] crosses selectedProduct.inCart;`
       // （ProductSelection_UnownedEnds.sysml）のように、型節・多重度の後に

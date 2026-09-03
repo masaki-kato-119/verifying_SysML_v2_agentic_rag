@@ -2401,16 +2401,17 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             if m is not ctx.endMult and m is not ctx.directMult:
                 inner_mult_ctx = m
                 break
-        id_ctx = ctx.ID()
         redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
         end_name = _optional_simple_name_text(ctx.endName)
         inner_name = _optional_simple_name_text(ctx.innerName)
         # `end p2: ~P;`という共役ポート参照。portUsageと同じく、`~`を
         # type_nameの先頭に合成する（2026-08-28、参照実装比較レポートP1-4で
-        # 発見）。
+        # 発見）。`end heatPortSource : Interfaces::HeatPort;`のように、
+        # 型節が'::'区切りの型参照を取ることもある（従来ID単一セグメント
+        # のみだった。2026-09、参照実装比較レポートで発見）。
         type_name = None
-        if id_ctx is not None:
-            type_name = ("~" + id_ctx.getText()) if ctx.conjugated is not None else id_ctx.getText()
+        if ctx.typeRef is not None:
+            type_name = ("~" + _namespace_path_text(ctx.typeRef)) if ctx.conjugated is not None else _namespace_path_text(ctx.typeRef)
         # `end #cause cause1 : Causer1;`のような`#Type`プレフィックス注釈
         # （2026-08-28、730件回帰チェックで発見）。
         prefix_metadata = [

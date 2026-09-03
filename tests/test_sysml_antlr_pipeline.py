@@ -596,6 +596,35 @@ def test_antlr_connection_end_member_conjugated_type():
     assert conjugated["type_name"] == "~P"
 
 
+def test_antlr_connectionendmember_double_colon_type():
+    """`end heatPortSource : Interfaces::HeatPort;`
+    （The-SysMLv2-Book-DroneSystemModel-Example.sysml L116-117）のように、
+    connectionEndMemberの型節が`':' conjugated='~'? ID`（単一セグメント
+    のみ）のため、'::'区切りの型参照を受理できなかった。既存の単一
+    セグメント形・共役(`~`)形が引き続き機能することも確認する。
+    2026-09-03、extend_connectionendmember_type_namespacepath対応中に
+    発見。"""
+    ast = parse_sysml_antlr(
+        "flow def F { end heatPortSource : Interfaces::HeatPort; }"
+    )
+    node = ast["children"][0]["children"][0]
+    assert node["type"] == "connection_end_member"
+    assert node["type_name"] == "Interfaces::HeatPort"
+
+    # 既存の単一セグメント形・共役(`~`)形が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr("interface def I { end p1: P; end p2: ~P; }")
+    plain, conjugated = plain_ast["children"][0]["children"]
+    assert plain["type_name"] == "P"
+    assert conjugated["type_name"] == "~P"
+
+    # 共役('~')と'::'区切りの併用も確認する。
+    conjugated_dotted_ast = parse_sysml_antlr(
+        "flow def F { end p : ~Interfaces::HeatPort; }"
+    )
+    conjugated_dotted_node = conjugated_dotted_ast["children"][0]["children"][0]
+    assert conjugated_dotted_node["type_name"] == "~Interfaces::HeatPort"
+
+
 # --- calculation usage / constraint usage / satisfy requirement usage ------------
 # (8.2.2.19, 8.2.2.20, 8.2.2.21.2)
 
