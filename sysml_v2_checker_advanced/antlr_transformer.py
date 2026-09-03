@@ -397,10 +397,19 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         prefix_metadata = [
             _namespace_path_text(a.namespacePath()) for a in ctx.prefixMetadataAnnotation()
         ]
+        # `enum redColor redefines red { }`（DroneModelLogical.sysml）のように
+        # redefine節を、`enum e3 : E, EE;`（EnumerationUsage_invalid.sysml）の
+        # ように型節のカンマ区切り複数型を持ちうる（occurrenceUsage等と
+        # 同じ設計。2026-09、参照実装比較レポートで発見）。
+        type_names = ([_namespace_path_text(ctx.typeRef)] if ctx.typeRef is not None else []) + [
+            _namespace_path_text(p) for p in ctx.extraTypeRefs
+        ]
         return {
             "type": "enum_usage",
             "name": _simple_name_text(ctx.simpleName()),
-            "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
+            "type_name": type_names[0] if type_names else None,
+            **({"type_names": type_names} if len(type_names) > 1 else {}),
+            "redefines": self._redefine_list_namespace(ctx.postKind, ctx.postTarget),
             "prefixMetadata": prefix_metadata,
             "value": self.visit(ctx.value) if ctx.value is not None else None,
             "children": [self.visit(el) for el in ctx.enumBodyElement()],

@@ -7121,6 +7121,38 @@ def test_antlr_enumusage_and_anonymous_literal():
     assert named_node["name"] == "low"
 
 
+def test_antlr_enumusage_redefine_and_multitype():
+    """`enum redColor redefines red { }`（DroneModelLogical.sysml L275）・
+    `enum e3 : E, EE;`（EnumerationUsage_invalid.sysml L16、xpect
+    validation/invalid）のように、enumUsageは(1)型節前のredefine節
+    （':>'/':>>'/'subsets'/'redefines'）と(2)型節のカンマ区切り複数型の
+    両方を欠いていた（従来型節は単一型のみ、redefine節は非対応）。
+    2026-09-03、extend_enumusage_redefine_and_multitype対応中に発見。"""
+    redefine_ast = parse_sysml_antlr(
+        "part def P { enum def C; enum redColor redefines red { } enum red; }"
+    )
+    redefine_node = redefine_ast["children"][0]["children"][1]
+    assert redefine_node["type"] == "enum_usage"
+    assert redefine_node["name"] == "redColor"
+    assert redefine_node["type_name"] is None
+    assert redefine_node["redefines"] == [{"kind": "redefines", "target": "red"}]
+
+    multitype_ast = parse_sysml_antlr(
+        "part def P { enum def E; enum def EE; enum e3 : E, EE; }"
+    )
+    multitype_node = multitype_ast["children"][0]["children"][2]
+    assert multitype_node["type_name"] == "E"
+    assert multitype_node["type_names"] == ["E", "EE"]
+    assert multitype_node["redefines"] == []
+
+    # 既存の単一型・値代入形が引き続き機能することを確認する（回帰防止）。
+    plain_ast = parse_sysml_antlr("enum def ColorKind; enum color : ColorKind;")
+    plain_node = plain_ast["children"][-1]
+    assert plain_node["type_name"] == "ColorKind"
+    assert "type_names" not in plain_node
+    assert plain_node["redefines"] == []
+
+
 def test_antlr_xpect_multiline_block_comment():
     """`//* XPECT errors --- "..." at "..." --- */`（公式xpectテスト
     フィクスチャの複数行アノテーション規約、Connector_Invalid.sysml等）の

@@ -1509,8 +1509,16 @@ enumLiteral
 // partBodyElementの他の代替との曖昧性を避ける。`enumLiteral`自体は
 // `enum`キーワード省略も許すため、enumBodyElement専用のまま据え置く。
 // 2026-08-29、730件ベースライン154件エラー要因分析で発見）。
+// `enum redColor redefines red { }`（DroneModelLogical.sysml）のように
+// 型節前にredefine節を持ち、`enum e3 : E, EE;`（EnumerationUsage_invalid.sysml）
+// のように型節がカンマ区切り複数型を取りうる（他のUsage規則と同じ設計。
+// 2026-09、参照実装比較レポートで発見）。
 enumUsage
-    : prefixMetadataAnnotation* 'enum' simpleName (':' typeRef=namespacePath)? ('=' value=expression)? ( '{' enumBodyElement* '}' | ';' )
+    : prefixMetadataAnnotation* 'enum' simpleName
+      (':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      ('=' value=expression)?
+      ( '{' enumBodyElement* '}' | ';' )
     ;
 
 // --- attribute definition (8.2.2.6) ---------------------------------------------
