@@ -1028,8 +1028,12 @@ requireUsage
 // end列（n元connect、connectUsage/connectionUsageで既に対応済みの
 // `naryEnds`と同じ設計）も取りうる（2026-08-29、
 // add_interfaceusage_named_type_namespacepath対応中に連鎖的に発見）。
+// `interface original: FuelInterface, FuelInterface2 connect
+// tankAssy.fuelTankPort to eng.engineFuelPort;`（InterfaceUsage_Invalid.sysml）
+// のように、第1代替の型節がカンマ区切りの複数型を取ることがある（従来
+// 単一型のみだった。2026-09、参照実装比較レポートで発見）。
 interfaceUsage
-    : isAbstract='abstract'? 'interface' simpleName ':' typeRef=namespacePath
+    : isAbstract='abstract'? 'interface' simpleName ':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*
       ( 'connect'
         ( connectorEndPath 'to' connectorEndPath
         | '(' naryEnds+=connectorEndPath (',' naryEnds+=connectorEndPath)+ ')'

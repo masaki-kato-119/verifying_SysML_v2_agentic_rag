@@ -2264,10 +2264,19 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         if ctx.typeRef is not None:
             ends = ctx.connectorEndPath()
             interface_part = self._binary_part("binary_interface_part", ends[0], ends[1]) if len(ends) == 2 else None
+            # `interface original: FuelInterface, FuelInterface2 connect
+            # tankAssy.fuelTankPort to eng.engineFuelPort;`
+            # （InterfaceUsage_Invalid.sysml）のように、型節がカンマ区切りの
+            # 複数型を取ることがある（従来単一型のみだった。2026-09、
+            # 参照実装比較レポートで発見）。
+            type_names = [_namespace_path_text(ctx.typeRef)] + [
+                _namespace_path_text(t) for t in ctx.extraTypeRefs
+            ]
             return {
                 "type": "interface_usage",
                 "name": _simple_name_text(ctx.simpleName()),
-                "type_name": _namespace_path_text(ctx.typeRef),
+                "type_name": type_names[0],
+                **({"type_names": type_names} if len(type_names) > 1 else {}),
                 "interface_part": interface_part,
                 **({"ends": [self.visit(e) for e in nary_ends]} if nary_ends else {}),
                 "isAbstract": ctx.isAbstract is not None,

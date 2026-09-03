@@ -8610,6 +8610,34 @@ def test_antlr_interfaceusage_named_type_namespacepath():
     assert bare_node["type_name"] == "StagingInterface"
 
 
+def test_antlr_interfaceusage_named_alt_multitype():
+    """`interface original: FuelInterface, FuelInterface2 connect
+    tankAssy.fuelTankPort to eng.engineFuelPort;`（InterfaceUsage_Invalid.sysml
+    L37、xpect validation/invalid）のように、interfaceUsageの第1代替の
+    型節がカンマ区切りの複数型を取れなかった（従来単一型のみ）。既存の
+    単一型形が引き続き機能することも確認する。2026-09-03、
+    extend_interfaceusage_multitype対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "part def FuelInterface; part def FuelInterface2; part def P { "
+        "part tankAssy; part eng; interface original: FuelInterface, "
+        "FuelInterface2 connect tankAssy.fuelTankPort to eng.engineFuelPort; }"
+    )
+    node = ast["children"][2]["children"][2]
+    assert node["type"] == "interface_usage"
+    assert node["name"] == "original"
+    assert node["type_name"] == "FuelInterface"
+    assert node["type_names"] == ["FuelInterface", "FuelInterface2"]
+
+    # 既存の単一型形が引き続き機能することを確認する
+    # （"type_names"キー自体が無いことも確認する）。
+    single_ast = parse_sysml_antlr(
+        "part def X { interface named : Type connect a.p to b.q; }"
+    )
+    single_node = single_ast["children"][0]["children"][0]
+    assert single_node["type_name"] == "Type"
+    assert "type_names" not in single_node
+
+
 def test_antlr_interfaceusage_nary_connect_form():
     """`interface APIS_transfer_interface : Interfaces::Interface connect
     (tlu ::> ..., apsph ::> ..., apspm ::> ...);`（AHFSequences.sysml
