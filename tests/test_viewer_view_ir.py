@@ -60,15 +60,67 @@ def test_siblings_do_not_overlap_vertically():
     assert engine["y"] + engine["height"] <= machine["y"]
 
 
-def test_edges_connect_node_centers():
+def _is_on_box_boundary(point, box, tolerance=1e-6):
+    x, y = point
+    on_vertical_edge = abs(x - box["x"]) < tolerance or abs(x - (box["x"] + box["width"])) < tolerance
+    on_horizontal_edge = abs(y - box["y"]) < tolerance or abs(y - (box["y"] + box["height"])) < tolerance
+    within_x = box["x"] - tolerance <= x <= box["x"] + box["width"] + tolerance
+    within_y = box["y"] - tolerance <= y <= box["y"] + box["height"] + tolerance
+    return (on_vertical_edge and within_y) or (on_horizontal_edge and within_x)
+
+
+def test_edges_terminate_at_node_boundaries_not_centers():
+    """表現力強化Stage 0: エッジの両端は矩形の中心ではなく縁で止まる
+    （中心同士を結ぶと矩形内部を必ず貫通し、ノードを後から重ねて描く限り
+    その区間が隠れて見えなくなるため）。"""
     vir = _build_view_ir(_SAMPLE)
     by_id = {n["id"]: n for n in vir["nodes"]}
     edge = next(e for e in vir["edges"] if "subsetting" in e["id"])
     engine = by_id["$root::Engine"]
     machine = by_id["$root::Machine"]
-    expected_from = [engine["x"] + engine["width"] / 2, engine["y"] + engine["height"] / 2]
-    expected_to = [machine["x"] + machine["width"] / 2, machine["y"] + machine["height"] / 2]
-    assert edge["points"] == [expected_from, expected_to]
+    from_point, to_point = edge["points"]
+
+    assert _is_on_box_boundary(from_point, engine)
+    assert _is_on_box_boundary(to_point, machine)
+
+    # 退行防止: 中心点そのものにはならない(=Stage 0以前の挙動には戻っていない)。
+    engine_center = [engine["x"] + engine["width"] / 2, engine["y"] + engine["height"] / 2]
+    machine_center = [machine["x"] + machine["width"] / 2, machine["y"] + machine["height"] / 2]
+    assert from_point != engine_center
+    assert to_point != machine_center
+
+
+def test_boundary_point_geometry_for_a_simple_horizontal_edge():
+    """幾何計算そのものを、2つの独立した葉ノードだけの単純な入力で検証する
+    （_SAMPLEのような入れ子構造では手計算での期待値検証が煩雑なため）。"""
+    graph_ir = {
+        "nodes": [
+            {"id": "a", "type": "part_def", "label": "A", "group_id": None, "source_range": None},
+            {"id": "b", "type": "part_def", "label": "B", "group_id": None, "source_range": None},
+        ],
+        "edges": [{"id": "a->x->b#0", "from": "a", "to": "b", "kind": "connection"}],
+    }
+    vir = build_view_ir(graph_ir)
+    by_id = {n["id"]: n for n in vir["nodes"]}
+    a, b = by_id["a"], by_id["b"]
+    assert (a["width"], a["height"]) == (90, 40)
+    assert (a["x"], a["y"]) == (8, 8)
+    assert (b["x"], b["y"]) == (8 + 90 + 8, 8)
+
+    # aとbは同じ高さで水平に並ぶため、中心を結ぶ直線は水平線になり、両端は
+    # それぞれの箱の左右の縁(中央の高さ)で止まるはず(中心そのものではない)。
+    center_y = a["y"] + a["height"] / 2
+    [from_point, to_point] = vir["edges"][0]["points"]
+    assert from_point == [a["x"] + a["width"], center_y]  # aの右辺
+    assert to_point == [b["x"], center_y]  # bの左辺
+
+
+def test_edge_kind_is_carried_through_to_view_ir():
+    """表現力強化Stage 1: SVGレンダラーが種別ごとに矢印・線種を描き分けられる
+    よう、edgeの'kind'をGraph IRからそのまま引き継ぐ。"""
+    vir = _build_view_ir(_SAMPLE)
+    edge = next(e for e in vir["edges"] if "subsetting" in e["id"])
+    assert edge["kind"] == "subsetting"
 
 
 def test_empty_graph_ir_produces_empty_view_ir():

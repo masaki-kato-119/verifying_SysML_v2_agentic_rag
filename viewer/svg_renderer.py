@@ -13,6 +13,44 @@ _NODE_STROKE = "#333333"
 _EDGE_STROKE = "#666666"
 _TEXT_COLOR = "#111111"
 
+# 表現力強化 Stage 1: 関連の種別ごとに矢印の形・線種を描き分ける
+# （SysML/UML標準記法に近づける簡易対応。Stage 0では全エッジ同じ矢印だった）。
+_MARKER_ARROW_FILLED = "sysml-arrow-filled"  # feature_typing・既定（未知の種別）
+_MARKER_ARROW_HOLLOW = "sysml-arrow-hollow"  # specialization/subsetting/redefinition（継承系の慣習）
+_MARKER_ARROW_OPEN = "sysml-arrow-open"  # satisfy/verify（要求適合の慣習に近い開いた矢印）
+
+_MARKER_DEFS = (
+    "<defs>"
+    f'<marker id="{_MARKER_ARROW_FILLED}" viewBox="0 0 10 10" refX="9" refY="5"'
+    f' markerWidth="6" markerHeight="6" orient="auto-start-reverse">'
+    f'<path d="M 0 0 L 10 5 L 0 10 z" fill="{_EDGE_STROKE}" /></marker>'
+    f'<marker id="{_MARKER_ARROW_HOLLOW}" viewBox="0 0 12 10" refX="11" refY="5"'
+    f' markerWidth="8" markerHeight="7" orient="auto-start-reverse">'
+    f'<path d="M 0 0 L 12 5 L 0 10 z" fill="#ffffff" stroke="{_EDGE_STROKE}" stroke-width="1" /></marker>'
+    f'<marker id="{_MARKER_ARROW_OPEN}" viewBox="0 0 10 10" refX="9" refY="5"'
+    f' markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
+    f'<path d="M 0 0 L 10 5 L 0 10" fill="none" stroke="{_EDGE_STROKE}" stroke-width="1.5" /></marker>'
+    "</defs>"
+)
+
+# connectionは無方向（マーカー無し）。未知の種別（将来追加分）は既定の矢印にフォールバックする。
+_KIND_MARKER = {
+    "specialization": _MARKER_ARROW_HOLLOW,
+    "subsetting": _MARKER_ARROW_HOLLOW,
+    "redefinition": _MARKER_ARROW_HOLLOW,
+    "feature_typing": _MARKER_ARROW_FILLED,
+    "connection": None,
+    "satisfy": _MARKER_ARROW_OPEN,
+    "verify": _MARKER_ARROW_OPEN,
+}
+
+# satisfy/verifyは破線（要求適合はモデル要素間の直接構造ではなく「適合の主張」である
+# ことを線種でも示す）。
+_KIND_DASH = {
+    "satisfy": "4 2",
+    "verify": "4 2",
+}
+
 
 def _source_range_attrs(source_range: Optional[Dict]) -> str:
     """source_rangeをdata-*属性の文字列へ変換する（実装仕様書5.2節）。
@@ -51,10 +89,18 @@ def _render_node(node: Dict) -> str:
 def _render_edge(edge: Dict) -> str:
     edge_id = escape(edge["id"], quote=True)
     (x1, y1), (x2, y2) = edge["points"]
+    kind = edge.get("kind")
+    # 既知の種別で明示的にNoneが指定されていれば無方向(connection)、それ以外の
+    # 未知の種別（将来のエッジ種別追加分）は既定の矢印にフォールバックする。
+    marker_id = _KIND_MARKER[kind] if kind in _KIND_MARKER else _MARKER_ARROW_FILLED
+    marker_attr = f' marker-end="url(#{marker_id})"' if marker_id else ""
+    dash = _KIND_DASH.get(kind)
+    dash_attr = f' stroke-dasharray="{dash}"' if dash else ""
+    kind_attr = f' data-kind="{escape(kind, quote=True)}"' if kind else ""
     return (
-        f'<line class="sysml-edge" data-edge-id="{edge_id}"'
+        f'<line class="sysml-edge" data-edge-id="{edge_id}"{kind_attr}'
         f' x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}"'
-        f' stroke="{_EDGE_STROKE}" stroke-width="1" />'
+        f' stroke="{_EDGE_STROKE}" stroke-width="1"{dash_attr}{marker_attr} />'
     )
 
 
@@ -85,15 +131,20 @@ def render_svg(view_ir: Dict) -> str:
     canvas_width = max_x - min_x
     canvas_height = max_y - min_y
 
-    # エッジ(中心同士を結ぶ直線)を先に描画する。ノードは不透明な矩形なので
-    # 後から重ねて描くと、線のうちボックス内部にある区間はボックスの下に
-    # 隠れ、ボックス間の隙間の区間だけが可視になる（中心同士の直線でも
-    # 見た目上は「ボックスの縁から縁」に近い自然な線になる）。
+    # 表現力強化 Stage 0: ノードを先に、エッジを後に描画する（旧実装は逆順
+    # だった）。View IR側でエッジの両端が既にノードの矩形の縁で止まるよう
+    # 計算されているため（view_ir.pyの_boundary_point）、この順序でもエッジが
+    # ノードの矩形に隠れることはない。念のため後勝ちの描画順にしておくことで、
+    # 座標計算の誤差やstroke-widthの分だけ縁にわずかに重なっても、エッジ側が
+    # 上に来て見えなくなることを防ぐ。
+    edges = view_ir["edges"]
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{canvas_width}"'
-        f' height="{canvas_height}" viewBox="{min_x} {min_y} {canvas_width} {canvas_height}">'
+        f' height="{canvas_height}" viewBox="{min_x} {min_y} {canvas_width} {canvas_height}">',
     ]
-    parts.extend(_render_edge(e) for e in view_ir["edges"])
+    if edges:
+        parts.append(_MARKER_DEFS)
     parts.extend(_render_node(n) for n in nodes)
+    parts.extend(_render_edge(e) for e in edges)
     parts.append("</svg>")
     return "".join(parts)

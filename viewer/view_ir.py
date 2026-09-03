@@ -42,7 +42,9 @@ def build_view_ir(graph_ir: Dict, collapsed_ids=None, pinned_positions=None) -> 
     Returns:
         {"view_type": graph_irのview_type（省略時は"structure"を既定とする）,
          "nodes": [{"id","x","y","width","height"}, ...]（絶対座標）,
-         "edges": [{"id","points": [[x,y],[x,y]]}, ...]}
+         "edges": [{"id","kind","points": [[x,y],[x,y]]}, ...]}
+        （"kind"は表現力強化Stage 1でSVGレンダラーが矢印・線種を描き分けるために
+        Graph IRからそのまま引き継ぐ）
     """
     collapsed_ids = collapsed_ids or set()
     pinned_positions = pinned_positions or {}
@@ -134,15 +136,44 @@ def build_view_ir(graph_ir: Dict, collapsed_ids=None, pinned_positions=None) -> 
         w, h = sizes[node_id]
         return x + w / 2, y + h / 2
 
+    def _boundary_point(node_id: str, dx: float, dy: float) -> Tuple[float, float]:
+        """ノードの中心から方向(dx, dy)へ進んだときに矩形の縁と交わる点を返す
+        （表現力強化 Stage 0）。中心同士を直線で結ぶと矩形の内部を必ず貫通し、
+        ノードを後から重ねて描く限りその区間が隠れて見えなくなるため、
+        エッジの両端をあらかじめ矩形の縁で止める設計に変更した。"""
+        cx, cy = _center(node_id)
+        if dx == 0 and dy == 0:
+            return cx, cy
+        _w, h = sizes[node_id]
+        half_w, half_h = _w / 2, h / 2
+        candidates = []
+        if dx != 0:
+            candidates.append(half_w / abs(dx))
+        if dy != 0:
+            candidates.append(half_h / abs(dy))
+        t = min(candidates)
+        return cx + t * dx, cy + t * dy
+
     # 非包含エッジ（specialization/feature_typing/connection等）は、ボックス
-    # 配置が確定した後に両端の中心同士を直線で結ぶだけの単純な後処理とする
-    # （実装仕様書4.2節：交差は許容し、手動調整はPhase D以降の課題とする）。
+    # 配置が確定した後に両端を結ぶ直線として後処理する（実装仕様書4.2節：
+    # 交差は許容し、手動調整はPhase D以降の課題とする）。両端は中心同士では
+    # なく矩形の縁（Stage 0）とすることで、ノードの矩形に隠れる区間を無くす。
     # 折りたたみで除外された子孫を指すエッジは、両端の位置が存在しないため
     # 描画対象から除く（3.3節の「宙に浮いた矢印を避ける」設計と同じ考え方）。
-    edges_out = [
-        {"id": edge["id"], "points": [list(_center(edge["from"])), list(_center(edge["to"]))]}
-        for edge in graph_ir["edges"]
-        if edge["from"] not in excluded_ids and edge["to"] not in excluded_ids
-    ]
+    edges_out = []
+    for edge in graph_ir["edges"]:
+        if edge["from"] in excluded_ids or edge["to"] in excluded_ids:
+            continue
+        from_center = _center(edge["from"])
+        to_center = _center(edge["to"])
+        dx = to_center[0] - from_center[0]
+        dy = to_center[1] - from_center[1]
+        from_point = _boundary_point(edge["from"], dx, dy)
+        to_point = _boundary_point(edge["to"], -dx, -dy)
+        edges_out.append({
+            "id": edge["id"],
+            "kind": edge["kind"],  # 表現力強化Stage 1: SVGレンダラーが種別ごとに矢印・線種を描き分けるために保持する。
+            "points": [list(from_point), list(to_point)],
+        })
 
     return {"view_type": graph_ir.get("view_type", "structure"), "nodes": nodes_out, "edges": edges_out}

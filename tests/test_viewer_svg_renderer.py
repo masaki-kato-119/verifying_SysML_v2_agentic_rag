@@ -50,6 +50,93 @@ def test_edge_is_rendered_as_line_with_id():
     assert "subsetting" in svg
 
 
+def test_nodes_are_drawn_before_edges():
+    """表現力強化Stage 0: ノードを先に描画し、エッジを後から重ねる
+    （旧実装は逆順で、エッジがノードの矩形に隠れて見えなかった）。"""
+    svg = _render(_SAMPLE)
+    first_node_index = svg.index('<g class="sysml-node"')
+    first_edge_index = svg.index('<line class="sysml-edge"')
+    assert first_node_index < first_edge_index
+
+
+def test_edge_has_arrow_marker():
+    """表現力強化Stage 0: 関連の向き(→)を示す矢印マーカーを持つ。"""
+    svg = _render(_SAMPLE)
+    assert "<marker" in svg
+    assert "marker-end=" in svg
+
+
+# --- 種別ごとの矢印・線種（表現力強化 Stage 1） ----------------------------
+
+
+def _render_single_edge(kind):
+    view_ir = {
+        "view_type": "structure",
+        "nodes": [
+            {"id": "a", "type": "part_def", "label": "A", "source_range": None,
+             "x": 0, "y": 0, "width": 90, "height": 40},
+            {"id": "b", "type": "part_def", "label": "B", "source_range": None,
+             "x": 200, "y": 0, "width": 90, "height": 40},
+        ],
+        "edges": [{"id": "e", "kind": kind, "points": [[90, 20], [200, 20]]}],
+    }
+    return render_svg(view_ir)
+
+
+def test_specialization_uses_hollow_arrow():
+    svg = _render_single_edge("specialization")
+    assert 'marker-end="url(#sysml-arrow-hollow)"' in svg
+
+
+def test_subsetting_and_redefinition_use_hollow_arrow_too():
+    assert 'marker-end="url(#sysml-arrow-hollow)"' in _render_single_edge("subsetting")
+    assert 'marker-end="url(#sysml-arrow-hollow)"' in _render_single_edge("redefinition")
+
+
+def test_feature_typing_uses_filled_arrow():
+    svg = _render_single_edge("feature_typing")
+    assert 'marker-end="url(#sysml-arrow-filled)"' in svg
+
+
+def test_connection_has_no_arrow_marker():
+    """connectionは無方向として扱う（矢印マーカーを付けない）。"""
+    svg = _render_single_edge("connection")
+    assert "marker-end=" not in svg
+
+
+def test_satisfy_and_verify_use_open_arrow_and_dashed_line():
+    for kind in ("satisfy", "verify"):
+        svg = _render_single_edge(kind)
+        assert 'marker-end="url(#sysml-arrow-open)"' in svg
+        assert 'stroke-dasharray="4 2"' in svg
+
+
+def test_edge_carries_kind_as_data_attribute():
+    svg = _render_single_edge("satisfy")
+    assert 'data-kind="satisfy"' in svg
+
+
+def test_unknown_edge_kind_falls_back_to_filled_arrow():
+    """将来エッジ種別が追加されても描画がクラッシュせず、既定の矢印にフォールバックする。"""
+    svg = _render_single_edge("some_future_kind")
+    assert 'marker-end="url(#sysml-arrow-filled)"' in svg
+
+
+def test_no_marker_defs_when_there_are_no_edges():
+    """エッジが1本も無い場合はdefs自体を出さない（出力を無駄に増やさない）。"""
+    view_ir = {
+        "view_type": "structure",
+        "nodes": [{
+            "id": "$root::a", "type": "part_def", "label": "A", "source_range": None,
+            "x": 0, "y": 0, "width": 90, "height": 40,
+        }],
+        "edges": [],
+    }
+    svg = render_svg(view_ir)
+    assert "<defs>" not in svg
+    assert "<marker" not in svg
+
+
 def test_output_is_deterministic():
     assert _render(_SAMPLE) == _render(_SAMPLE)
 
