@@ -2176,6 +2176,10 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # （CauseAndEffect.sysml）という`=`値代入の両方を持つ。
         return {
             "type": "feature_usage",
+            # `#systemObjective <'OBJ-B1'> 'Market Leader' { ... }`
+            # （ForestFireDetectionSystemModel.sysml）のようなShortName注釈
+            # （2026-09、参照実装比較レポートで発見）。
+            "shortName": ctx.shortName.text if ctx.shortName is not None else None,
             "name": _optional_simple_name_text(ctx.simpleName()),
             "type_name": type_name,
             **({"type_names": type_names} if len(type_names) > 1 else {}),

@@ -6723,6 +6723,7 @@ def test_antlr_action_parameter_inline_metadata_annotation():
             "children": [
                 {
                     "type": "feature_usage",
+                    "shortName": None,
                     "name": "name",
                     "type_name": None,
                     "multiplicity": None,
@@ -7709,6 +7710,28 @@ def test_antlr_featureusage_conjugated_type():
     plain_ast = parse_sysml_antlr("package P { apisp: APIS_DD ; }")
     plain_node = plain_ast["children"][0]
     assert plain_node["type_name"] == "APIS_DD"
+
+
+def test_antlr_featureusage_hash_prefix_shortname():
+    """`#systemObjective <'OBJ-B1'> 'Market Leader' { ... }`
+    （ForestFireDetectionSystemModel.sysml L17、同型がL22,27）のように、
+    featureUsage（キーワード無し汎用usage形）はprefixMetadataAnnotation*
+    直後にShortName注釈（`('<' shortName '>')?`）を持たなかった
+    （partDef/itemDef等の*Def規則には既にある）。2026-09-03、
+    add_featureusage_hash_prefix_shortname対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "package P { #systemObjective <'OBJ-B1'> 'Market Leader' { } }"
+    )
+    node = ast["children"][0]
+    assert node["type"] == "feature_usage"
+    assert node["shortName"] == "'OBJ-B1'"
+    assert node["name"] == "Market Leader"
+    assert node["prefixMetadata"] == ["systemObjective"]
+
+    # 既存のShortName無し形が引き続き機能することを確認する。
+    plain_ast = parse_sysml_antlr("package P { apisp: APIS_DD ; }")
+    plain_node = plain_ast["children"][0]
+    assert plain_node["shortName"] is None
 
 
 def test_antlr_featuredef_metadata_prefix_bare_def():

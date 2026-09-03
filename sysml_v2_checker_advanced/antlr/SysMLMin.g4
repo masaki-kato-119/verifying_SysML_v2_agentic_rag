@@ -1799,6 +1799,11 @@ frameStatement
 featureUsage
     : variability=('variation' | 'variant')? visibilityIndicator? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
       prefixMetadataAnnotation*
+      // `#systemObjective <'OBJ-B1'> 'Market Leader' { ... }`
+      // （ForestFireDetectionSystemModel.sysml）のように、キーワード無し
+      // 汎用usage形もShortName注釈を持ちうる（partDef/itemDef等の*Def
+      // 規則と同型。2026-09、参照実装比較レポートで発見）。
+      ('<' shortName=(ID | QUOTED_NAME) '>')?
       simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>') preTarget+=namespacePathList)*
       // `ref presidentOfCountry[0..1] : Person :> presidentOfCountry.asPresident;`
