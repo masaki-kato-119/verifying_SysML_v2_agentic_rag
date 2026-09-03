@@ -2854,6 +2854,30 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "children": [self.visit(el) for el in body_ctx.partBodyElement()],
         }
 
+    def visitDotBraceSelectExpr(self, ctx: SysMLMinParser.DotBraceSelectExprContext) -> Dict:
+        # `(vehicle_1, vehicle_1a).{in ref v:Vehicle; v.cylinders == 4}`
+        # （PathExpressions.sysml）のように、'?'を伴わず'.'の直後に'{'を
+        # 直接続けるselectフィルタ式。selectFilterExprと同型のbody
+        # （arrowLambdaBody）を共有する（2026-09、参照実装比較レポートで
+        # 発見）。
+        body_ctx = ctx.arrowLambdaBody()
+        param_ctx = body_ctx.lambdaParam()
+        param = None
+        if param_ctx is not None:
+            type_ctx = param_ctx.namespacePath()
+            param = {
+                "name": _simple_name_text(param_ctx.simpleName()),
+                "isRef": param_ctx.isRef is not None,
+                "typeName": _namespace_path_text(type_ctx) if type_ctx is not None else None,
+            }
+        return {
+            "type": "select_filter",
+            "receiver": self.visit(ctx.expression()),
+            "param": param,
+            "body": self.visit(body_ctx.expression()),
+            "children": [self.visit(el) for el in body_ctx.partBodyElement()],
+        }
+
     def visitNewExpr(self, ctx: SysMLMinParser.NewExprContext) -> Dict:
         # `new TypeName(name = expr, ...)`というKerMLのインスタンス生成式。
         # `new Time::Clock()`（Local Clock Example.sysml）のように、型参照は

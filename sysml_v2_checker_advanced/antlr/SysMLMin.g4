@@ -3242,6 +3242,13 @@ expression
     // と同型のbody（`arrowLambdaBody`）を共有する（2026-08-29、730件
     // ベースライン154件エラー要因分析で発見）。
     | expression '.' '?' '{' arrowLambdaBody '}'                 # selectFilterExpr
+    // `(vehicle_1, vehicle_1a).{in ref v:Vehicle; v.cylinders == 4}`・
+    // `(all Vehicle).{in ref v:Vehicle; v.mass > 100}`（PathExpressions.sysml）
+    // のように、'?'を伴わず'.'の直後に'{'を直接続けるselectフィルタ式も
+    // ある（selectFilterExprと同型のbody。memberAccessExprの
+    // `member=simpleName`は'{'をトークンとして受理できないため、この
+    // 代替が必要。2026-09、参照実装比較レポートで発見）。
+    | expression '.' '{' arrowLambdaBody '}'                     # dotBraceSelectExpr
     | expression 'as' typeRef=namespacePath                     # asCastExpr
     // `multicausations meta SysML::Usage;`（CauseAndEffect.sysml、4ファイル・
     // 7件）のように、KerMLの`meta`式（メタデータ型参照）を持つ。

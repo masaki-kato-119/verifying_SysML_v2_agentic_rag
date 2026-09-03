@@ -4748,6 +4748,38 @@ def test_antlr_expression_select_filter_dotquestion():
     assert plain_colon_node["param"]["typeName"] == "ISQ::mass"
 
 
+def test_antlr_expression_dot_brace_select_without_question():
+    """`(vehicle_1, vehicle_1a).{in ref v:Vehicle; v.cylinders == 4}`・
+    `(all Vehicle).{in ref v:Vehicle; v.mass > 100}`（PathExpressions.sysml
+    L12,14、xpect expression tests）のように、'.'直後に'?'を伴わず直接
+    '{'を続けるselectフィルタ式が未対応だった（selectFilterExprは'?'を
+    必須とし、memberAccessExprも'{'をsimpleNameとして受理できないため、
+    どちらの代替にもマッチしなかった）。既存の'.?{ ... }'形が引き続き
+    機能することも確認する。2026-09-03、add_expression_dot_brace_select
+    対応中に発見。"""
+    ast = parse_sysml_antlr(
+        "part def Vehicle; part vehicle_1 : Vehicle; part vehicle_1a : Vehicle; "
+        "attribute a = (vehicle_1, vehicle_1a).{in ref v:Vehicle; v.cylinders == 4};"
+    )
+    node = ast["children"][3]
+    value = node["value"]
+    assert value["type"] == "select_filter"
+    assert value["param"] == {"name": "v", "isRef": True, "typeName": "Vehicle"}
+    assert value["body"] == {
+        "type": "binary_expr", "op": "==",
+        "left": {"type": "name_ref", "reference": "v.cylinders"},
+        "right": {"type": "literal", "literal_type": "int", "value": 4},
+    }
+
+    # 既存の'.?{ ... }'形が引き続き機能することを確認する。
+    dotquestion_ast = parse_sysml_antlr(
+        "part def P { attribute a = "
+        "subcomponents.totalMass.?{in p:>ISQ::mass; p >= minMass}; }"
+    )
+    dotquestion_value = dotquestion_ast["children"][0]["children"][0]["value"]
+    assert dotquestion_value["type"] == "select_filter"
+
+
 def test_antlr_rendering_usage_redefine_with_equals_value():
     """d50_feature_usage_equals_value: Views.sysmlの`rendering :>>
     subrenderings[0..*] = columnView.viewRendering;`のように、redefine

@@ -789,6 +789,11 @@ class SysMLMinVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by SysMLMinParser#dotBraceSelectExpr.
+    def visitDotBraceSelectExpr(self, ctx:SysMLMinParser.DotBraceSelectExprContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by SysMLMinParser#addSubExpr.
     def visitAddSubExpr(self, ctx:SysMLMinParser.AddSubExprContext):
         return self.visitChildren(ctx)
