@@ -221,3 +221,74 @@ html, body {
 .finding-info {
   color: #7db8ff;
 }
+
+/* 関連概念カード（Group4 b16, R1-2）。モデル事実（実線・source_range由来）とは
+   異なり、外部知識ベース(GraphRAG)からの参考情報であることを視覚的に示す
+   （構想書8.2節）：破線の枠＋わずかに異なる背景色、専用の見出し文言。 */
+.related-concepts-card {
+  margin-top: 4px;
+  padding: 4px 6px;
+  border: 1px dashed #8a6d3b;
+  background: #2a2412;
+  font-size: 11px;
+}
+
+.related-concepts-heading {
+  font-weight: bold;
+  opacity: 0.85;
+  margin-bottom: 2px;
+}
+
+.related-concept-row {
+  padding: 1px 0;
+}
+
+.related-concept-citation {
+  padding-left: 8px;
+  opacity: 0.7;
+}
+
+/* 自然文説明（Group4 b17, R2）。関連概念カードと同じ「モデル事実ではない」
+   視覚言語（破線枠）を共有しつつ、実際のLLM推論結果であることをより強く
+   示すため見出しを固定文言にしている。 */
+.explain-button {
+  margin-top: 4px;
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.explanation-card {
+  margin-top: 4px;
+  padding: 4px 6px;
+  border: 1px dashed #8a6d3b;
+  background: #2a2412;
+  font-size: 11px;
+}
+
+.explanation-heading {
+  font-weight: bold;
+  opacity: 0.85;
+  margin-bottom: 2px;
+}
+
+.explanation-text {
+  padding: 2px 0 4px;
+  white-space: pre-wrap;
+}
+
+.explanation-basis-heading {
+  font-weight: bold;
+  opacity: 0.7;
+}
+
+.explanation-basis-row {
+  padding-left: 8px;
+  opacity: 0.8;
+}
+
+.explanation-error {
+  margin-top: 4px;
+  font-size: 11px;
+  opacity: 0.7;
+}

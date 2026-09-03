@@ -419,6 +419,178 @@ function renderInspector(node) {
       container.appendChild(renderFindingStatusControl(finding));
     }
   }
+
+  // Group4 b16(R1-2): 関連概念。GraphRAG検索は遅い/未起動の可能性があるため
+  // Inspector本体の描画はブロックせず、非同期に取得できたら追記する。
+  const relatedConceptsContainer = document.createElement("div");
+  container.appendChild(relatedConceptsContainer);
+  loadRelatedConcepts(node, relatedConceptsContainer);
+
+  // Group4 b17(R2): 自然文での説明生成。実際のLLM API呼び出し（課金対象）が
+  // 発生するため、b16と異なり選択のたびに自動実行はせず、ボタンで明示的に
+  // ユーザーが起動する。
+  const explainButton = document.createElement("button");
+  explainButton.type = "button";
+  explainButton.className = "explain-button";
+  explainButton.textContent = "AIによる説明を生成（推論・要確認）";
+  const explainResult = document.createElement("div");
+  explainButton.addEventListener("click", () => {
+    explainButton.disabled = true;
+    explainButton.textContent = "生成中...";
+    loadExplanation(node, relatedFindings, explainButton, explainResult);
+  });
+  container.appendChild(explainButton);
+  container.appendChild(explainResult);
+}
+
+// 選択要素からGraph IRのエッジをたどり、/api/explainへ送る形（kind/方向/相手の
+// ラベル・型）に整形する（renderRelatedEdgesと同じ辿り方）。
+function relatedEdgesPayload(node) {
+  if (!latestModel) return [];
+  const byId = new Map(latestModel.graph_ir.nodes.map((n) => [n.id, n]));
+  return latestModel.graph_ir.edges
+    .filter((e) => e.from === node.id || e.to === node.id)
+    .map((e) => {
+      const outgoing = e.from === node.id;
+      const other = byId.get(outgoing ? e.to : e.from);
+      return {
+        kind: e.kind,
+        direction: outgoing ? "outgoing" : "incoming",
+        other_label: other ? other.label : (outgoing ? e.to : e.from),
+        other_type: other ? other.type : null,
+      };
+    });
+}
+
+async function loadExplanation(node, findings, button, resultContainer) {
+  const payload = {
+    element: { id: node.id, type: node.type, label: node.label },
+    related_edges: relatedEdgesPayload(node),
+    findings: findings.map((f) => ({ severity: f.severity, rule: f.rule, message: f.message })),
+  };
+  let data;
+  try {
+    const response = await fetch("/api/explain", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    data = await response.json();
+  } catch (e) {
+    data = { available: false, error: String(e) };
+  }
+  // 応答が届くまでの間に別の要素が選択されていたら、古いボタン/結果欄への
+  // 反映はしない（loadRelatedConceptsと同じ競合ガード）。
+  if (selectedElementId !== node.id) return;
+  button.disabled = false;
+  button.textContent = "AIによる説明を生成（推論・要確認）";
+  renderExplanationCard(data, resultContainer);
+}
+
+// モデル事実とは明確に区別し、「推論であること」を見出しで常に明示する
+// （構想書8.2節、b17完了基準）。根拠(basis)はLLMの自由記述ではなく、
+// リクエストにそのまま含めた関連エッジ・Findingを機械的に列挙する。
+function renderExplanationCard(data, container) {
+  container.innerHTML = "";
+  if (!data.available) {
+    const errorRow = document.createElement("div");
+    errorRow.className = "explanation-error";
+    errorRow.textContent = `説明を生成できませんでした（${data.error || "不明なエラー"}）`;
+    container.appendChild(errorRow);
+    return;
+  }
+
+  const card = document.createElement("div");
+  card.className = "explanation-card";
+
+  const heading = document.createElement("div");
+  heading.className = "explanation-heading";
+  heading.textContent = "AIによる説明（推論であり、モデルの正式な仕様ではありません）";
+  card.appendChild(heading);
+
+  const text = document.createElement("div");
+  text.className = "explanation-text";
+  text.textContent = data.explanation;
+  card.appendChild(text);
+
+  const basis = data.basis || {};
+  const basisEdges = basis.related_edges || [];
+  const basisFindings = basis.findings || [];
+
+  const basisHeading = document.createElement("div");
+  basisHeading.className = "explanation-basis-heading";
+  basisHeading.textContent = "根拠として使用した情報:";
+  card.appendChild(basisHeading);
+
+  if (basisEdges.length === 0 && basisFindings.length === 0) {
+    const none = document.createElement("div");
+    none.className = "explanation-basis-row";
+    none.textContent = "（関連エッジ・Findingなし。要素の型・名前のみから推測）";
+    card.appendChild(none);
+  }
+  for (const edge of basisEdges) {
+    const row = document.createElement("div");
+    row.className = "explanation-basis-row";
+    const arrow = edge.direction === "outgoing" ? "→" : "←";
+    row.textContent = `${arrow} ${edge.kind} ${arrow} ${edge.other_label} (${edge.other_type})`;
+    card.appendChild(row);
+  }
+  for (const finding of basisFindings) {
+    const row = document.createElement("div");
+    row.className = "explanation-basis-row";
+    row.textContent = `[${finding.severity}] ${finding.message}`;
+    card.appendChild(row);
+  }
+
+  container.appendChild(card);
+}
+
+async function loadRelatedConcepts(node, container) {
+  let data;
+  try {
+    const response = await fetch(
+      `/api/related-concepts?element_type=${encodeURIComponent(node.type)}&label=${encodeURIComponent(node.label)}`
+    );
+    data = await response.json();
+  } catch (e) {
+    return; // GraphRAG呼び出し自体の失敗はViewer本体の利用を妨げない（静かに諦める）
+  }
+  // 応答が届くまでの間に別の要素が選択されていたら、古い結果は破棄する
+  // （updateModelNowのrequestSequenceガードと同じ考え方）。
+  if (selectedElementId !== node.id) return;
+  renderRelatedConceptsCard(data, container);
+}
+
+// モデル事実（実線・source_range由来）とは視覚的に区別する
+// （構想書8.2節：外部知識ベースからの参考情報であることを明示する）。
+function renderRelatedConceptsCard(data, container) {
+  container.innerHTML = "";
+  if (!data.available || !data.concepts || data.concepts.length === 0) return;
+
+  const card = document.createElement("div");
+  card.className = "related-concepts-card";
+
+  const heading = document.createElement("div");
+  heading.className = "related-concepts-heading";
+  heading.textContent = "関連概念（外部知識ベースより、参考情報）";
+  card.appendChild(heading);
+
+  for (const concept of data.concepts) {
+    const row = document.createElement("div");
+    row.className = "related-concept-row";
+    const score = typeof concept.score === "number" ? concept.score.toFixed(2) : "?";
+    row.textContent = `${concept.concept}（${concept.match_type}, score=${score}）`;
+    card.appendChild(row);
+
+    for (const text of concept.source_texts || []) {
+      const citation = document.createElement("div");
+      citation.className = "related-concept-citation";
+      citation.textContent = `出典: ${text}`;
+      card.appendChild(citation);
+    }
+  }
+
+  container.appendChild(card);
 }
 
 // Findingの状態変更UI（Group1 b4, I4）+ レビュー履歴（Group1 b5, I5）。

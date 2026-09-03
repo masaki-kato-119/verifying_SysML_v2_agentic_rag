@@ -22,6 +22,9 @@ from sysml_v2_checker_advanced.semantic_model import (
     build_semantic_model,
     semantic_model_to_json_dict,
 )
+from viewer.backend.explain import explain_element
+from viewer.backend.rag_client import get_rag_client
+from viewer.backend.related_concepts import search_related_concepts
 from viewer.graph_ir import VIEW_TYPE_STRUCTURE, build_graph_ir
 from viewer.svg_renderer import render_svg
 from viewer.view_ir import build_view_ir
@@ -103,3 +106,35 @@ def get_model(request: ModelRequest) -> ModelResponse:
         svg=svg,
         findings=findings,
     )
+
+
+@app.get("/api/related-concepts")
+async def get_related_concepts(element_type: str, label: str) -> Dict[str, Any]:
+    """選択要素の型・ラベルでGraphRAGを検索し、関連概念を返す（Group4 b16,
+    R1-2）。Findingsとは異なりモデル事実ではなく外部知識ベースからの参考情報
+    のため、フロントエンド側で視覚的に区別して表示する（構想書8.2節）。
+    GraphRAGサーバーが未起動/呼び出し失敗の場合も、Viewer本体の表示は妨げない
+    よう例外を投げず`available: False`で返す。
+    """
+    try:
+        client = await get_rag_client()
+    except Exception as e:  # noqa: BLE001 - MCPサーバー起動失敗等もエラー応答に変換する
+        return {"available": False, "error": str(e), "concepts": []}
+    return await search_related_concepts(client.call_tool, element_type, label)
+
+
+class ExplainRequest(BaseModel):
+    element: Dict[str, Any]
+    related_edges: List[Dict[str, Any]] = []
+    findings: List[Dict[str, Any]] = []
+
+
+@app.post("/api/explain")
+async def post_explain(request: ExplainRequest) -> Dict[str, Any]:
+    """選択要素・関連エッジ・Findingの内容をLLMに渡し、平易な説明を生成する
+    （Group4 b17, R2）。根拠はLLMの自由記述に依存させず、入力に使った
+    related_edges/findingsをそのまま`basis`として機械的に返す（決定的で
+    検証しやすい設計）。OPENAI_API_KEY未設定・呼び出し失敗時も例外を投げず
+    `available: False`で返し、Viewer本体の表示は妨げない。
+    """
+    return await explain_element(request.element, request.related_edges, request.findings)

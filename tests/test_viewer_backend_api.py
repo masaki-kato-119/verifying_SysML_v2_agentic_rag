@@ -133,6 +133,44 @@ def test_model_endpoint_pinned_positions_are_reflected_in_view_ir():
     assert (node["x"], node["y"]) == (123, 456)
 
 
+async def test_related_concepts_endpoint_queries_graphrag_when_available():
+    """Group4 b16(R1-2): 実際にGraphRAG MCPサーバーをサブプロセス起動して検証する
+    （tests/test_mcp_integration_graph.pyと同じ方針）。事前構築済みグラフ
+    GraphRAG/data/graphs/SysML_Language_Specification_v2.pklには"requirement"
+    ノードが実在する（test_mcp_integration_graph.pyのtest_find_path_uses_...で
+    確認済み）ため、type由来の検索語"requirement"で実マッチが期待できる。
+    ただしCI等データが無い環境でもクラッシュしないことを優先し、空でも許容する。
+    """
+    response = client.get(
+        "/api/related-concepts", params={"element_type": "requirement_usage", "label": "req1"}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["available"] is True
+    assert isinstance(data["concepts"], list)
+    if data["concepts"]:
+        assert any("requirement" in (c["concept"] or "").lower() for c in data["concepts"])
+
+
+def test_explain_endpoint_reports_unavailable_without_api_key(monkeypatch):
+    """Group4 b17(R2): OPENAI_API_KEY未設定時は実API呼び出しをせず、
+    Viewer本体の表示を妨げないavailable:Falseで応答する
+    （実際のOpenAI課金APIを毎回のpytest実行で呼ばないための設計）。
+    """
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    response = client.post(
+        "/api/explain",
+        json={
+            "element": {"id": "$root::A", "type": "part_def", "label": "A"},
+            "related_edges": [],
+            "findings": [],
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["available"] is False
+
+
 def test_model_endpoint_reports_unknown_view_type_without_crashing():
     response = client.post("/api/model", json={"text": "package P { part def A; }", "view_type": "no_such_view"})
     assert response.status_code == 200
