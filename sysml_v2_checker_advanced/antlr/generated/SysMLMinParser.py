@@ -2518,7 +2518,7 @@ class SysMLMinParser ( Parser ):
                       "<INVALID>", "<INVALID>", "<INVALID>", "<INVALID>", 
                       "<INVALID>", "<INVALID>", "<INVALID>", "ID", "QUOTED_NAME", 
                       "REAL_LITERAL", "INT_LITERAL", "STRING_LITERAL", "DOC_COMMENT", 
-                      "WS", "XPECT_BLOCK_COMMENT", "LINE_COMMENT" ]
+                      "WS", "SLASH_STAR_BLOCK_COMMENT", "LINE_COMMENT" ]
 
     RULE_model = 0
     RULE_topLevelElement = 1
@@ -2891,7 +2891,7 @@ class SysMLMinParser ( Parser ):
     STRING_LITERAL=175
     DOC_COMMENT=176
     WS=177
-    XPECT_BLOCK_COMMENT=178
+    SLASH_STAR_BLOCK_COMMENT=178
     LINE_COMMENT=179
 
     def __init__(self, input:TokenStream, output:TextIO = sys.stdout):
