@@ -29,6 +29,13 @@ _SUBJECT_PARAMETER_LIKE_TYPES = (
     "stakeholder_usage",
 )
 
+# variation/variant の所有関係チェック(8.2.2.5 Variability)で「所有されている
+# usage」として数える子ノードの型の接尾辞。参照実装で実測して確定
+# （2026-09-04）: `variation part def A { part def Inner; attribute def X;
+# doc /* d */ }`のように、入れ子のdefやdocは違反にならない。usageだけが対象。
+# `part_instance`はこのパーサーでのpart usageのノード型名。
+_VARIATION_OWNED_USAGE_SUFFIXES = ("_usage", "_instance")
+
 class DefinitionUsageRulesMixin:
     @staticmethod
     def _conjugated_lookup_name(type_name: str) -> str:
@@ -673,6 +680,51 @@ class DefinitionUsageRulesMixin:
                 f"[8.2.2.21] '{name}' のsubjectは最初のパラメータでなければなりません",
                 subjects[0] if subjects else param_like[0]
             ))
+    def _check_variation_variant_ownership(self, node: Dict, namespace: str) -> None:
+        """variation と variant の所有関係 (8.2.2.5 Variability)。
+
+        参照実装との比較評価で見つかった偽陰性（Variability_invalid.sysml、
+        比較レポートv2 §v2-3）。1つの構造関係の裏表なので2つのメッセージを
+        まとめて扱う:
+
+        - `An owned usage of a variation must be a variant.`
+          variation（`variability == "variation"`）が所有する usage は
+          すべて variant でなければならない。
+        - `A variant must be an owned member of a variation.`
+          variant（`variability == "variant"`）の所有者は variation でなければ
+          ならない。
+
+        参照実装への問い合わせで確定した境界（2026-09-04）:
+        variation の子のうち**usageだけ**が対象で、入れ子の def
+        （`part def Inner`・`attribute def X`）や `doc` は違反にならない。
+        したがって `_VARIATION_OWNED_USAGE_SUFFIXES` で usage だけに絞る。
+
+        `variation must not specialize another variation` は継承先の解決が
+        必要なため、ここでは実装しない（同フィクスチャ内の他の違反で
+        ファイルとしては検出できる）。
+        """
+        children = [c for c in node.get("children", []) if isinstance(c, dict)]
+        owner_is_variation = node.get("variability") == "variation"
+        owner_name = node.get("name", namespace)
+        for child in children:
+            child_type = child.get("type") or ""
+            is_usage = child_type.endswith(_VARIATION_OWNED_USAGE_SUFFIXES)
+            variability = child.get("variability")
+            if owner_is_variation and is_usage and variability != "variant":
+                self.issues.append(LintIssue(
+                    SEVERITY_ERROR,
+                    f"[8.2.2.5] variation '{owner_name}' が所有する "
+                    f"'{child.get('name')}' はvariantでなければなりません",
+                    child
+                ))
+            elif variability == "variant" and not owner_is_variation:
+                self.issues.append(LintIssue(
+                    SEVERITY_ERROR,
+                    f"[8.2.2.5] variant '{child.get('name')}' は "
+                    f"variationの所有メンバーでなければなりません",
+                    child
+                ))
+
     def _check_interface_def(self, node: Dict, namespace: str) -> None:
         """
         インターフェース定義のチェック (8.2.2.14)

@@ -5457,6 +5457,37 @@ def test_lint_requirement_subject_count_and_position():
     ) == 1
 
 
+def test_lint_variation_variant_ownership():
+    """variationとvariantの所有関係（Variability_invalid.sysml参照）。
+    参照実装の "An owned usage of a variation must be a variant." と
+    "A variant must be an owned member of a variation." の2方向。
+
+    参照実装で実測した境界: variationの子のうちusageだけが対象で、入れ子のdef
+    （`part def Inner`・`attribute def X`）や`doc`は違反にならない。
+    """
+    for src in (
+        "variation attribute def A { variant attribute a1; attribute a2; }",
+        "part def B; part b1 : B; part def PC :> B { variant b1; }",
+        "action f { variant action f1; action f2; }",
+        "part def D; part c { variation part d : D { part d1; variant part d2; } }",
+    ):
+        issues = lint_ast(parse_sysml_antlr(src))
+        assert any(
+            "8.2.2.5" in i.message for i in issues if i.severity == "error"
+        ), f"検出されるべきなのに検出されなかった: {src}"
+
+    for src in (
+        "variation attribute def A { variant attribute a1; variant attribute a2; }",
+        "variation part def A { variant part a1; part def Inner; attribute def X; }",
+        "variation attribute def A { doc /* d */ variant attribute a1; }",
+        "part def Q { part x; }",
+    ):
+        issues = lint_ast(parse_sysml_antlr(src))
+        assert not any(
+            "8.2.2.5" in i.message for i in issues if i.severity == "error"
+        ), f"誤検出した: {src}"
+
+
 def test_lint_single_view_rendering():
     """view def / view usage のview renderingは1つまで
     （ViewRendering_invalid.sysml参照）。`rendering r;`という素のrendering

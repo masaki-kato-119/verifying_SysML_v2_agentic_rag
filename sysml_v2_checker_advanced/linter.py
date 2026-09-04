@@ -429,6 +429,10 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         if "children" in node:
             self._check_subsetting_uniqueness_conformance(node)
             self._check_binding_feature_override(node)
+            # variation/variantの所有関係(8.2.2.5)。ノード種別を限定せず、
+            # 子を持つ全ノードで見る（variantはpackage直下・action本体など
+            # どこにでも書けてしまうため）。
+            self._check_variation_variant_ownership(node, namespace)
 
         # 多重度のチェック（後方互換性）
         if "multiplicity" in node:
