@@ -2342,6 +2342,14 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 **({"type_names": type_names} if len(type_names) > 1 else {}),
                 "interface_part": interface_part,
                 **({"ends": [self.visit(e) for e in nary_ends]} if nary_ends else {}),
+                # `connect [1] a.b to [1] c.d`のような端点ごとの多重度
+                # （2026-09-04、レポートv2 §v2-6 G1。connectUsageと同じキー名。
+                # 既存のexact-equality辞書テストを壊さないよう、無い場合は
+                # キー自体を省略する）。
+                **({"from_multiplicity": self._multiplicity_dict(ctx.fromMult)}
+                   if ctx.fromMult is not None else {}),
+                **({"to_multiplicity": self._multiplicity_dict(ctx.toMult)}
+                   if ctx.toMult is not None else {}),
                 "isAbstract": ctx.isAbstract is not None,
                 # `interface X: Y connect a::b to c::d { ... }`（VehicleModel.sysml）
                 # のように本体を持つこともある（2026-08-28、
@@ -2360,7 +2368,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "type": "interface_usage",
             "name": _optional_simple_name_text(ctx.simpleName()),
             "type_name": id_ctx.getText() if id_ctx is not None else None,
-            "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
+            # 2026-09-04(G1): connect節に端点多重度を追加した結果、この規則内の
+            # multiplicitySpec参照が複数になった。無ラベルの
+            # `ctx.multiplicitySpec()`は戻り値が単体からリストへ変わるため、
+            # usage自身の多重度は`usageMult`ラベル経由で読む。
+            "multiplicity": self._multiplicity_dict(ctx.usageMult),
             "isAbstract": ctx.isAbstract is not None,
             "redefines": redefines,
             # `interface : StagingInterface connect a.p to b.q;`のように、
@@ -2368,6 +2380,10 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             # 持ちうる（2026-08-28、730件パース失敗の要因分析で発見）。
             "interface_part": bare_interface_part,
             **({"ends": [self.visit(e) for e in nary_ends]} if nary_ends else {}),
+            **({"from_multiplicity": self._multiplicity_dict(ctx.bareFromMult)}
+               if ctx.bareFromMult is not None else {}),
+            **({"to_multiplicity": self._multiplicity_dict(ctx.bareToMult)}
+               if ctx.bareToMult is not None else {}),
             # `abstract interface i = i1;`（InterfaceTest.sysml）のように、
             # `connect`節を伴わず`= value`で直接値代入することがある
             # （2026-08-29、730件ベースライン154件エラー要因分析で発見）。
@@ -3176,7 +3192,16 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # calcBodyElement（今のところこの2規則のみ）と、他13規則の
         # partBodyElementとで異なる。hasattrで判別する（2026-08-29、730件
         # ベースライン154件エラー要因分析で発見）。
-        body_ctxs = ctx.calcBodyElement() if hasattr(ctx, "calcBodyElement") else ctx.partBodyElement()
+        # 規則によって本体の要素種別が異なる（calc/analysis/verificationは
+        # calcBodyElement、use caseは制御フローを持てるためactionBodyElement、
+        # 残りはpartBodyElement）。2026-09-04、useCaseDefをactionBodyElementへ
+        # 変更した際にこの分岐を追加した。
+        if hasattr(ctx, "calcBodyElement"):
+            body_ctxs = ctx.calcBodyElement()
+        elif hasattr(ctx, "actionBodyElement"):
+            body_ctxs = ctx.actionBodyElement()
+        else:
+            body_ctxs = ctx.partBodyElement()
         # `metadata engineSelectionRationale : Rationale about engine4cyl
         # { ... }`（RationaleMetadataExample.sysml）のように、`: Type`型節・
         # `about <ref1>[, <ref2>...]`節を持つ規則（今のところ
@@ -3230,7 +3255,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return self._named_simple_node("use_case_def", ctx)
 
     def visitUseCaseUsage(self, ctx: SysMLMinParser.UseCaseUsageContext) -> Dict:
-        return self._usage_keyword_node("use_case_usage", ctx, ctx.partBodyElement())
+        return self._usage_keyword_node("use_case_usage", ctx, ctx.actionBodyElement())
 
     def visitIncludeUseCaseUsage(self, ctx: SysMLMinParser.IncludeUseCaseUsageContext) -> Dict:
         # `then include use case detectThreat : DetectThreat { ... }`

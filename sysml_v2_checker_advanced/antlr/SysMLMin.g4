@@ -597,7 +597,19 @@ verificationCaseUsage
     ;
 
 useCaseDef
-    : isAbstract='abstract'? 'use' 'case' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    // `use case transportPassenger:TransportPassenger{ first start; then fork fork1;
+    //     join join1; then action trigger accept ignitionCmd:IgnitionCmd; ... }`
+    // （SysML v2 Spec Annex A SimpleVehicleModel.sysml:1384-1440）のように、
+    // use case の本体は制御フロー（fork/join・then action ... accept 等）を
+    // 持てる。SysML v2 の UseCaseUsage は CaseUsage → CalculationUsage →
+    // ActionUsage の特化であり振る舞いなので、本体は partBodyElement ではなく
+    // actionBodyElement が正しい（actionBodyElement は最終代替として
+    // partBodyElement を含む上位集合なので、従来受理していた形はすべて通る）。
+    // 2026-09-04、比較レポートv2 §v2-6。当初 G5(`action trigger accept`) と
+    // G7(fork/join) を別原因と数えたが、どちらも action def 本体では単独で
+    // パースできており、実際には「use case 本体が制御フローを受け付けない」
+    // という単一の原因だった。
+    : isAbstract='abstract'? 'use' 'case' 'def' simpleName inheritanceClause? ( '{' actionBodyElement* '}' | ';' )
     ;
 
 // `variation use case uc1 { variant use case uc11; variant use case
@@ -622,7 +634,7 @@ useCaseUsage
       (':' typeRef=(ID | QUOTED_NAME) (',' extraTypeRefs+=(ID | QUOTED_NAME))*)?
       multiplicitySpec?
       (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
-      ( '{' partBodyElement* '}' | ';' )
+      ( '{' actionBodyElement* '}' | ';' )
     ;
 
 // `then include use case detectThreat : DetectThreat { ... }`
@@ -1055,8 +1067,18 @@ requireUsage
 // 単一型のみだった。2026-09、参照実装比較レポートで発見）。
 interfaceUsage
     : isAbstract='abstract'? 'interface' simpleName ':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*
+      // `interface wheelToleftHalAxleInterface:WheelHubInterface
+      //     connect [1] rearWheel1.lugNutCompositePort to [1] rearAxle.leftHalfAxle.shankCompositePort;`
+      // （SysML v2 Spec Annex A SimpleVehicleModel.sysml:640,642,953,968,970,999）
+      // のように、interface usage の connect 節も端点ごとに多重度を取りうる。
+      // connectUsage（2119行付近）には既にあったのに interfaceUsage には無い、
+      // という実装の非対称性だった（2026-09-04、比較レポートv2 §v2-6 G1。
+      // 参照実装は同ファイル全体に対して診断0件＝この記法を受理する）。
+      // 多重度は必ずラベル経由で読むこと: 無ラベルの `ctx.multiplicitySpec()`
+      // は規則内の参照が複数になると戻り値が単体からリストへ変わるため、
+      // 第2代替の usage 自身の多重度も `usageMult` としてラベル付けしてある。
       ( 'connect'
-        ( connectorEndPath 'to' connectorEndPath
+        ( fromMult=multiplicitySpec? connectorEndPath 'to' toMult=multiplicitySpec? connectorEndPath
         | '(' naryEnds+=connectorEndPath (',' naryEnds+=connectorEndPath)+ ')'
         )
       )?
@@ -1079,12 +1101,18 @@ interfaceUsage
     // `connect`節を伴わず既存のinterface usageへ`= value`で直接値代入
     // することがある（2026-08-29、730件ベースライン154件エラー要因分析
     // で発見）。
+    // `interface wheelFastenerInterface1 :> wheelFastenerInterface
+    //     connect [5] lugNutPort ::> lugNutCompositePort.lugNutPort to [5] shankPort ::> ...;`
+    // （Annex A SimpleVehicleModel.sysml:969-970）のように、`:`型節ではなく
+    // `:>`継承節を伴う形（この第2代替）でも connect 節に端点多重度が付く。
+    // usage自身の多重度は`usageMult`ラベル経由で読むこと（無ラベルの
+    // `ctx.multiplicitySpec()`は参照が複数になるとリストを返すようになる）。
     | isAbstract='abstract'? 'interface' simpleName?
       (':' ID)?
-      multiplicitySpec?
+      usageMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       ('=' value=expression)?
-      ( 'connect'? connectorEndPath 'to' connectorEndPath
+      ( 'connect'? bareFromMult=multiplicitySpec? connectorEndPath 'to' bareToMult=multiplicitySpec? connectorEndPath
       | 'connect' '(' naryEnds+=connectorEndPath (',' naryEnds+=connectorEndPath)+ ')'
       )?
       ( '{' partBodyElement* '}' | ';' )
