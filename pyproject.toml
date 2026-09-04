@@ -61,7 +61,16 @@ packages = [
     "sysml_v2_checker_advanced",
     "sysml_v2_checker_advanced.antlr",
     "sysml_v2_checker_advanced.antlr.generated",
+    # Viewer（実ディレクトリ名と一致するため package-dir のマッピングは不要）。
+    # frontend/ はビルドステップの無い素のHTML+JS+CSSで、app.py が
+    # `Path(__file__).parent.parent / "frontend"` として実行時に参照するため、
+    # パッケージデータとして同梱する（下の package-data 参照）。
+    "viewer",
+    "viewer.backend",
 ]
+
+[tool.setuptools.package-data]
+viewer = ["frontend/*"]
 
 [tool.ruff]
 target-version = "py310"
