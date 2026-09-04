@@ -54,6 +54,40 @@ def test_feature_typing_edge_resolves_to_local_part_def():
     assert edge["resolved"] is True
 
 
+# --- 型付けの多重度ラベル（表現力強化h3） ----------------------------------
+
+def test_feature_typing_edge_has_multiplicity_label_when_explicit():
+    text = """
+    package P {
+        part def Engine;
+        part engines : Engine[1..4];
+    }
+    """
+    _, model = build_semantic_model(text.strip())
+    edge = next(e for e in model["edges"] if e["from_id"] == "$root::engines" and e["kind"] == "feature_typing")
+    assert edge["label"] == "1..4"
+
+
+def test_feature_typing_edge_has_no_label_without_explicit_multiplicity():
+    """多重度を明示しないfeature_typingエッジは"label"キー自体を持たない
+    （h2の暗黙遷移と同様、ラベル無しの矢印のみ描画される）。"""
+    _, model = build_semantic_model(_SAMPLE.strip())
+    edge = next(e for e in model["edges"] if e["from_id"] == "$root::myEngine")
+    assert "label" not in edge
+
+
+def test_feature_typing_edge_shows_single_value_multiplicity():
+    text = """
+    package P {
+        part def Engine;
+        part engine : Engine[4];
+    }
+    """
+    _, model = build_semantic_model(text.strip())
+    edge = next(e for e in model["edges"] if e["from_id"] == "$root::engine" and e["kind"] == "feature_typing")
+    assert edge["label"] == "4"
+
+
 def test_builtin_type_reference_is_unresolved_external():
     """組み込み型(Real等)はASTノードを持たないため to_id=None だが、
     linter自身がエラー扱いしない参照のため resolution_status は
@@ -173,6 +207,57 @@ def test_binding_connector_produces_connection_edges():
     _, model = build_semantic_model(text.strip())
     connection_edges = [e for e in model["edges"] if e["kind"] == "connection"]
     assert {e["to_id"] for e in connection_edges} == {"$root::a", "$root::b"}
+
+
+def test_connect_usage_end_multiplicity_becomes_edge_label():
+    """表現力強化h3: `connect [0..1] a to [1..*] b;`のような各endの前に
+    付く多重度を、そのendへ向かうconnectionエッジ自身のラベルとして表示する。"""
+    text = """
+    package P {
+        part a;
+        part b;
+        connect [0..1] a to [1..*] b;
+    }
+    """
+    _, model = build_semantic_model(text.strip())
+    connection_edges = [e for e in model["edges"] if e["kind"] == "connection"]
+    a_edge = next(e for e in connection_edges if e["to_id"] == "$root::a")
+    b_edge = next(e for e in connection_edges if e["to_id"] == "$root::b")
+    assert a_edge["label"] == "0..1"
+    assert b_edge["label"] == "1..*"
+
+
+def test_binding_connector_end_multiplicity_becomes_edge_label():
+    """`binding [connMult] bind [leftMult] a = [rightMult] b;`のうち、h3が
+    ラベル表示するのはleft/rightの各end多重度のみ（コネクタ自身のconnMultは
+    end固有の情報ではないため対象外）。"""
+    text = """
+    package P {
+        part a;
+        part b;
+        binding bind [0..*] a = b;
+    }
+    """
+    _, model = build_semantic_model(text.strip())
+    connection_edges = [e for e in model["edges"] if e["kind"] == "connection"]
+    a_edge = next(e for e in connection_edges if e["to_id"] == "$root::a")
+    b_edge = next(e for e in connection_edges if e["to_id"] == "$root::b")
+    assert a_edge["label"] == "0..*"
+    assert "label" not in b_edge
+
+
+def test_connect_usage_without_end_multiplicity_has_no_label():
+    _, model = build_semantic_model(
+        """
+        package P {
+            part a;
+            part b;
+            connect a to b;
+        }
+        """.strip()
+    )
+    connection_edges = [e for e in model["edges"] if e["kind"] == "connection"]
+    assert all("label" not in e for e in connection_edges)
 
 
 def test_satisfy_requirement_usage_produces_satisfy_edge():

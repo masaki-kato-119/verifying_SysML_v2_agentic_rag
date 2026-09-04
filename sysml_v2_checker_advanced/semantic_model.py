@@ -38,7 +38,7 @@ linter.py には一切手を入れない。SysMLAdvancedLinter().lint(ast) を�
   `_find_element_in_symbols` をそのまま呼んで揃えている）
 """
 
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 from .linter import SysMLAdvancedLinter
 
@@ -57,6 +57,14 @@ _CONNECTOR_END_FIELD_NAMES = (
     "firstEnd", "thenEnd",      # connection_usage
     "leftEnd", "rightEnd",      # binding_connector
 )
+# 表現力強化h3: 各end参照フィールドに対応する多重度フィールド名（無ければ
+# キー自体が省略されるため`node.get(...)`はNoneを返す）。end名の並び順は
+# `_CONNECTOR_END_FIELD_NAMES`と揃えている。
+_CONNECTOR_END_MULTIPLICITY_FIELD_NAMES = (
+    "from_multiplicity", "to_multiplicity",     # connect_usage
+    "firstMultiplicity", "thenMultiplicity",    # connection_usage
+    "leftMultiplicity", "rightMultiplicity",    # binding_connector
+)
 _CONNECTION_NODE_TYPES = {"connect_usage", "connection_usage", "binding_connector"}
 _REQUIREMENT_EDGE_KIND = {
     "satisfy_requirement_usage": "satisfy",
@@ -69,24 +77,44 @@ _REQUIREMENT_EDGE_KIND = {
 # 済みのため、単一の判定で3種の文法をまとめて扱える。
 
 
-def _connector_end_references(node: Dict) -> List[str]:
-    """connect_usage/connection_usage/binding_connectorのend群から参照文字列を集める。
+def _multiplicity_label(multiplicity: Optional[Dict]) -> Optional[str]:
+    """表現力強化h3: `_multiplicity_dict`形（antlr_transformer.py）の値を
+    エッジラベル用の短い文字列（"4"や"1..4"等）へ変換する。上下限が無い
+    （`ordered`/`nonunique`のみで`[...]`を伴わない等）場合はNone。"""
+    if not isinstance(multiplicity, dict):
+        return None
+    size = multiplicity.get("size")
+    if not isinstance(size, dict):
+        return None
+    min_value, max_value = size.get("min"), size.get("max")
+    if min_value == max_value:
+        return str(min_value)
+    return f"{min_value}..{max_value}"
+
+
+def _connector_end_references(node: Dict) -> List[Tuple[str, Optional[str]]]:
+    """connect_usage/connection_usage/binding_connectorのend群から
+    (参照文字列, 多重度ラベルまたはNone) の組を集める（表現力強化h3で
+    多重度ラベルを追加。それ以前は参照文字列のみを返していた）。
 
     各endは visitConnectorEnd/visitConnectorEndPath が返す
     `{"type": "connector_end", "reference": str, ...}` 形（self.visit()経由の
-    ため既にPhase 1で個別のノードとして登録済み）。ここではそのdictの
-    "reference"文字列だけを取り出し、connect_usage自身からの参照解決に使う。
+    ため既にPhase 1で個別のノードとして登録済み）。多重度は同じendの前に
+    付く別フィールド（例: binding_connectorの`leftMultiplicity`）として
+    ノード自身に格納されているため、endフィールドと対になる多重度フィールド
+    名を`_CONNECTOR_END_MULTIPLICITY_FIELD_NAMES`で引く。
     """
-    references: List[str] = []
-    for field in _CONNECTOR_END_FIELD_NAMES:
+    references: List[Tuple[str, Optional[str]]] = []
+    for field, mult_field in zip(_CONNECTOR_END_FIELD_NAMES, _CONNECTOR_END_MULTIPLICITY_FIELD_NAMES):
         end = node.get(field)
         if isinstance(end, dict) and end.get("reference"):
-            references.append(end["reference"])
+            references.append((end["reference"], _multiplicity_label(node.get(mult_field))))
     ends_list = node.get("ends")
     if isinstance(ends_list, list):
+        # n-ary形（3つ以上のend）は多重度フィールドが無いため常にNone。
         for end in ends_list:
             if isinstance(end, dict) and end.get("reference"):
-                references.append(end["reference"])
+                references.append((end["reference"], None))
     return references
 
 
@@ -376,10 +404,18 @@ def build_relation_edges(
                 target = _resolve_reference(base_ref, linter)
                 edges.append(_make_edge(stable_id, target, kind, base_ref, reverse_index, linter))
 
+        # 表現力強化h3: 型付け(feature_typing)の多重度（`part engines : Engine[1..4];`
+        # のようにノード自身が持つ`multiplicity`）を、すべてのfeature_typingエッジに
+        # ラベルとして添える（h2で確立した`edge["label"]`の配管をそのまま再利用）。
+        typing_multiplicity_label = _multiplicity_label(node.get("multiplicity"))
+
         type_name = node.get("type_name")
         if isinstance(type_name, str) and type_name:
             target = _resolve_reference(type_name, linter)
-            edges.append(_make_edge(stable_id, target, "feature_typing", type_name, reverse_index, linter))
+            edge = _make_edge(stable_id, target, "feature_typing", type_name, reverse_index, linter)
+            if typing_multiplicity_label is not None:
+                edge["label"] = typing_multiplicity_label
+            edges.append(edge)
 
         # type_names[0] は type_name と重複するため2件目以降のみ追加する
         # （multitype、antlr_transformer.pyの各visitXxxで共通の設計）。
@@ -387,19 +423,33 @@ def build_relation_edges(
         if isinstance(extra_type_names, list):
             for extra_name in extra_type_names[1:]:
                 target = _resolve_reference(extra_name, linter)
-                edges.append(_make_edge(stable_id, target, "feature_typing", extra_name, reverse_index, linter))
+                edge = _make_edge(stable_id, target, "feature_typing", extra_name, reverse_index, linter)
+                if typing_multiplicity_label is not None:
+                    edge["label"] = typing_multiplicity_label
+                edges.append(edge)
 
         type_spec = node.get("type_spec")
         if isinstance(type_spec, dict) and type_spec.get("name"):
             target = _resolve_reference(type_spec["name"], linter)
-            edges.append(_make_edge(stable_id, target, "feature_typing", type_spec["name"], reverse_index, linter))
+            edge = _make_edge(stable_id, target, "feature_typing", type_spec["name"], reverse_index, linter)
+            if typing_multiplicity_label is not None:
+                edge["label"] = typing_multiplicity_label
+            edges.append(edge)
 
         node_type = node.get("type")
 
         if node_type in _CONNECTION_NODE_TYPES:
-            for reference in _connector_end_references(node):
+            # 表現力強化h3: 各endの多重度（例: binding_connectorの
+            # leftMultiplicity/rightMultiplicity）を、そのendへ向かうconnection
+            # エッジ自身のラベルとして添える（end毎に別々のエッジが既に存在する
+            # ため、1本のエッジに1つの多重度がそのまま対応し、UMLの関連端点
+            # 多重度表記と同じ見た目になる）。
+            for reference, mult_label in _connector_end_references(node):
                 target = _resolve_reference(reference, linter)
-                edges.append(_make_edge(stable_id, target, "connection", reference, reverse_index, linter))
+                edge = _make_edge(stable_id, target, "connection", reference, reverse_index, linter)
+                if mult_label is not None:
+                    edge["label"] = mult_label
+                edges.append(edge)
 
         req_edge_kind = _REQUIREMENT_EDGE_KIND.get(node_type)
         if req_edge_kind is not None:

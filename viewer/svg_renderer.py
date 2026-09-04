@@ -47,9 +47,17 @@ _KIND_MARKER = {
 
 # satisfy/verifyは破線（要求適合はモデル要素間の直接構造ではなく「適合の主張」である
 # ことを線種でも示す）。
+# 表現力強化h6: feature_typingも破線にする。specialization等の継承系（実線＋
+# 白抜き矢印）や、transition/succession/flow等が使う既定の実線＋塗り矢印
+# フォールバックと同じ見た目になっていたため、「型付け」という別の関係種別
+# であることが線種だけでは分からなかった。matrixの矢印形状（塗り矢印）は
+# feature_typingのまま据え置き、線種の破線だけをsatisfy/verifyと差別化する
+# （satisfy/verifyは開いた矢印、feature_typingは塗り矢印のため、破線同士でも
+# 矢印の形で見分けが付く）。
 _KIND_DASH = {
     "satisfy": "4 2",
     "verify": "4 2",
+    "feature_typing": "4 2",
 }
 
 # 表現力強化 Stage 3: 状態遷移図の状態ノード（Group B f3）とアクティビティ図の
@@ -105,7 +113,34 @@ def _source_range_attrs(source_range: Optional[Dict]) -> str:
     )
 
 
+def _render_port_node(node: Dict) -> str:
+    """表現力強化h5: ポートを、親の内部構成要素と同じ入れ子矩形ではなく、
+    境界線をまたぐ小さな正方形（SysML標準のポート表記）として描く。
+    正方形自体は小さく2行の種別＋名前を収める余地が無いため、名前は
+    正方形の外側（左）に1行の小さいテキストとして添え、種別キーワードは
+    ホバー用の<title>にのみ残す（クリックでのInspector連携はdata-element-id
+    が担うため、視覚情報を削っても要素の追跡性は失われない）。"""
+    element_id = escape(node["id"], quote=True)
+    node_type = escape(node["type"], quote=True)
+    label = escape(node["label"])
+    keyword = escape(_type_keyword(node["type"]))
+    x, y, width, height = node["x"], node["y"], node["width"], node["height"]
+    return (
+        f'<g class="sysml-node sysml-port-node" data-element-id="{element_id}" data-type="{node_type}"'
+        f'{_source_range_attrs(node["source_range"])}>'
+        f"<title>«{keyword}» {label}</title>"
+        f'<rect x="{x}" y="{y}" width="{width}" height="{height}"'
+        f' fill="{_NODE_FILL}" stroke="{_NODE_STROKE}" />'
+        f'<text x="{x - 4}" y="{y + height / 2 + 4}" fill="{_TEXT_COLOR}" font-size="10"'
+        f' text-anchor="end">{label}</text>'
+        f"</g>"
+    )
+
+
 def _render_node(node: Dict) -> str:
+    if node.get("is_boundary_port"):
+        return _render_port_node(node)
+
     element_id = escape(node["id"], quote=True)
     node_type = escape(node["type"], quote=True)
     label = escape(node["label"])

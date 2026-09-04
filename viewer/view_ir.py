@@ -17,6 +17,15 @@ _MIN_WIDTH = 90
 _MIN_HEIGHT = 40
 _CHAR_WIDTH = 8  # ラベル長からの概算幅（フォントメトリクスは使わない簡易推定）
 
+# 表現力強化h5: ポート(port_usage/port_def)は、通常の子要素のように親の
+# 中に入れ子矩形として並べるのではなく、SysML標準のポート表記に合わせ、
+# 親矩形の左辺に境界線をまたぐ小さな正方形として配置する。自身の子要素を
+# 持つポート（flow property等がbodyに書かれている場合）は、この特別扱いを
+# せず通常の子要素として扱う（ネストした内容を消さないための安全策）。
+_PORT_NODE_TYPES = {"port_usage", "port_def"}
+_PORT_SIZE = 14
+_PORT_GAP = 6
+
 
 def _leaf_size(label: str) -> Tuple[int, int]:
     width = max(_MIN_WIDTH, len(label) * _CHAR_WIDTH + 2 * _PADDING)
@@ -106,6 +115,18 @@ def build_view_ir(graph_ir: Dict, collapsed_ids=None, pinned_positions=None) -> 
             return []  # 折りたたみ対象自身は子を持たない葉として扱う。
         return [c for c in children_by_parent.get(node_id, []) if c not in excluded_ids]
 
+    def _is_boundary_port(node_id) -> bool:
+        """表現力強化h5: 自身の子を持たない単純なポートだけを境界表示の
+        対象にする（flow property等のbodyを持つポートは、内容を消さない
+        よう通常の入れ子矩形のまま扱う）。"""
+        return nodes_by_id[node_id]["type"] in _PORT_NODE_TYPES and not _children_of(node_id)
+
+    def _split_children(node_id) -> Tuple[List[str], List[str]]:
+        children = _children_of(node_id)
+        ports = [c for c in children if _is_boundary_port(c)]
+        regular = [c for c in children if c not in ports]
+        return regular, ports
+
     sizes: Dict[str, Tuple[int, int]] = {}
     positions: Dict[str, Tuple[int, int]] = {}
     # ノードごとの「フロー原点からのずれ」。ピン留めされた子が通常のフロー
@@ -121,11 +142,28 @@ def build_view_ir(graph_ir: Dict, collapsed_ids=None, pinned_positions=None) -> 
             content_offset[node_id] = (0, 0)
             return size
 
+        regular_children, port_children = _split_children(node_id)
+        # ポートは正方形固定サイズとし、通常のcompute_size再帰（テキスト幅
+        # ベースの_leaf_size）は適用しない（境界線をまたぐ小さな記号として
+        # 描くだけで、名前の長さに応じて矩形を広げる必要が無いため）。
+        for port_id in port_children:
+            sizes[port_id] = (_PORT_SIZE, _PORT_SIZE)
+            content_offset[port_id] = (0, 0)
+
         # 通常のフロー配置は、ピン留めの有無に関わらず全ての子について計算する
         # （後述のplace()でも同様。兄弟の位置をピン留めの影響から独立させるため）。
-        child_sizes = [compute_size(c) for c in children]
-        flow_width = max(w for w, _h in child_sizes)
-        flow_height = sum(h for _w, h in child_sizes) + _PADDING * (len(children) - 1)
+        if regular_children:
+            child_sizes = [compute_size(c) for c in regular_children]
+            flow_width = max(w for w, _h in child_sizes)
+            flow_height = sum(h for _w, h in child_sizes) + _PADDING * (len(regular_children) - 1)
+        else:
+            flow_width, flow_height = 0, 0
+
+        # ポートは親の左辺に均等間隔で並ぶため、その縦方向の必要量
+        # （境界表示の対象がポートしか無い場合など）で高さの下限を確保する。
+        if port_children:
+            port_strip_height = len(port_children) * _PORT_SIZE + (len(port_children) - 1) * _PORT_GAP
+            flow_height = max(flow_height, port_strip_height)
 
         # 親の内容領域は「通常のフロー領域」と「各ピン留め子の相対矩形」の
         # 和集合の外接矩形にする。ピン留め子がフロー領域より左・上にはみ出す
@@ -133,7 +171,7 @@ def build_view_ir(graph_ir: Dict, collapsed_ids=None, pinned_positions=None) -> 
         # その分だけ左・上にずらして広げる。
         content_left, content_top = 0, 0
         content_right, content_bottom = flow_width, flow_height
-        for child_id in children:
+        for child_id in regular_children:
             pinned = pinned_positions.get(child_id)
             if pinned is None:
                 continue
@@ -160,10 +198,11 @@ def build_view_ir(graph_ir: Dict, collapsed_ids=None, pinned_positions=None) -> 
         children = _children_of(node_id)
         if not children:
             return
+        regular_children, port_children = _split_children(node_id)
         origin_x = anchor_x + _PADDING
         origin_y = anchor_y + _LABEL_HEIGHT + _PADDING
         cursor_y = origin_y
-        for child_id in children:
+        for child_id in regular_children:
             flow_y = cursor_y
             cursor_y += sizes[child_id][1] + _PADDING  # ピン留めの有無に関わらず必ず進める
             pinned = pinned_positions.get(child_id)
@@ -171,6 +210,18 @@ def build_view_ir(graph_ir: Dict, collapsed_ids=None, pinned_positions=None) -> 
                 place(child_id, origin_x + pinned["x"], origin_y + pinned["y"])
             else:
                 place(child_id, origin_x, flow_y)
+
+        if port_children:
+            # 表現力強化h5: ポートは親矩形の左辺の中央を基準に均等間隔で並べ、
+            # 正方形が境界線をまたぐように半分だけ外へはみ出させる
+            # （SysML標準のポート表記）。
+            parent_width, parent_height = sizes[node_id]
+            total_port_height = len(port_children) * _PORT_SIZE + (len(port_children) - 1) * _PORT_GAP
+            port_y = y + (parent_height - total_port_height) / 2
+            port_x = x - _PORT_SIZE / 2
+            for port_id in port_children:
+                positions[port_id] = (port_x, port_y)
+                port_y += _PORT_SIZE + _PORT_GAP
 
     # group_id が None のノード（ルートのみのはず。Semantic Modelのルートは
     # 常に1個。$root自身のparent_id=Noneであるため）を最上位として配置する。
@@ -200,6 +251,11 @@ def build_view_ir(graph_ir: Dict, collapsed_ids=None, pinned_positions=None) -> 
             "source_range": nodes_by_id[nid]["source_range"],
             "x": positions[nid][0], "y": positions[nid][1],
             "width": sizes[nid][0], "height": sizes[nid][1],
+            # 表現力強化h5: SVGレンダラーが「境界線をまたぐ小さな正方形」として
+            # 描くべきポートかどうかを、幅・高さの偶然の一致に頼らず明示的に
+            # 伝える（自身の子を持つポートはNoneやフラグ無しではなく明示的に
+            # Falseになり、通常の入れ子矩形として描かれる）。
+            "is_boundary_port": _is_boundary_port(nid),
         }
         for nid in sorted(nodes_by_id)
         if nid not in excluded_ids

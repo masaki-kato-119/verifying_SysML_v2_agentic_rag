@@ -39,6 +39,72 @@ def test_all_coordinates_are_non_negative():
         assert node["height"] > 0
 
 
+# --- ポートの境界表示（表現力強化h5） --------------------------------------
+
+_PORT_SAMPLE = """
+package P {
+    part def Battery {
+        port chargePort;
+        port dataPort;
+        attribute capacity : Real;
+    }
+}
+"""
+
+
+def test_simple_port_is_marked_as_boundary_port_with_fixed_square_size():
+    vir = _build_view_ir(_PORT_SAMPLE)
+    by_id = {n["id"]: n for n in vir["nodes"]}
+    port = by_id["$root::Battery::chargePort"]
+    assert port["is_boundary_port"] is True
+    assert (port["width"], port["height"]) == (14, 14)
+
+
+def test_boundary_port_straddles_parent_left_edge():
+    """境界線をまたぐ表記のため、ポートの中心が親矩形の左辺の上に来る
+    （x座標が親のxよりちょうど正方形の半分だけ左にずれる）。"""
+    vir = _build_view_ir(_PORT_SAMPLE)
+    by_id = {n["id"]: n for n in vir["nodes"]}
+    parent = by_id["$root::Battery"]
+    port = by_id["$root::Battery::chargePort"]
+    assert port["x"] == parent["x"] - port["width"] / 2
+
+
+def test_non_port_nodes_are_not_marked_as_boundary_port():
+    vir = _build_view_ir(_PORT_SAMPLE)
+    by_id = {n["id"]: n for n in vir["nodes"]}
+    assert by_id["$root::Battery"]["is_boundary_port"] is False
+    assert by_id["$root::Battery::capacity"]["is_boundary_port"] is False
+
+
+def test_port_with_its_own_children_falls_back_to_nested_box():
+    """自身の子要素（例: flow property）を持つポートは、内容を消さないよう
+    通常の入れ子矩形として扱う（境界線をまたぐ簡略表示にはしない）。"""
+    text = """
+    package P {
+        part def Battery {
+            port chargePort {
+                attribute voltage : Real;
+            }
+        }
+    }
+    """
+    vir = _build_view_ir(text)
+    by_id = {n["id"]: n for n in vir["nodes"]}
+    port = by_id["$root::Battery::chargePort"]
+    assert port["is_boundary_port"] is False
+    assert (port["width"], port["height"]) != (14, 14)
+    assert "$root::Battery::chargePort::voltage" in by_id
+
+
+def test_multiple_ports_are_stacked_without_overlap():
+    vir = _build_view_ir(_PORT_SAMPLE)
+    by_id = {n["id"]: n for n in vir["nodes"]}
+    a = by_id["$root::Battery::chargePort"]
+    b = by_id["$root::Battery::dataPort"]
+    assert a["y"] + a["height"] <= b["y"]
+
+
 def test_child_boxes_fit_within_parent_bounds():
     vir = _build_view_ir(_SAMPLE)
     by_id = {n["id"]: n for n in vir["nodes"]}

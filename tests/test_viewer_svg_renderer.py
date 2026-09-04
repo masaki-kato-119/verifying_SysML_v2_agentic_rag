@@ -98,6 +98,23 @@ def test_feature_typing_uses_filled_arrow():
     assert 'marker-end="url(#sysml-arrow-filled)"' in svg
 
 
+def test_feature_typing_is_dashed_to_distinguish_from_default_fallback():
+    """表現力強化h6: feature_typingは塗り矢印のまま破線にすることで、
+    実線＋塗り矢印になる既定フォールバック（transition等）と見分けが付く
+    ようにする。矢印の形自体（塗り）はsatisfy/verify（開いた矢印）とも
+    見分けが付くため、破線+塗り矢印という組み合わせで一意になる。"""
+    svg = _render_single_edge("feature_typing")
+    assert 'stroke-dasharray="4 2"' in svg
+    assert 'marker-end="url(#sysml-arrow-filled)"' in svg
+
+
+def test_unknown_edge_kind_fallback_stays_solid():
+    """既定フォールバック（未知の種別）は実線のまま。feature_typingの破線化
+    がフォールバック全体に影響していないことを確認する。"""
+    svg = _render_single_edge("some_future_kind")
+    assert "stroke-dasharray=" not in svg
+
+
 def test_connection_has_no_arrow_marker():
     """connectionは無方向として扱う（矢印マーカーを付けない）。"""
     svg = _render_single_edge("connection")
@@ -278,6 +295,29 @@ def test_transition_edge_without_label_renders_no_label_text():
     <text>を一切出力しない（既存の描画を無駄に増やさない）。"""
     svg = _render_single_edge("connection")
     assert 'class="sysml-edge-label"' not in svg
+
+
+def test_boundary_port_renders_as_small_square_with_external_label():
+    """表現力強化h5: 境界線をまたぐポートは、他ノードと同じ入れ子矩形の
+    2行ラベルではなく、小さい正方形＋外側の1行ラベル＋ホバー用titleで描く。"""
+    view_ir = {
+        "view_type": "structure",
+        "nodes": [
+            {"id": "$root::Battery", "type": "part_def", "label": "Battery", "source_range": None,
+             "x": 16, "y": 46, "width": 106, "height": 86, "is_boundary_port": False},
+            {"id": "$root::Battery::chargePort", "type": "port_usage", "label": "chargePort",
+             "source_range": None, "x": 9, "y": 72, "width": 14, "height": 14, "is_boundary_port": True},
+        ],
+        "edges": [],
+    }
+    svg = render_svg(view_ir)
+    assert 'class="sysml-node sysml-port-node"' in svg
+    assert "<title>«port» chargePort</title>" in svg
+    assert '<rect x="9" y="72" width="14" height="14"' in svg
+    assert 'text-anchor="end">chargePort</text>' in svg
+    # 通常ノードの2行ラベル（ステレオタイプ+名前を分けるtspan）は使わない。
+    port_node_markup = svg.split('data-element-id="$root::Battery::chargePort"')[1].split("</g>")[0]
+    assert "<tspan" not in port_node_markup
 
 
 def test_no_marker_defs_when_there_are_no_edges():
