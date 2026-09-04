@@ -166,7 +166,10 @@ def test_multitype_produces_multiple_feature_typing_edges():
 # --- connection / satisfy / verify エッジ（p2b2, 2026-09-03） -----------------
 
 
-def test_connect_usage_produces_connection_edges_to_both_ends():
+def test_simple_binary_connect_usage_produces_a_single_edge_between_both_ends():
+    """表現力強化: 2項かつ本体を持たないconnect_usageは、自身を起点にする
+    2本のエッジではなく、両端を直接結ぶ1本のエッジとして表現する
+    （connectorの箱自体をボックスとして描画しない設計に合わせる）。"""
     text = """
     package P {
         part a;
@@ -176,10 +179,31 @@ def test_connect_usage_produces_connection_edges_to_both_ends():
     """
     _, model = build_semantic_model(text.strip())
     connection_edges = [e for e in model["edges"] if e["kind"] == "connection"]
+    assert len(connection_edges) == 1
+    edge = connection_edges[0]
+    assert edge["from_id"] == "$root::a"
+    assert edge["to_id"] == "$root::b"
+    assert edge["resolved"] is True
+
+
+def test_binary_connect_usage_with_body_keeps_two_edges_from_its_own_box():
+    """本体（`{ ... }`）を持つconnect_usageは、中の要素を消さないよう
+    従来通り自身を起点にした2本のエッジのまま表現する（1本への折りたたみは
+    しない）。"""
+    text = """
+    package P {
+        part a;
+        part b;
+        connect a to b {
+            doc /* note */
+        }
+    }
+    """
+    _, model = build_semantic_model(text.strip())
+    connection_edges = [e for e in model["edges"] if e["kind"] == "connection"]
     assert len(connection_edges) == 2
     assert {e["from_id"] for e in connection_edges} == {"$root/connect_usage#0"}
     assert {e["to_id"] for e in connection_edges} == {"$root::a", "$root::b"}
-    assert all(e["resolved"] for e in connection_edges)
 
 
 def test_nary_connect_produces_one_connection_edge_per_end():
@@ -196,7 +220,7 @@ def test_nary_connect_produces_one_connection_edge_per_end():
     assert {e["to_id"] for e in connection_edges} == {"$root::a", "$root::b", "$root::c"}
 
 
-def test_binding_connector_produces_connection_edges():
+def test_binding_connector_produces_a_single_connection_edge_between_both_ends():
     text = """
     package P {
         part a;
@@ -206,12 +230,15 @@ def test_binding_connector_produces_connection_edges():
     """
     _, model = build_semantic_model(text.strip())
     connection_edges = [e for e in model["edges"] if e["kind"] == "connection"]
-    assert {e["to_id"] for e in connection_edges} == {"$root::a", "$root::b"}
+    assert len(connection_edges) == 1
+    assert connection_edges[0]["from_id"] == "$root::a"
+    assert connection_edges[0]["to_id"] == "$root::b"
 
 
 def test_connect_usage_end_multiplicity_becomes_edge_label():
     """表現力強化h3: `connect [0..1] a to [1..*] b;`のような各endの前に
-    付く多重度を、そのendへ向かうconnectionエッジ自身のラベルとして表示する。"""
+    付く多重度を、折りたたまれた1本のconnectionエッジのラベルへ、両端分を
+    まとめて表示する（各endの多重度がそれぞれ`[...]`で区別できる形）。"""
     text = """
     package P {
         part a;
@@ -221,10 +248,8 @@ def test_connect_usage_end_multiplicity_becomes_edge_label():
     """
     _, model = build_semantic_model(text.strip())
     connection_edges = [e for e in model["edges"] if e["kind"] == "connection"]
-    a_edge = next(e for e in connection_edges if e["to_id"] == "$root::a")
-    b_edge = next(e for e in connection_edges if e["to_id"] == "$root::b")
-    assert a_edge["label"] == "0..1"
-    assert b_edge["label"] == "1..*"
+    assert len(connection_edges) == 1
+    assert connection_edges[0]["label"] == "[0..1] [1..*]"
 
 
 def test_binding_connector_end_multiplicity_becomes_edge_label():
@@ -240,10 +265,24 @@ def test_binding_connector_end_multiplicity_becomes_edge_label():
     """
     _, model = build_semantic_model(text.strip())
     connection_edges = [e for e in model["edges"] if e["kind"] == "connection"]
-    a_edge = next(e for e in connection_edges if e["to_id"] == "$root::a")
-    b_edge = next(e for e in connection_edges if e["to_id"] == "$root::b")
-    assert a_edge["label"] == "0..*"
-    assert "label" not in b_edge
+    assert len(connection_edges) == 1
+    assert connection_edges[0]["label"] == "[0..*]"
+
+
+def test_binary_connector_label_includes_name_when_present():
+    """表現力強化: 折りたたまれた2項connectorに名前/型名（`connection_usage`の
+    `name`/`type_name`、UMLの関連名に相当）がある場合はラベルに含める。"""
+    text = """
+    package P {
+        part a;
+        part b;
+        connection :MatesWith connect a to b;
+    }
+    """
+    _, model = build_semantic_model(text.strip())
+    connection_edges = [e for e in model["edges"] if e["kind"] == "connection"]
+    assert len(connection_edges) == 1
+    assert connection_edges[0]["label"] == "MatesWith"
 
 
 def test_connect_usage_without_end_multiplicity_has_no_label():

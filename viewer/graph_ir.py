@@ -63,12 +63,34 @@ _ACTIVITY_EDGE_KINDS = {"succession", "flow"}
 _VERIFICATION_VIEW_DEPTH = 2
 
 
-def _is_graph_node_type(node_type: str) -> bool:
-    """"structure"ビューでこのノード種別を描画対象に含めるか判定する。
+_CONNECTION_NODE_TYPES = {"connect_usage", "connection_usage", "binding_connector"}
+
+
+def _is_collapsed_binary_connector(entry: Dict) -> bool:
+    """表現力強化: 2項（end2つ）かつ本体（`{ ... }`）を持たないconnectorは、
+    Semantic Model側（sysml_v2_checker_advanced.semantic_model）で自身を
+    起点にするのではなく両端を直接結ぶ1本のconnectionエッジとして表現される
+    （h2/h3で確立した`_make_reference_pair_edge`パターンをconnectionにも
+    適用したもの）。そのため、ここでも自身をボックスとして描画対象に含める
+    必要が無い（含めても、どのエッジからも参照されない孤立した空箱になる
+    だけのため）。n-ary（3項以上）や本体を持つconnectorは、両端を1本の線で
+    表現できない／中の要素を消さないため、従来通りボックスのまま扱う。
+    """
+    node = entry["node"]
+    if node.get("type") not in _CONNECTION_NODE_TYPES:
+        return False
+    return not node.get("ends") and not node.get("children")
+
+
+def _is_graph_node_type(entry: Dict) -> bool:
+    """"structure"ビューでこのノードを描画対象に含めるか判定する。
 
     式（binary_expr等）・文（if_stmt等）・connector_end等の構造補助ノードは
     対象外（実装仕様書3.2節、拡張仕様書12章のPhase 1スコープと同じ考え方）。
     """
+    node_type = entry["type"]
+    if _is_collapsed_binary_connector(entry):
+        return False
     if node_type == "package":
         return True
     if node_type in _EXPLICIT_GRAPH_NODE_TYPES:
@@ -79,7 +101,7 @@ def _is_graph_node_type(node_type: str) -> bool:
 def _select_structure_view(semantic_model: Dict, finding_element_ids=None):
     nodes_in = semantic_model["nodes"]
     node_ids = {
-        stable_id for stable_id, entry in nodes_in.items() if _is_graph_node_type(entry["type"])
+        stable_id for stable_id, entry in nodes_in.items() if _is_graph_node_type(entry)
     }
     return node_ids, semantic_model["edges"]
 
@@ -108,7 +130,7 @@ def _select_verification_view(semantic_model: Dict, finding_element_ids):
     再利用したもの）。"""
     nodes_in = semantic_model["nodes"]
     candidate_ids = {
-        stable_id for stable_id, entry in nodes_in.items() if _is_graph_node_type(entry["type"])
+        stable_id for stable_id, entry in nodes_in.items() if _is_graph_node_type(entry)
     }
     resolved_edges = [
         edge for edge in semantic_model["edges"]

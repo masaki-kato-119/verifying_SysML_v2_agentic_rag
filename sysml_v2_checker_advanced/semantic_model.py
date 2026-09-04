@@ -15,7 +15,10 @@ linter.py には一切手を入れない。SysMLAdvancedLinter().lint(ast) を�
 対象とするエッジ種別（拡張仕様書8.1章）:
 - specialization / subsetting / redefinition（inheritanceフィールド由来）
 - feature_typing（type_name / type_names / type_spec.name フィールド由来）
-- connection（connect_usage/connection_usage/binding_connectorの各end由来）
+- connection（connect_usage/connection_usage/binding_connectorの各end由来。
+  2項かつ本体を持たないconnectorは、自身を起点にする複数のエッジではなく、
+  両端を直接結ぶ1本のエッジとして表現する。3項以上、または本体を持つ場合は
+  従来通り自身を起点にした複数のエッジで表現する）
 - satisfy / verify（satisfy_requirement_usage/verify_requirement_usageの
   `by`フィールド由来）
 - transition（表現力強化Stage 2, Group A e1。transitionノードのsource/target
@@ -116,6 +119,33 @@ def _connector_end_references(node: Dict) -> List[Tuple[str, Optional[str]]]:
             if isinstance(end, dict) and end.get("reference"):
                 references.append((end["reference"], None))
     return references
+
+
+def _is_collapsed_binary_connector(node: Dict) -> bool:
+    """表現力強化: 2項（end2つ）かつ本体（`{ ... }`）を持たないconnectorは、
+    自身をボックスとして描画するのではなく、両端を直接結ぶ1本のconnection
+    エッジとして表現する（`viewer/graph_ir.py`の`_is_collapsed_binary_connector`
+    と同じ条件。両モジュールは独立しているが、同じAST由来フィールド
+    （`ends`/`children`）から機械的に判定できるため、素直に判定ロジックを
+    それぞれで持つ）。n-ary（3項以上）や本体を持つconnectorは、1本の線では
+    表現できない／中の要素を消さないよう、従来通りボックスのまま扱う。
+    """
+    return node.get("type") in _CONNECTION_NODE_TYPES and not node.get("ends") and not node.get("children")
+
+
+def _binary_connection_label(name_or_type: Optional[str], mult1: Optional[str], mult2: Optional[str]) -> Optional[str]:
+    """表現力強化: 2項connectorを1本のエッジへ折りたたむ際のラベルを組み立てる。
+    名前/型名（例: connection usageの`name`/`type_name`、UMLの関連名に相当）と
+    両端の多重度（h3）を1つの文字列にまとめる。いずれも無ければNone
+    （ラベル無しの無方向の線のみ）。"""
+    parts = []
+    if mult1:
+        parts.append(f"[{mult1}]")
+    if name_or_type:
+        parts.append(name_or_type)
+    if mult2:
+        parts.append(f"[{mult2}]")
+    return " ".join(parts) if parts else None
 
 
 def _build_reverse_index(nodes: Dict[str, Dict]) -> Dict[int, str]:
@@ -439,17 +469,30 @@ def build_relation_edges(
         node_type = node.get("type")
 
         if node_type in _CONNECTION_NODE_TYPES:
-            # 表現力強化h3: 各endの多重度（例: binding_connectorの
-            # leftMultiplicity/rightMultiplicity）を、そのendへ向かうconnection
-            # エッジ自身のラベルとして添える（end毎に別々のエッジが既に存在する
-            # ため、1本のエッジに1つの多重度がそのまま対応し、UMLの関連端点
-            # 多重度表記と同じ見た目になる）。
-            for reference, mult_label in _connector_end_references(node):
-                target = _resolve_reference(reference, linter)
-                edge = _make_edge(stable_id, target, "connection", reference, reverse_index, linter)
-                if mult_label is not None:
-                    edge["label"] = mult_label
+            end_refs = _connector_end_references(node)
+            if _is_collapsed_binary_connector(node) and len(end_refs) == 2:
+                # 表現力強化: 2項かつ本体を持たないconnectorは、自身のボックスを
+                # 作らず、両端を直接結ぶ1本のconnectionエッジとして表現する
+                # （`viewer/graph_ir.py`側もこのconnectorをボックス描画対象から
+                # 除外する。h2のsuccession/flowと同じ「宣言ノード自身ではなく
+                # 2つの外部参照間を結ぶ」パターン）。
+                (ref1, mult1), (ref2, mult2) = end_refs
+                edge = _make_reference_pair_edge(ref1, ref2, "connection", reverse_index, linter)
+                label = _binary_connection_label(node.get("name") or node.get("type_name"), mult1, mult2)
+                if label is not None:
+                    edge["label"] = label
                 edges.append(edge)
+            else:
+                # n-ary（3項以上）または本体を持つconnectorは、従来通り自身を
+                # ボックスとして描画し、各endへ向かう個別のエッジで表現する。
+                # 表現力強化h3: 各endの多重度をそのendへ向かうエッジ自身の
+                # ラベルとして添える。
+                for reference, mult_label in end_refs:
+                    target = _resolve_reference(reference, linter)
+                    edge = _make_edge(stable_id, target, "connection", reference, reverse_index, linter)
+                    if mult_label is not None:
+                        edge["label"] = mult_label
+                    edges.append(edge)
 
         req_edge_kind = _REQUIREMENT_EDGE_KIND.get(node_type)
         if req_edge_kind is not None:

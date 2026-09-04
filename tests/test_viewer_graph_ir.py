@@ -87,7 +87,27 @@ def test_expressions_and_statements_are_excluded():
     assert "binary_expr" not in types
 
 
-def test_binding_connector_is_included_as_explicit_exception():
+def test_binding_connector_with_body_is_included_as_explicit_exception():
+    """本体（`{ ... }`）を持つbinding_connectorは、中の要素を消さないよう
+    従来通り自身をボックスとして描画対象に含める。"""
+    text = """
+    package P {
+        part a;
+        part b;
+        bind a = b {
+            doc /* note */
+        }
+    }
+    """
+    gir = _build(text)
+    types = {n["type"] for n in gir["nodes"]}
+    assert "binding_connector" in types
+
+
+def test_simple_binary_connector_collapses_into_a_single_edge_instead_of_a_box():
+    """表現力強化: 2項かつ本体を持たないconnectorは、自身をボックスとして
+    描画対象に含めない（両端を直接結ぶ1本のconnectionエッジとして
+    Semantic Model側で既に表現されているため）。"""
     text = """
     package P {
         part a;
@@ -97,7 +117,11 @@ def test_binding_connector_is_included_as_explicit_exception():
     """
     gir = _build(text)
     types = {n["type"] for n in gir["nodes"]}
-    assert "binding_connector" in types
+    assert "binding_connector" not in types
+    connection_edges = [e for e in gir["edges"] if e["kind"] == "connection"]
+    assert len(connection_edges) == 1
+    assert connection_edges[0]["from"] == "$root::a"
+    assert connection_edges[0]["to"] == "$root::b"
 
 
 def test_edge_ids_are_unique_even_for_duplicate_from_kind_to():
