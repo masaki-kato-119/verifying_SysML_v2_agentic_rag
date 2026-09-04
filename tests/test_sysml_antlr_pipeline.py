@@ -5457,6 +5457,35 @@ def test_lint_requirement_subject_count_and_position():
     ) == 1
 
 
+def test_lint_single_view_rendering():
+    """view def / view usage のview renderingは1つまで
+    （ViewRendering_invalid.sysml参照）。`rendering r;`という素のrendering
+    usageは何個あっても違反ではない（参照実装で実測）。"""
+    issues = lint_ast(parse_sysml_antlr(
+        "view def V { render rendering r1; render rendering r2; rendering r3; }"
+    ))
+    assert sum(
+        "view renderingは1つのみ" in i.message for i in issues if i.severity == "error"
+    ) == 1
+
+    issues = lint_ast(parse_sysml_antlr(
+        "rendering rr; view v { render rr; render rendering r4; render rendering r5; }"
+    ))
+    assert sum(
+        "view renderingは1つのみ" in i.message for i in issues if i.severity == "error"
+    ) == 2
+
+    for src in (
+        "view def V { render rendering r1; rendering r3; }",
+        "view def V { rendering r1; rendering r2; }",
+        "view def V;",
+    ):
+        issues = lint_ast(parse_sysml_antlr(src))
+        assert not any(
+            "view renderingは1つのみ" in i.message for i in issues if i.severity == "error"
+        ), f"誤検出した: {src}"
+
+
 def test_lint_single_objective_per_case():
     """case系ノードのobjectiveは1つまで（CaseSubjectObjective_Invalid.sysml参照、
     参照実装の "Only one objective is allowed."）。

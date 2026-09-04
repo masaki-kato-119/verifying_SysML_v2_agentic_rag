@@ -23,6 +23,13 @@ _OBJECTIVE_LIMIT_NODE_TYPES = (
     "verification_case_def", "verification_case_usage",
 )
 
+# view rendering は1つまで(8.2.2.26)。参照実装はdefとusageでメッセージを
+# 書き分ける（"A view definition may have at most one view rendering." /
+# "A view may have at most one view rendering."）ので、こちらも表記を分ける。
+# 数えるのは`render`メンバー（AST: render_stmt）だけで、`rendering r;`という
+# 素のrendering usageは対象外（参照実装で実測、2026-09-04）。
+_VIEW_RENDERING_LIMIT_NODE_TYPES = ("view_def", "view_usage")
+
 
 class CaseAndViewRulesMixin:
     def _check_occurrence_advanced_rules(self) -> None:
@@ -260,6 +267,31 @@ class CaseAndViewRulesMixin:
             self.issues.append(LintIssue(
                 SEVERITY_ERROR,
                 f"[8.2.2.22] '{name}' にobjectiveが複数定義されています(1つのみ許可)",
+                extra
+            ))
+
+    def _check_single_view_rendering(self, node: Dict, namespace: str) -> None:
+        """view def / view usage の view rendering は1つまで
+        （ViewRendering_invalid.sysml、参照実装の
+        "A view definition may have at most one view rendering." /
+        "A view may have at most one view rendering."）。
+
+        数えるのは`render`メンバー（AST: `render_stmt`）だけ。
+        `rendering r3;`のような素の rendering usage は何個あっても違反ではない
+        （参照実装で実測して確認、2026-09-04。比較レポートv2 §v2-3）。
+        """
+        renders = [
+            c for c in node.get("children", [])
+            if isinstance(c, dict) and c.get("type") == "render_stmt"
+        ]
+        if len(renders) <= 1:
+            return
+        kind = "View definition" if node.get("type") == "view_def" else "View"
+        name = node.get("name", namespace)
+        for extra in renders[1:]:
+            self.issues.append(LintIssue(
+                SEVERITY_ERROR,
+                f"[8.2.2.26] {kind} '{name}' のview renderingは1つのみ許可されます",
                 extra
             ))
 
