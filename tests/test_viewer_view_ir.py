@@ -60,9 +60,10 @@ def test_simple_port_is_marked_as_boundary_port_with_fixed_square_size():
     assert (port["width"], port["height"]) == (14, 14)
 
 
-def test_boundary_port_straddles_parent_left_edge():
-    """境界線をまたぐ表記のため、ポートの中心が親矩形の左辺の上に来る
-    （x座標が親のxよりちょうど正方形の半分だけ左にずれる）。"""
+def test_boundary_port_straddles_parent_left_edge_by_default():
+    """接続（エッジ）を持たないポートは、従来通り左辺を既定にする
+    （境界線をまたぐ表記のため、x座標が親のxよりちょうど正方形の半分だけ
+    左にずれる）。"""
     vir = _build_view_ir(_PORT_SAMPLE)
     by_id = {n["id"]: n for n in vir["nodes"]}
     parent = by_id["$root::Battery"]
@@ -103,6 +104,82 @@ def test_multiple_ports_are_stacked_without_overlap():
     a = by_id["$root::Battery::chargePort"]
     b = by_id["$root::Battery::dataPort"]
     assert a["y"] + a["height"] <= b["y"]
+
+
+# --- ポートの左右配置（接続線が短くなる側を個別に選ぶ） ---------------------
+
+_TWO_SIDED_PORT_SAMPLE = """
+package P {
+    part def Battery {
+        port leftish;
+        port rightish;
+    }
+    part far1;
+    part far2;
+    connect Battery::leftish to far1;
+    connect Battery::rightish to far2;
+}
+"""
+
+
+def _build_view_ir_with_pins(text: str, pinned_positions):
+    _, model = build_semantic_model(text.strip())
+    return build_view_ir(build_graph_ir(model), pinned_positions=pinned_positions)
+
+
+def test_port_moves_to_the_side_that_shortens_its_connection():
+    """接続先が親の左右どちらにあるかに応じて、ポートごとに個別に左右を
+    決める（辺の中央付近の位置は従来通り、左右どちらに置くかだけを変える）。"""
+    vir = _build_view_ir_with_pins(
+        _TWO_SIDED_PORT_SAMPLE,
+        {
+            "$root::Battery": {"x": 300, "y": 0},
+            "$root::far1": {"x": -400, "y": 0},  # Batteryよりずっと左
+            "$root::far2": {"x": 800, "y": 0},  # Batteryよりずっと右
+        },
+    )
+    by_id = {n["id"]: n for n in vir["nodes"]}
+    battery = by_id["$root::Battery"]
+    leftish = by_id["$root::Battery::leftish"]
+    rightish = by_id["$root::Battery::rightish"]
+    # far1（左）に繋がるleftishは左辺、far2（右）に繋がるrightishは右辺。
+    assert leftish["x"] == battery["x"] - leftish["width"] / 2
+    assert rightish["x"] == battery["x"] + battery["width"] - rightish["width"] / 2
+
+
+def test_port_without_a_resolvable_partner_position_defaults_to_left():
+    """接続はあるが相手が現在のビューに存在しない（未解決や対象外）場合は、
+    エラーにせず既定の左辺にフォールバックする。"""
+    text = """
+    package P {
+        part def Battery {
+            port p;
+        }
+        connect Battery::p to NoSuchElement;
+    }
+    """
+    vir = _build_view_ir(text)
+    by_id = {n["id"]: n for n in vir["nodes"]}
+    battery = by_id["$root::Battery"]
+    port = by_id["$root::Battery::p"]
+    assert port["x"] == battery["x"] - port["width"] / 2
+
+
+def test_ports_on_the_same_side_still_stack_without_overlap():
+    vir = _build_view_ir_with_pins(
+        _TWO_SIDED_PORT_SAMPLE,
+        {
+            "$root::Battery": {"x": 300, "y": 0},
+            "$root::far1": {"x": -400, "y": 0},
+            "$root::far2": {"x": -450, "y": 100},  # far1と同様、左側に置く。
+        },
+    )
+    by_id = {n["id"]: n for n in vir["nodes"]}
+    leftish = by_id["$root::Battery::leftish"]
+    rightish = by_id["$root::Battery::rightish"]
+    assert leftish["x"] == rightish["x"]  # 両方とも左辺に来る。
+    lo, hi = sorted((leftish["y"], rightish["y"]))
+    assert lo + leftish["height"] <= hi
 
 
 def test_child_boxes_fit_within_parent_bounds():

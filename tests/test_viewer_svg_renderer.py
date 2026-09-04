@@ -320,6 +320,26 @@ def test_boundary_port_renders_as_small_square_with_external_label():
     assert "<tspan" not in port_node_markup
 
 
+def test_right_side_port_places_its_label_on_the_right():
+    """表現力強化: 右辺に配置されたポート（View IR側の`port_side`）は、
+    ラベルも箱の右側に置く（左辺固定だった頃はラベルが常に左だったため、
+    右辺のポートでは箱と重なってしまっていた）。"""
+    view_ir = {
+        "view_type": "structure",
+        "nodes": [
+            {"id": "$root::Battery", "type": "part_def", "label": "Battery", "source_range": None,
+             "x": 16, "y": 46, "width": 106, "height": 86, "is_boundary_port": False},
+            {"id": "$root::Battery::dataPort", "type": "port_usage", "label": "dataPort",
+             "source_range": None, "x": 115, "y": 72, "width": 14, "height": 14,
+             "is_boundary_port": True, "port_side": "right"},
+        ],
+        "edges": [],
+    }
+    svg = render_svg(view_ir)
+    assert 'text-anchor="start">dataPort</text>' in svg
+    assert '<text x="133' in svg  # x(115) + width(14) + 4
+
+
 def test_no_marker_defs_when_there_are_no_edges():
     """エッジが1本も無い場合はdefs自体を出さない（出力を無駄に増やさない）。"""
     view_ir = {

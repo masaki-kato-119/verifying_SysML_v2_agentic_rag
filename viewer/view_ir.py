@@ -133,6 +133,13 @@ def build_view_ir(graph_ir: Dict, collapsed_ids=None, pinned_positions=None) -> 
     # 領域より左・上にはみ出す場合、親の矩形自体をその分だけ左・上に広げる
     # 必要がある。この値がその「広げ幅」（0以下の値）を保持する。
     content_offset: Dict[str, Tuple[int, int]] = {}
+    # 表現力強化: ポートは「どちらの辺（左/右）に置けば接続先までの線が
+    # 短くなるか」を、接続先の確定済み座標を見て決める必要がある。しかし
+    # 接続先ノードは兄弟や別の subtree のこともあり、place()の再帰中には
+    # まだ座標が確定していない場合がある。そのため place() ではポートの
+    # 最終配置を行わず、(親id, ポートid一覧)だけを記録しておき、全ノードの
+    # 配置が確定した後（全rootのplace()完了後）にまとめて解決する。
+    pending_ports: List[Tuple[str, List[str]]] = []
 
     def compute_size(node_id: str) -> Tuple[int, int]:
         children = _children_of(node_id)
@@ -225,16 +232,9 @@ def build_view_ir(graph_ir: Dict, collapsed_ids=None, pinned_positions=None) -> 
                 place(child_id, origin_x, flow_y)
 
         if port_children:
-            # 表現力強化h5: ポートは親矩形の左辺の中央を基準に均等間隔で並べ、
-            # 正方形が境界線をまたぐように半分だけ外へはみ出させる
-            # （SysML標準のポート表記）。
-            parent_width, parent_height = sizes[node_id]
-            total_port_height = len(port_children) * _PORT_SIZE + (len(port_children) - 1) * _PORT_GAP
-            port_y = y + (parent_height - total_port_height) / 2
-            port_x = x - _PORT_SIZE / 2
-            for port_id in port_children:
-                positions[port_id] = (port_x, port_y)
-                port_y += _PORT_SIZE + _PORT_GAP
+            # ポート自身の最終座標は、全ノードの配置が確定した後の
+            # _place_pending_ports()でまとめて決める（下記コメント参照）。
+            pending_ports.append((node_id, list(port_children)))
 
     # group_id が None のノード（ルートのみのはず。Semantic Modelのルートは
     # 常に1個。$root自身のparent_id=Noneであるため）を最上位として配置する。
@@ -253,6 +253,56 @@ def build_view_ir(graph_ir: Dict, collapsed_ids=None, pinned_positions=None) -> 
         else:
             place(root_id, flow_x, _PADDING)
 
+    # 表現力強化: ポートの左右配置は、接続先ノードの確定済み座標との
+    # 距離で個々のポートごとに決める（辺の中央付近を基準に、接続線が
+    # 短くなる側へ）。全rootのplace()が完了し、全ノードの座標が
+    # 確定した後でなければ接続先の位置が分からないため、ここでまとめて
+    # 処理する。
+    port_edge_partners: Dict[str, List[str]] = {}
+    for edge in graph_ir["edges"]:
+        port_edge_partners.setdefault(edge["from"], []).append(edge["to"])
+        port_edge_partners.setdefault(edge["to"], []).append(edge["from"])
+
+    def _preferred_side(port_id: str, parent_x: float, parent_width: float) -> str:
+        partner_ids = [pid for pid in port_edge_partners.get(port_id, []) if pid in positions]
+        if not partner_ids:
+            return "left"  # 接続が無いポートは、従来通り左辺を既定とする。
+        left_x = parent_x - _PORT_SIZE / 2
+        right_x = parent_x + parent_width - _PORT_SIZE / 2
+        left_total = right_total = 0.0
+        for partner_id in partner_ids:
+            px, py = positions[partner_id]
+            pw, ph = sizes[partner_id]
+            partner_cx = px + pw / 2
+            left_total += abs(left_x - partner_cx)
+            right_total += abs(right_x - partner_cx)
+        return "left" if left_total <= right_total else "right"
+
+    port_sides: Dict[str, str] = {}
+    for parent_id, port_children in pending_ports:
+        parent_x, parent_y = positions[parent_id]
+        parent_width, parent_height = sizes[parent_id]
+        left_ports = []
+        right_ports = []
+        for port_id in port_children:
+            side = _preferred_side(port_id, parent_x, parent_width)
+            port_sides[port_id] = side
+            (left_ports if side == "left" else right_ports).append(port_id)
+
+        for side, group in (("left", left_ports), ("right", right_ports)):
+            if not group:
+                continue
+            total_height = len(group) * _PORT_SIZE + (len(group) - 1) * _PORT_GAP
+            port_y = parent_y + (parent_height - total_height) / 2
+            port_x = (
+                parent_x - _PORT_SIZE / 2
+                if side == "left"
+                else parent_x + parent_width - _PORT_SIZE / 2
+            )
+            for port_id in group:
+                positions[port_id] = (port_x, port_y)
+                port_y += _PORT_SIZE + _PORT_GAP
+
     # type/label/source_rangeはGraph IRからそのまま引き継ぐ（5章のSVG
     # レンダラーがレイアウト結果に加えてこれらを必要とするため。View IRは
     # 「幾何情報だけ」ではなく、レンダラーへの唯一の入力として自己完結させる）。
@@ -269,6 +319,11 @@ def build_view_ir(graph_ir: Dict, collapsed_ids=None, pinned_positions=None) -> 
             # 伝える（自身の子を持つポートはNoneやフラグ無しではなく明示的に
             # Falseになり、通常の入れ子矩形として描かれる）。
             "is_boundary_port": _is_boundary_port(nid),
+            # 表現力強化: ポートがどちら側の辺に配置されたか（"left"/"right"）を
+            # 明示的に伝える。SVGレンダラーは親の矩形情報を持たないため、
+            # ラベルテキストを正方形のどちら側に置くかをこのフラグだけで
+            # 判断できるようにする（幾何情報からの再推測を避ける）。
+            "port_side": port_sides.get(nid),
         }
         for nid in sorted(nodes_by_id)
         if nid not in excluded_ids

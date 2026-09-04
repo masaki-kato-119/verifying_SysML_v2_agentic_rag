@@ -117,22 +117,30 @@ def _render_port_node(node: Dict) -> str:
     """表現力強化h5: ポートを、親の内部構成要素と同じ入れ子矩形ではなく、
     境界線をまたぐ小さな正方形（SysML標準のポート表記）として描く。
     正方形自体は小さく2行の種別＋名前を収める余地が無いため、名前は
-    正方形の外側（左）に1行の小さいテキストとして添え、種別キーワードは
-    ホバー用の<title>にのみ残す（クリックでのInspector連携はdata-element-id
-    が担うため、視覚情報を削っても要素の追跡性は失われない）。"""
+    正方形の外側（配置された辺の外側）に1行の小さいテキストとして添え、
+    種別キーワードはホバー用の<title>にのみ残す（クリックでのInspector連携は
+    data-element-idが担うため、視覚情報を削っても要素の追跡性は失われない）。
+    ラベルの左右は、View IR側が接続線の短さで決めた`port_side`
+    （表現力強化: ポートの左右個別配置）にそのまま従う。左辺なら左に、
+    右辺なら右にラベルを置き、ポートの箱を挟んでラベルが接続線と反対側に
+    来るようにする。"""
     element_id = escape(node["id"], quote=True)
     node_type = escape(node["type"], quote=True)
     label = escape(node["label"])
     keyword = escape(_type_keyword(node["type"]))
     x, y, width, height = node["x"], node["y"], node["width"], node["height"]
+    if node.get("port_side") == "right":
+        label_x, text_anchor = x + width + 4, "start"
+    else:
+        label_x, text_anchor = x - 4, "end"
     return (
         f'<g class="sysml-node sysml-port-node" data-element-id="{element_id}" data-type="{node_type}"'
         f'{_source_range_attrs(node["source_range"])}>'
         f"<title>«{keyword}» {label}</title>"
         f'<rect x="{x}" y="{y}" width="{width}" height="{height}"'
         f' fill="{_NODE_FILL}" stroke="{_NODE_STROKE}" />'
-        f'<text x="{x - 4}" y="{y + height / 2 + 4}" fill="{_TEXT_COLOR}" font-size="10"'
-        f' text-anchor="end">{label}</text>'
+        f'<text x="{label_x}" y="{y + height / 2 + 4}" fill="{_TEXT_COLOR}" font-size="10"'
+        f' text-anchor="{text_anchor}">{label}</text>'
         f"</g>"
     )
 
