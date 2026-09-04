@@ -5457,6 +5457,37 @@ def test_lint_requirement_subject_count_and_position():
     ) == 1
 
 
+def test_lint_single_objective_per_case():
+    """case系ノードのobjectiveは1つまで（CaseSubjectObjective_Invalid.sysml参照、
+    参照実装の "Only one objective is allowed."）。
+
+    対象種別は参照実装へ1種別ずつ問い合わせて確定させた（2026-09-04）。
+    requirement def は `objective` を構文として受理しないため対象外。
+    自ノードが直接持つobjectiveだけを数える（継承分は型解決が必要なため未実装）。
+    """
+    for src in (
+        "case def C { subject s; objective o1; objective o2; }",
+        "case c { objective o1; objective o2; }",
+        "use case def U { subject s; objective o1; objective o2; }",
+        "analysis def A { subject s; objective o1; objective o2; }",
+        "verification def V { subject s; objective o1; objective o2; }",
+    ):
+        issues = lint_ast(parse_sysml_antlr(src))
+        assert sum(
+            "objectiveが複数定義" in i.message for i in issues if i.severity == "error"
+        ) == 1, f"検出されるべきなのに検出されなかった: {src}"
+
+    for src in (
+        "case def C { subject s; objective o1; }",
+        "case def C { subject s; }",
+        "case def C;",
+    ):
+        issues = lint_ast(parse_sysml_antlr(src))
+        assert not any(
+            "objectiveが複数定義" in i.message for i in issues if i.severity == "error"
+        ), f"誤検出した: {src}"
+
+
 def test_lint_subject_first_parameter_without_any_subject():
     """subjectが1つも無く actor/stakeholder だけがある場合も
     「subjectは最初のパラメータ」違反になる。

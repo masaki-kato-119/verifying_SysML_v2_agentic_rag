@@ -15,7 +15,7 @@ from .constants import (
 from .expression_type_inference import ExpressionTypeInference
 from .lint_issue import LintIssue
 from .linter_rules.action_behavior_rules import ActionBehaviorRulesMixin
-from .linter_rules.case_and_view_rules import CaseAndViewRulesMixin
+from .linter_rules.case_and_view_rules import _OBJECTIVE_LIMIT_NODE_TYPES, CaseAndViewRulesMixin
 from .linter_rules.connection_and_annotation_rules import ConnectionAndAnnotationRulesMixin
 from .linter_rules.definition_usage_rules import DefinitionUsageRulesMixin
 from .linter_rules.multiplicity_rules import MultiplicityRulesMixin
@@ -407,6 +407,11 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         # 一箇所で読める。
         if node_type in _SUBJECT_FIRST_NODE_TYPES:
             self._check_requirement_subject(node, namespace)
+
+        # objectiveは1つまで(8.2.2.22-25)。対象範囲は
+        # case_and_view_rules._OBJECTIVE_LIMIT_NODE_TYPES 側で定義している。
+        if node_type in _OBJECTIVE_LIMIT_NODE_TYPES:
+            self._check_single_objective(node, namespace)
 
         if node_type in check_functions:
             check_functions[node_type](node, namespace)

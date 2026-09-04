@@ -12,6 +12,17 @@ from ..constants import (
 )
 from ..lint_issue import LintIssue
 
+# objective は1つまで(8.2.2.22-25)。この制約を適用するノード種別。
+# 参照実装(jar 0.61.0)へ1種別ずつ問い合わせて確定（2026-09-04）:
+# case / use case / analysis case / verification case の def・usage が対象。
+# requirement def は `objective` を構文として受理しないため対象外。
+_OBJECTIVE_LIMIT_NODE_TYPES = (
+    "case_def", "case_usage",
+    "use_case_def", "use_case_usage",
+    "analysis_case_def", "analysis_case_usage",
+    "verification_case_def", "verification_case_usage",
+)
+
 
 class CaseAndViewRulesMixin:
     def _check_occurrence_advanced_rules(self) -> None:
@@ -226,6 +237,32 @@ class CaseAndViewRulesMixin:
         生成しない（"caseBody"/"actors" キーは存在しない）ため、
         現時点で検証すべき固有ルールは無い。
         """
+    def _check_single_objective(self, node: Dict, namespace: str) -> None:
+        """case系ノードの objective は1つまで（CaseSubjectObjective_Invalid.sysml）。
+
+        参照実装との比較評価で見つかった偽陰性（比較レポートv2 §v2-3、
+        `Only one objective is allowed.`）。対象ノード種別は
+        `_OBJECTIVE_LIMIT_NODE_TYPES`（参照実装へ1種別ずつ問い合わせて確定）。
+
+        **自ノードが直接持つ objective だけを数える。** 参照実装は
+        `case def C1 :> C { objective o5; }`（Cが既にobjectiveを持つ）や
+        `case c1 : C1;`（objectiveを一切書いていない）のように、継承された
+        objectiveも合わせて数えてエラーにするが、こちらは型解決が必要で
+        偽陽性リスクが高いため実装しない（同フィクスチャ内の直接宣言2件は
+        検出できるので、ファイル単位の検出には足りる）。
+        """
+        objectives = [
+            c for c in node.get("children", [])
+            if isinstance(c, dict) and c.get("type") == "objective_usage"
+        ]
+        name = node.get("name", namespace)
+        for extra in objectives[1:]:
+            self.issues.append(LintIssue(
+                SEVERITY_ERROR,
+                f"[8.2.2.22] '{name}' にobjectiveが複数定義されています(1つのみ許可)",
+                extra
+            ))
+
     def _check_case_def(self, node: Dict, namespace: str) -> None:
         """case定義のチェック (8.2.2.22)"""
         name = node.get("name")
