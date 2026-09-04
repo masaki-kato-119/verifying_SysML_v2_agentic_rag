@@ -177,7 +177,11 @@ def build_element_index(nodes: Dict[str, Dict]) -> Dict[int, Dict]:
     }
 
 
-def _resolve_reference(reference: str, linter: SysMLAdvancedLinter) -> Optional[Dict]:
+def _resolve_reference(
+    reference: str,
+    linter: SysMLAdvancedLinter,
+    extra_symbols: Optional[Dict[str, Dict]] = None,
+) -> Optional[Dict]:
     """参照文字列(qualified name)を実ノードへ解決するベストエフォート探索。
 
     linter.py本体の `_find_element_in_symbols`（linter.py:557）と同じ
@@ -202,6 +206,14 @@ def _resolve_reference(reference: str, linter: SysMLAdvancedLinter) -> Optional[
     セグメント（owner名）だけで再試行する。要素レベルの関連としては
     ownerが分かれば十分に有用なため。既存の"::"区切り参照に"."を含む
     文字列は現れないため、他のエッジ種別の解決挙動には影響しない。
+
+    extra_symbols: `linter.py`のシンボル表に登録されない要素を、呼び出し側が
+    {名前: ASTノード}の索引として補うための最終手段のフォールバック
+    （例: accept_actionの`actionName`。`_assign_semantic_ids`が見る"name"
+    フィールドを持たないためstable_idが匿名になり、`linter.py`のシンボル
+    収集にも一切現れない。`linter.py`には手を入れない方針のため、
+    Semantic Model側でこの索引を別途持って補う）。通常のシンボル表探索・
+    "."/"::"のownerフォールバックが全て失敗した場合にのみ参照する。
     """
     if not reference:
         return None
@@ -210,17 +222,17 @@ def _resolve_reference(reference: str, linter: SysMLAdvancedLinter) -> Optional[
         for sym_name, node in table.items():
             if sym_name == reference or sym_name.split("::")[-1] == short_name:
                 return node
+    if extra_symbols and reference in extra_symbols:
+        return extra_symbols[reference]
     if "." in reference:
-        return _resolve_reference(reference.split(".", 1)[0], linter)
+        return _resolve_reference(reference.split(".", 1)[0], linter, extra_symbols)
     if "::" in reference:
         # `owner::feature`形式（flow_usageのfrom_end/to_end等、表現力強化で
         # 追加）で、末尾セグメント一致（上のループ）でも見つからない場合、
         # ownerだけで再試行する（"."区切り参照に対する既存のフォールバックと
-        # 同じ考え方）。owner自体もシンボル表に登録されていない場合
-        # （例：accept_actionの`actionName`はシンボル表に登録されない既知の
-        # 制約）は、このフォールバックでも解決できずNoneのまま返る。
+        # 同じ考え方）。
         owner = reference.split("::", 1)[0]
-        return _resolve_reference(owner, linter)
+        return _resolve_reference(owner, linter, extra_symbols)
     return None
 
 
@@ -388,16 +400,26 @@ def _succession_end_reference(value) -> Optional[str]:
 
 
 def _make_reference_pair_edge(
-    from_ref: str, to_ref: str, kind: str, reverse_index: Dict[int, str], linter: SysMLAdvancedLinter
+    from_ref: str,
+    to_ref: str,
+    kind: str,
+    reverse_index: Dict[int, str],
+    linter: SysMLAdvancedLinter,
+    extra_symbols: Optional[Dict[str, Dict]] = None,
 ) -> Dict:
     """宣言しているノード自身ではなく、2つの外部参照(from_ref, to_ref)間の
     関係を表す種別（succession/flow）向けの汎用エッジ構築。`_make_edge`は
-    宣言ノード自身が関係の起点であることを前提にしているため使えない。"""
-    from_target = _resolve_reference(from_ref, linter)
+    宣言ノード自身が関係の起点であることを前提にしているため使えない。
+
+    extra_symbols: `_resolve_reference`の同名引数をそのまま中継する
+    （accept_actionの`actionName`索引等、呼び出し元にしか組み立てられない
+    補助的な名前解決を、通常のシンボル表探索が失敗した場合の最終手段として
+    使えるようにする）。"""
+    from_target = _resolve_reference(from_ref, linter, extra_symbols)
     from_id = reverse_index.get(id(from_target)) if from_target is not None else None
     from_status = _classify_resolution(from_ref, from_target, linter)
 
-    to_target = _resolve_reference(to_ref, linter)
+    to_target = _resolve_reference(to_ref, linter, extra_symbols)
     to_id = reverse_index.get(id(to_target)) if to_target is not None else None
     to_status = _classify_resolution(to_ref, to_target, linter)
 
@@ -433,6 +455,20 @@ def build_relation_edges(
 
     reverse_index = _build_reverse_index(nodes)
     edges: List[Dict] = []
+
+    # flow文（flow_from_stmt/flow_short_stmt/flow_usage）のfrom/to参照は、
+    # accept_actionを指すことがある（例: `flow getSignal.sig to ...;`の
+    # `getSignal`）。accept_actionは`_assign_semantic_ids`が見る"name"を
+    # 持たず（実際の名前は"actionName"フィールド）、`linter.py`のシンボル
+    # 収集にも一切現れないため、`_resolve_reference`の通常経路では絶対に
+    # 見つからない。`linter.py`には手を入れない方針のため、Semantic Model
+    # 側でこの補助索引を組み立て、flow系エッジ解決の最終手段
+    # （`_resolve_reference`のextra_symbols）として使う。
+    accept_action_by_name: Dict[str, Dict] = {
+        entry["node"]["actionName"]: entry["node"]
+        for entry in nodes.values()
+        if entry["type"] == "accept_action" and entry["node"].get("actionName")
+    }
 
     for stable_id, entry in nodes.items():
         node = entry["node"]
@@ -544,7 +580,11 @@ def build_relation_edges(
             from_ref = node.get("from_port")
             to_ref = node.get("to_port")
             if isinstance(from_ref, str) and from_ref and isinstance(to_ref, str) and to_ref:
-                edges.append(_make_reference_pair_edge(from_ref, to_ref, "flow", reverse_index, linter))
+                edges.append(
+                    _make_reference_pair_edge(
+                        from_ref, to_ref, "flow", reverse_index, linter, accept_action_by_name
+                    )
+                )
 
         if node_type == "flow_usage":
             # `flow 'X'.'Y' to 'Z'.'W';`は、flow_from_stmt/flow_short_stmt
@@ -554,7 +594,11 @@ def build_relation_edges(
             from_ref = node.get("from_end")
             to_ref = node.get("to_end")
             if isinstance(from_ref, str) and from_ref and isinstance(to_ref, str) and to_ref:
-                edges.append(_make_reference_pair_edge(from_ref, to_ref, "flow", reverse_index, linter))
+                edges.append(
+                    _make_reference_pair_edge(
+                        from_ref, to_ref, "flow", reverse_index, linter, accept_action_by_name
+                    )
+                )
 
     return edges
 

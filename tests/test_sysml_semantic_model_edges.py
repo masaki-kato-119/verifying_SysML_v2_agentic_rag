@@ -615,6 +615,90 @@ def test_flow_usage_resolves_when_both_ends_are_local():
     assert edge["resolution_status"] == "resolved"
 
 
+# --- accept_actionの`actionName`解決（フォローアップ、2026-09-04追加） ----
+# accept_action（`action 'X' accept 'Y' via ...;`）は`_assign_semantic_ids`が
+# 見る"name"を持たず、実際の名前は"actionName"フィールドにある。そのため
+# `linter.py`のシンボル表にも一切現れず、通常の`_resolve_reference`経路では
+# 絶対に解決できない（`linter.py`には手を入れない方針のため、Semantic Model
+# 側に補助索引を持たせて対応した）。
+
+
+def test_flow_from_accept_action_resolves_to_the_accept_action_itself():
+    text = """
+    part def Other {
+        attribute someAttr : Real;
+    }
+    part def X {
+        port p;
+        part o : Other;
+        perform action outer {
+            action getSignal accept sig : Real via p;
+            flow getSignal.sig to o.someAttr;
+        }
+    }
+    """
+    _, model = build_semantic_model(text.strip())
+    edge = next(e for e in model["edges"] if e["kind"] == "flow")
+    accept_action_id = next(
+        sid for sid, e in model["nodes"].items() if e["type"] == "accept_action"
+    )
+    assert edge["from_id"] == accept_action_id
+    assert edge["to_id"] == "$root::X::o"
+    assert edge["resolved"] is True
+    assert edge["resolution_status"] == "resolved"
+
+
+def test_flow_to_accept_action_also_resolves():
+    """accept_actionはfrom側だけでなくto側の参照としても解決できる
+    （`_resolve_reference`のextra_symbolsフォールバックはfrom/to両方に
+    渡しているため）。"""
+    text = """
+    part def Source {
+        attribute value : Real;
+    }
+    part def X {
+        port p;
+        part s : Source;
+        perform action outer {
+            action getSignal accept sig : Real via p;
+            flow s.value to getSignal.sig;
+        }
+    }
+    """
+    _, model = build_semantic_model(text.strip())
+    edge = next(e for e in model["edges"] if e["kind"] == "flow")
+    accept_action_id = next(
+        sid for sid, e in model["nodes"].items() if e["type"] == "accept_action"
+    )
+    assert edge["from_id"] == "$root::X::s"
+    assert edge["to_id"] == accept_action_id
+    assert edge["resolved"] is True
+
+
+def test_flow_from_accept_action_to_undeclared_external_stays_unresolved():
+    """accept_action自体は解決できても、相手側が未定義の外部名前空間
+    （このモデル内に存在しない`Ext`）であれば、従来通り未解決のまま
+    （accept_actionの解決を追加したことで、無関係な既存の未解決判定が
+    誤って"resolved"に変わってしまわないことの確認）。"""
+    text = """
+    part def X {
+        port p;
+        perform action outer {
+            action getSignal accept sig : Real via p;
+            flow getSignal.sig to Ext::somewhere.value;
+        }
+    }
+    """
+    _, model = build_semantic_model(text.strip())
+    edge = next(e for e in model["edges"] if e["kind"] == "flow")
+    accept_action_id = next(
+        sid for sid, e in model["nodes"].items() if e["type"] == "accept_action"
+    )
+    assert edge["from_id"] == accept_action_id
+    assert edge["to_id"] is None
+    assert edge["resolved"] is False
+
+
 def test_flow_usage_and_flow_short_stmt_are_both_kind_flow():
     """flow_usage（新規対応）とflow_short_stmt（既存対応）は、AST形状こそ
     異なるが、Semantic Model上は同じ"flow"種別のエッジとして扱われる
