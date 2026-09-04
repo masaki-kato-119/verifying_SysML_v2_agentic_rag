@@ -150,12 +150,25 @@ def build_view_ir(graph_ir: Dict, collapsed_ids=None, pinned_positions=None) -> 
             sizes[port_id] = (_PORT_SIZE, _PORT_SIZE)
             content_offset[port_id] = (0, 0)
 
-        # 通常のフロー配置は、ピン留めの有無に関わらず全ての子について計算する
-        # （後述のplace()でも同様。兄弟の位置をピン留めの影響から独立させるため）。
+        # 通常のフロー上の「スロット」割り当て（cursorの進み方）自体は、
+        # ピン留めの有無に関わらず全ての子について計算する（後述のplace()でも
+        # 同様。兄弟の位置をピン留めの影響から独立させるため、これは変更しない）。
+        # 一方、親の矩形サイズの下限（flow_width/flow_height）は、ピン留めされた
+        # 子の「使われなくなった通常スロット」まで含めてしまうと、子をどれだけ
+        # コンパクトに動かしても親が縮まらなくなる（ユーザー報告のバグ）。
+        # 未ピン留めの子だけを対象に「実際に描画される位置」の外接を取ることで、
+        # 全ての子をピン留めして詰めれば親も縮むようにする。
         if regular_children:
             child_sizes = [compute_size(c) for c in regular_children]
-            flow_width = max(w for w, _h in child_sizes)
-            flow_height = sum(h for _w, h in child_sizes) + _PADDING * (len(regular_children) - 1)
+            cursor_y = 0
+            flow_width = 0
+            flow_height = 0
+            for child_id, (child_w, child_h) in zip(regular_children, child_sizes):
+                flow_y = cursor_y
+                cursor_y += child_h + _PADDING  # スロットはピン留めの有無に関わらず必ず進める
+                if pinned_positions.get(child_id) is None:
+                    flow_width = max(flow_width, child_w)
+                    flow_height = max(flow_height, flow_y + child_h)
         else:
             flow_width, flow_height = 0, 0
 

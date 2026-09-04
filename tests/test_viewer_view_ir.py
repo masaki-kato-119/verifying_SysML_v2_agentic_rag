@@ -352,3 +352,48 @@ def test_pinning_a_child_to_its_normal_flow_position_is_a_no_op():
     vir_plain = build_view_ir(gir)
     vir_pinned = build_view_ir(gir, pinned_positions={"$root::Engine": {"x": 0, "y": 0}})
     assert vir_plain == vir_pinned
+
+
+# --- 親矩形が縮む（表現力強化: 高さの下限バグ修正） ------------------------
+# ユーザー報告: 子要素をコンパクトに動かしても、親の高さがある一定
+# （「全ての子を通常通り積んだ場合の高さ」）より小さくならない。
+
+def test_parent_shrinks_when_all_children_are_pinned_into_a_compact_area():
+    """全ての子をピン留めして重ねると、親はその重なった範囲だけを包含する
+    大きさまで縮む（以前は「通常フロー時の高さ」が常に下限になっており
+    縮まなかった）。"""
+    _, model = build_semantic_model(_SAMPLE.strip())
+    gir = build_graph_ir(model)
+    vir_plain = build_view_ir(gir)
+    vir_compact = build_view_ir(
+        gir,
+        pinned_positions={
+            "$root::Engine": {"x": 0, "y": 0},
+            "$root::Machine": {"x": 0, "y": 0},
+            "$root::myEngine": {"x": 0, "y": 0},
+        },
+    )
+    by_id_plain = {n["id"]: n for n in vir_plain["nodes"]}
+    by_id_compact = {n["id"]: n for n in vir_compact["nodes"]}
+    assert by_id_compact["$root"]["height"] < by_id_plain["$root"]["height"]
+    # 重なり合った領域は、最も背の高い子（Engine、入れ子のpowerを持つため86px）
+    # を包含できる大きさまでは縮む。
+    tallest_child_height = max(n["height"] for nid, n in by_id_compact.items() if nid != "$root")
+    assert by_id_compact["$root"]["height"] == _LABEL_HEIGHT + tallest_child_height + 2 * _PADDING
+
+
+def test_parent_does_not_shrink_below_what_unpinned_siblings_still_need():
+    """一部の子だけをピン留めして重ねても、ピン留めされていない残りの兄弟が
+    通常のフロー配置で必要とする高さより親が縮むことはない。"""
+    _, model = build_semantic_model(_SAMPLE.strip())
+    gir = build_graph_ir(model)
+    vir_plain = build_view_ir(gir)
+    # EngineだけをMachineの位置に重ねる（myEngineはピン留めしない）。
+    vir_partial = build_view_ir(gir, pinned_positions={"$root::Engine": {"x": 0, "y": 0}})
+    by_id_plain = {n["id"]: n for n in vir_plain["nodes"]}
+    by_id_partial = {n["id"]: n for n in vir_partial["nodes"]}
+    # myEngine（ピン留めされていない）は通常のフロー位置のまま動かない。
+    assert by_id_partial["$root::myEngine"] == by_id_plain["$root::myEngine"]
+    # 親は、ピン留めされていないmyEngineを収めるのに必要な高さは維持する。
+    my_engine = by_id_partial["$root::myEngine"]
+    assert by_id_partial["$root"]["height"] >= (my_engine["y"] - by_id_partial["$root"]["y"]) + my_engine["height"]

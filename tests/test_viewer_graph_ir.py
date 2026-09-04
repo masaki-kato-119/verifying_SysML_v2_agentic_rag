@@ -124,6 +124,66 @@ def test_simple_binary_connector_collapses_into_a_single_edge_instead_of_a_box()
     assert connection_edges[0]["to"] == "$root::b"
 
 
+# --- perform_action/accept_actionのネスト（ユーザー報告バグの修正） --------
+# `perform action 'X' { ... }`の中身（accept_action/flow_usage/入れ子の
+# perform等）が、以前はperform_action自身がグラフノード対象外だったために
+# 外側のpartの直接の子として平坦化されてしまっていた
+# （「要素を移動しても高さが縮まらない」報告の一因）。
+
+_ACTION_NEST_SAMPLE = """
+action def Helper {
+    action step;
+}
+part def Controller {
+    port p;
+    perform action outer {
+        action inner accept sig : Real via p;
+        perform Helper::step;
+    }
+}
+"""
+
+
+def test_perform_action_is_included_as_its_own_box():
+    gir = _build(_ACTION_NEST_SAMPLE)
+    types_by_label = {n["label"]: n["type"] for n in gir["nodes"]}
+    assert types_by_label.get("outer") == "perform_action"
+
+
+def test_perform_action_body_nests_under_the_action_not_the_outer_part():
+    """accept_action・入れ子のperform_actionは、outerアクション自身の直接の
+    子になる（以前は外側のControllerパートまで平坦化されていた）。"""
+    gir = _build(_ACTION_NEST_SAMPLE)
+    by_label = {n["label"]: n for n in gir["nodes"]}
+    outer = by_label["outer"]
+    controller = by_label["Controller"]
+    assert by_label["inner"]["group_id"] == outer["id"]
+    assert by_label["Helper::step"]["group_id"] == outer["id"]
+    # Controllerの直接の子は、outerアクション自身とport pのみ。
+    controller_children = {n["type"] for n in gir["nodes"] if n["group_id"] == controller["id"]}
+    assert controller_children == {"perform_action", "port_usage"}
+
+
+def test_accept_action_uses_its_action_name_as_label_not_the_generic_type():
+    """accept_actionは`_assign_semantic_ids`が見る"name"フィールドを持たず
+    （実際の名前は"actionName"フィールド）、素の`entry["name"]`だけでは
+    ラベルが常に無意味な"accept_action"になってしまう。"""
+    gir = _build(_ACTION_NEST_SAMPLE)
+    labels = {n["label"] for n in gir["nodes"]}
+    assert "inner" in labels
+    assert "accept_action" not in labels
+
+
+def test_referenced_perform_action_uses_reference_text_as_label():
+    """`perform Helper::step;`（既存アクションの参照実行、名前を宣言しない
+    形）は、entry["name"]がNoneのままだと無意味な"perform_action"という
+    ラベルになってしまうため、参照文字列をラベルに使う。"""
+    gir = _build(_ACTION_NEST_SAMPLE)
+    labels = {n["label"] for n in gir["nodes"]}
+    assert "Helper::step" in labels
+    assert "perform_action" not in labels
+
+
 def test_edge_ids_are_unique_even_for_duplicate_from_kind_to():
     text = """
     package P {

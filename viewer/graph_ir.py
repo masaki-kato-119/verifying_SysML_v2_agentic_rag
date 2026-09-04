@@ -24,6 +24,19 @@ from typing import Dict, List
 # パターンに乗らない既知の例外だけを明示的な集合で補う設計に変更した。
 _EXPLICIT_GRAPH_NODE_TYPES = {
     "binding_connector",  # bind文。"_def"/"_usage"/"_instance"のいずれの接尾辞も持たない
+    # 表現力強化: `perform action 'X' { ... }`（新規アクションの宣言＋実行）と
+    # `perform Y::'X';`（既存アクションの参照実行）はいずれも"perform_action"
+    # 型だが、"_def"/"_usage"/"_instance"のいずれの接尾辞も持たない。これが
+    # グラフノード対象外だったため、本体内のflow/attribute等がアクションの
+    # 箱を飛び越して外側のpartの直接の子として平坦化されてしまっていた
+    # （ユーザー報告：「要素を移動しても高さが縮まらない」の一因。'perform
+    # action'のbody内要素が全て外側のpartに合流し、直接の子の数が不自然に
+    # 多くなっていたため）。
+    "perform_action",
+    # `action 'X' accept 'Y' : Type via 'port';`のような、シグナル受信で
+    # 始まる名前付きアクション。flow文の参照先（from/to）になりうるため、
+    # ボックスとして含めないとそのflowエッジ自体が描画対象外になる。
+    "accept_action",
 }
 
 _GRAPH_NODE_SUFFIXES = ("_def", "_usage", "_instance")
@@ -249,10 +262,19 @@ def build_graph_ir(
     nodes_out: List[Dict] = []
     for stable_id in graph_node_ids:
         entry = nodes_in[stable_id]
+        # 表現力強化: 一部のノード種別は、`_assign_semantic_ids`が使う
+        # "name"キーとは別のフィールドに人間可読な名前を持つ。entry["name"]が
+        # Noneのまま既定の種別名という無意味なラベルに落ちるのを防ぐため、
+        # 既知のフィールドを優先度順にフォールバックとして試す：
+        # - "reference"：`perform Y::'X';`（既存アクションの参照実行）
+        # - "actionName"：`action 'X' accept ... via ...;`（accept_actionだが
+        #   `_assign_semantic_ids`は"name"だけを見るため匿名IDになる）
+        node = entry["node"]
+        label = entry["name"] or node.get("reference") or node.get("actionName") or entry["type"]
         nodes_out.append({
             "id": stable_id,
             "type": entry["type"],
-            "label": entry["name"] or entry["type"],
+            "label": label,
             "group_id": _effective_parent(stable_id),
             "source_range": entry["source_range"],
         })
