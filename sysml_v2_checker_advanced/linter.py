@@ -28,6 +28,19 @@ from .type_system import TypeSystemFoundation
 # リンター（高度なルールチェック）
 # ============================================================================
 
+# subject位置制約(8.2.2.21)を適用するノード種別。SysML v2では subject は
+# CaseDefinition と RequirementDefinition の機能なので、その特化である
+# concern / use case / analysis case / verification case にも及ぶ。
+# 2026-09-04に参照実装で1種別ずつ確認した（calc/actionは対象外）。
+_SUBJECT_FIRST_NODE_TYPES = (
+    "requirement_def", "requirement_usage",
+    "concern_def", "concern_usage",
+    "case_def", "case_usage",
+    "use_case_def", "use_case_usage",
+    "analysis_case_def", "analysis_case_usage",
+    "verification_case_def", "verification_case_usage",
+)
+
 class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, StateMachineRulesMixin, CaseAndViewRulesMixin, TypeAndInheritanceRulesMixin, UsageAndExpressionRulesMixin, ActionBehaviorRulesMixin, ConnectionAndAnnotationRulesMixin):
     """
     SysML v2高度ルールチェッカー
@@ -387,6 +400,14 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
             "multiplicity_expression_member": lambda n, ns: self._check_multiplicity_expression_member(n, "expression member", ns),
         }
         
+        # subject位置制約(8.2.2.21)は Case/Requirement 系のすべてに適用される。
+        # どの種別に適用されるかは参照実装(jar 0.61.0)への問い合わせで確定させた
+        # （2026-09-04。calc def / action def には適用されない＝subjectを持たない）。
+        # 各_check_*関数に1行ずつ足すより、ここで一括して呼ぶ方が対象範囲が
+        # 一箇所で読める。
+        if node_type in _SUBJECT_FIRST_NODE_TYPES:
+            self._check_requirement_subject(node, namespace)
+
         if node_type in check_functions:
             check_functions[node_type](node, namespace)
 

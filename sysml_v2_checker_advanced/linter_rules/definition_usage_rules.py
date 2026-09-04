@@ -12,6 +12,22 @@ from ..constants import (
 )
 from ..lint_issue import LintIssue
 
+# subject位置制約(8.2.2.21)で「パラメータ相当」として数える子要素の型。
+# 参照実装(jar 0.61.0)の実測で確定（2026-09-04）: in/out/inoutパラメータと
+# subject/actor/stakeholderが対象で、attributeとdocは対象外。
+#
+# `calc_parameter`が必要なのは、analysis def / verification def の本体が
+# 文法上 calcBodyElement 経由（`analysis def A { in x : S; }` → calc_parameter）
+# であり、requirement def / case def の `param` とはノード種別が違うため。
+# calc def / action def は _SUBJECT_FIRST_NODE_TYPES に入っていないので、
+# ここに calc_parameter があっても偽陽性にはならない。
+_SUBJECT_PARAMETER_LIKE_TYPES = (
+    "param",
+    "calc_parameter",
+    "subject_usage",
+    "actor_usage",
+    "stakeholder_usage",
+)
 
 class DefinitionUsageRulesMixin:
     @staticmethod
@@ -583,12 +599,18 @@ class DefinitionUsageRulesMixin:
         不要である。要件充足の検証は `assert satisfiedBy ...` 構文由来の
         satisfy_requirement_usage ノード（_check_satisfy_requirement_usage）で
         行われている。
+
+        subject位置制約(8.2.2.21)は、requirement以外のCase系にも同じ制約が
+        及ぶことが分かったため、2026-09-04にlinter.pyのディスパッチ側
+        （_SUBJECT_FIRST_NODE_TYPES）へ移した。ここから呼ぶと二重に報告される。
         """
-        self._check_requirement_subject(node, namespace)
 
     def _check_requirement_usage(self, node: Dict, namespace: str) -> None:
-        """要件使用のチェック (8.2.2.19)。subject制約のみ（型検証は無し）。"""
-        self._check_requirement_subject(node, namespace)
+        """要件使用のチェック (8.2.2.19)。
+
+        subject位置制約(8.2.2.21)は linter.py のディスパッチ側で一括して
+        呼ばれる（_check_requirement_def のdocstring参照）。型検証は無し。
+        """
 
     def _check_requirement_subject(self, node: Dict, namespace: str) -> None:
         """
@@ -601,16 +623,42 @@ class DefinitionUsageRulesMixin:
 
         「最初のパラメータ」は`doc`やredefinition専用の`ref requirement :>>
         self: ...;`（requirement_usage）等の非パラメータ宣言を無視した、
-        パラメータ相当の要素（`param`/`subject_usage`）だけの並びの先頭を指す。
-        全子要素の先頭で判定すると、公式標準ライブラリのRequirementCheck等
-        （`doc`の後に`ref requirement :>> self: ...;`を経てから`subject`が
-        続く）を誤検出する（2026-08-28の730件回帰チェックで発見・修正）。
+        パラメータ相当の要素だけの並びの先頭を指す。全子要素の先頭で判定すると、
+        公式標準ライブラリのRequirementCheck等（`doc`の後に`ref requirement :>>
+        self: ...;`を経てから`subject`が続く）を誤検出する
+        （2026-08-28の730件回帰チェックで発見・修正）。
+
+        【2026-09-04、参照実装への問い合わせで条件を確定】当初の実装は
+        (a) パラメータ相当を`param`/`subject_usage`の2種しか数えず、
+        (b) subjectが1つ存在する場合しか位置を検査していなかったため、
+        `concern def C { stakeholder s : S; }`のように**subjectが無く
+        actor/stakeholderだけがある**ケースを見逃していた
+        （16-concern-stakeholder / 26-subject-actor-stakeholder-trailing-comment
+        の4ファイル。比較レポートv2 §v2-3）。
+
+        参照実装(jar 0.61.0)の実測による正確な条件:
+          - パラメータ相当 = `param`(in/out/inout) / `subject` / `actor` /
+            `stakeholder`。`attribute`と`doc`は数えない（実測で確認）。
+          - パラメータ相当が1つ以上あり、その**先頭がsubjectでない**ならエラー。
+            subjectが1つも無い場合も含む。
+          - パラメータ相当が空なら（`concern def C;`・`requirement def R;`・
+            `requirement def R { attribute a; }`）エラーにしない。
         """
         name = node.get("name", namespace)
         children = node.get("children", [])
         param_like = [
             c for c in children
-            if isinstance(c, dict) and c.get("type") in ("param", "subject_usage")
+            if isinstance(c, dict) and c.get("type") in _SUBJECT_PARAMETER_LIKE_TYPES
+            # `return`パラメータは結果を表すもので、この制約の言う
+            # 「最初のパラメータ」の対象ではない。参照実装での実測（2026-09-04）:
+            # `analysis def A { return r : S; }`・`analysis a : AD { return mass; }`
+            # ・`case def K { return r : S; }`はいずれもクリーンだが、
+            # `analysis def A { return r : S; in x : S; }`はエラーになる
+            # （returnを飛ばした先頭がsubjectでないため）。
+            # 除外しないと公式サンプル4件（EVSample/EVSample1/AnalysisTest×2の
+            # `analysis analysisCase : AnalysisCase { return mass; }`等）を
+            # 誤検出する（recheck_local_only.pyが実際に検出した）。
+            and c.get("direction") != "return"
         ]
         subjects = [c for c in param_like if c.get("type") == "subject_usage"]
         for extra in subjects[1:]:
@@ -619,11 +667,11 @@ class DefinitionUsageRulesMixin:
                 f"[8.2.2.21] '{name}' にsubjectが複数定義されています(1つのみ許可)",
                 extra
             ))
-        if len(subjects) == 1 and param_like and param_like[0] is not subjects[0]:
+        if param_like and param_like[0].get("type") != "subject_usage":
             self.issues.append(LintIssue(
                 SEVERITY_ERROR,
                 f"[8.2.2.21] '{name}' のsubjectは最初のパラメータでなければなりません",
-                subjects[0]
+                subjects[0] if subjects else param_like[0]
             ))
     def _check_interface_def(self, node: Dict, namespace: str) -> None:
         """

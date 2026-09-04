@@ -5457,6 +5457,72 @@ def test_lint_requirement_subject_count_and_position():
     ) == 1
 
 
+def test_lint_subject_first_parameter_without_any_subject():
+    """subjectが1つも無く actor/stakeholder だけがある場合も
+    「subjectは最初のパラメータ」違反になる。
+
+    2026-09-04: 当初の実装はパラメータ相当を param/subject_usage の2種しか
+    数えず、かつ subject が1つ存在する場合しか位置を検査していなかったため、
+    `concern def C { stakeholder s : S; }` を見逃していた
+    （16-concern-stakeholder / 26-subject-actor-stakeholder-trailing-comment、
+    比較レポートv2 §v2-3）。参照実装(jar 0.61.0)へ1形ずつ問い合わせて
+    条件を確定させたうえで修正した。
+    """
+    for src in (
+        "part def S; concern def C { stakeholder s : S; }",
+        "part def U; concern def C { actor a : U; }",
+        "part def S; requirement def R { stakeholder s : S; }",
+        "part def S; requirement def R { in x : S; }",
+        "part def U; use case def UC { actor u : U; }",
+        "part def S; case def K { in x : S; }",
+        "part def S; analysis def A { in x : S; }",
+        "part def S; verification def V { in x : S; }",
+    ):
+        issues = lint_ast(parse_sysml_antlr(src))
+        assert any(
+            "最初のパラメータ" in i.message
+            for i in issues
+            if i.severity == "error" and "8.2.2.21" in i.message
+        ), f"検出されるべきなのに検出されなかった: {src}"
+
+
+def test_lint_subject_first_parameter_exclusions_are_not_flagged():
+    """subject位置制約の対象外（参照実装がクリーンと判定する形）を誤検出しない。
+
+    `attribute`/`doc` はパラメータ相当として数えない。`return`パラメータは
+    結果を表すもので対象外（除外しないと公式サンプルの
+    `analysis analysisCase : AnalysisCase { return mass; }` 等4件を誤検出する）。
+    subjectを持たない calc def / action def はそもそも制約の対象外。
+    """
+    for src in (
+        "part def S; concern def C { subject x : S; stakeholder s : S; }",
+        "concern def C;",
+        "part def S; requirement def R { subject y : S; in x : S; }",
+        "requirement def R;",
+        "requirement def R { attribute a; }",
+        "part def S; requirement def R { attribute a; subject y : S; }",
+        "part def S; analysis def A { return r : S; }",
+        "part def S; case def K { return r : S; }",
+        "part def S; calc def F { in x : S; }",
+        "part def S; action def Ac { in x : S; }",
+    ):
+        issues = lint_ast(parse_sysml_antlr(src))
+        assert not any(
+            "8.2.2.21" in i.message for i in issues if i.severity == "error"
+        ), f"誤検出した: {src}"
+
+
+def test_lint_subject_first_parameter_return_then_input_is_flagged():
+    """`return`は飛ばすが、その後ろの入力パラメータは先頭として評価される
+    （参照実装も `analysis def A { return r : S; in x : S; }` をエラーにする）。"""
+    issues = lint_ast(parse_sysml_antlr("part def S; analysis def A { return r : S; in x : S; }"))
+    assert any(
+        "最初のパラメータ" in i.message
+        for i in issues
+        if i.severity == "error" and "8.2.2.21" in i.message
+    )
+
+
 def test_lint_requirement_subject_after_doc_and_self_redefine_is_not_flagged():
     """2026-08-28の730件回帰チェックで発見: 公式標準ライブラリの
     RequirementCheck等（`doc`の後に`ref requirement :>> self: ...;`という
