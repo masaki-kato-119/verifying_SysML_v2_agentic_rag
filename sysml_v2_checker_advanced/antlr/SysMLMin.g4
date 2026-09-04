@@ -1645,6 +1645,14 @@ partBodyElement
     | calculationDef
     | constraintDef
     | itemUsage
+    // `action def VehicleStartup { ... item def VehicleOnSignal; ... }`
+    // （SysML v2 Spec Annex A SimpleVehicleModel.sysml:1412）のように、
+    // action/part本体内に`item def`を直接書く形がある。itemUsageは登録済み
+    // だったがitemDefは未登録で、`item`までがitemUsageに食われて`def`が
+    // extraneous inputになっていた（attributeUsage/attributeDefが両方
+    // 登録されているのと同じ非対称性。2026-09-04、比較レポートv2 §v2-6 G4。
+    // 参照実装は同ファイル全体に対して診断0件＝この記法を受理する）。
+    | itemDef
     | actionUsageStmt
     // `for i in 1..powerProfile->size()-1 { ... }`（10d-Dynamics
     // Analysis.sysml、analysis def本体内）のように、ifActionStmt・
