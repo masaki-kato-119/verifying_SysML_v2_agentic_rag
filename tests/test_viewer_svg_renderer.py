@@ -122,6 +122,113 @@ def test_unknown_edge_kind_falls_back_to_filled_arrow():
     assert 'marker-end="url(#sysml-arrow-filled)"' in svg
 
 
+# --- 状態遷移図（表現力強化 Stage 3, Group B f3） -------------------------
+
+
+def test_state_nodes_are_rendered_as_rounded_rectangles():
+    view_ir = {
+        "view_type": "state_machine",
+        "nodes": [
+            {"id": "$root::S", "type": "state_def", "label": "S", "source_range": None,
+             "x": 0, "y": 0, "width": 90, "height": 40},
+            {"id": "$root::S::Off", "type": "state_usage", "label": "Off", "source_range": None,
+             "x": 0, "y": 60, "width": 90, "height": 40},
+        ],
+        "edges": [],
+    }
+    svg = render_svg(view_ir)
+    assert svg.count('rx="10" ry="10"') == 2
+
+
+def test_non_state_nodes_are_not_rounded():
+    view_ir = {
+        "view_type": "structure",
+        "nodes": [{
+            "id": "$root::A", "type": "part_def", "label": "A", "source_range": None,
+            "x": 0, "y": 0, "width": 90, "height": 40,
+        }],
+        "edges": [],
+    }
+    svg = render_svg(view_ir)
+    assert "rx=" not in svg
+
+
+def test_transition_edge_gets_a_directional_arrow():
+    """transitionはStage 1の_KIND_MARKERに個別エントリが無いため、既定の
+    塗り矢印にフォールバックする（それでも「方向のある矢印」という
+    f3の要件は満たす）。"""
+    svg = _render_single_edge("transition")
+    assert 'marker-end="url(#sysml-arrow-filled)"' in svg
+    assert 'data-kind="transition"' in svg
+
+
+def test_action_nodes_are_rendered_as_rounded_rectangles():
+    """表現力強化 Stage 3, Group C g2: アクティビティ図のアクションノードも
+    状態ノードと同じ角丸矩形の仕組みを流用する。"""
+    view_ir = {
+        "view_type": "activity",
+        "nodes": [
+            {"id": "$root::Act", "type": "action_def", "label": "Act", "source_range": None,
+             "x": 0, "y": 0, "width": 90, "height": 40},
+            {"id": "$root::Act::step1", "type": "action_usage", "label": "step1", "source_range": None,
+             "x": 0, "y": 60, "width": 90, "height": 40},
+        ],
+        "edges": [],
+    }
+    svg = render_svg(view_ir)
+    assert svg.count('rx="10" ry="10"') == 2
+
+
+def test_end_to_end_activity_renders_rounded_actions_with_arrows():
+    """Semantic Model→Graph IR(activity)→build_flow_view_ir→render_svg
+    の全経路を、実際にパースしたアクション連鎖で通しで確認する。"""
+    from sysml_v2_checker_advanced.semantic_model import build_semantic_model
+    from viewer.graph_ir import VIEW_TYPE_ACTIVITY, build_graph_ir
+    from viewer.view_ir import build_flow_view_ir
+
+    text = """
+    action def Act {
+        action step1;
+        action step2;
+        first step1 then step2;
+    }
+    """
+    _, model = build_semantic_model(text.strip())
+    gir = build_graph_ir(model, view_type=VIEW_TYPE_ACTIVITY)
+    vir = build_flow_view_ir(gir)
+    svg = render_svg(vir)
+
+    assert svg.count('rx="10" ry="10"') == 3  # Act(action_def) + step1 + step2
+    assert svg.count('data-kind="succession"') == 1
+    assert "<marker" in svg
+
+
+def test_end_to_end_state_machine_renders_rounded_states_with_arrows():
+    """Semantic Model→Graph IR(state_machine)→build_flow_view_ir→render_svg
+    の全経路を、実際にパースした状態機械で通しで確認する。"""
+    from sysml_v2_checker_advanced.semantic_model import build_semantic_model
+    from viewer.graph_ir import VIEW_TYPE_STATE_MACHINE, build_graph_ir
+    from viewer.view_ir import build_flow_view_ir
+
+    text = """
+    state def AdvancedSwitch {
+        entry; then Off;
+        state Off;
+        state On;
+        transition first Off accept TurnOn then On;
+        transition OnToOff first On accept TurnOff then Off;
+    }
+    """
+    _, model = build_semantic_model(text.strip())
+    gir = build_graph_ir(model, view_type=VIEW_TYPE_STATE_MACHINE)
+    vir = build_flow_view_ir(gir)
+    svg = render_svg(vir)
+
+    assert svg.count('rx="10" ry="10"') == 3  # AdvancedSwitch(state_def) + Off + On
+    assert svg.count('data-kind="transition"') == 3
+    assert "<marker" in svg
+
+
 def test_no_marker_defs_when_there_are_no_edges():
     """エッジが1本も無い場合はdefs自体を出さない（出力を無駄に増やさない）。"""
     view_ir = {

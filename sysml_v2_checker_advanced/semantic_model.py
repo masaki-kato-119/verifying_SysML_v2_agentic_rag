@@ -18,6 +18,15 @@ linter.py には一切手を入れない。SysMLAdvancedLinter().lint(ast) を�
 - connection（connect_usage/connection_usage/binding_connectorの各end由来）
 - satisfy / verify（satisfy_requirement_usage/verify_requirement_usageの
   `by`フィールド由来）
+- transition（表現力強化Stage 2, Group A e1。transitionノードのsource/target
+  由来。source省略時は`parent_id`＝囲むstate usage/state defを遷移元とする）
+- succession（表現力強化Stage 2, Group A e2。succession/succession_usageの
+  firstEnd/thenEnd（またはisFlow=True時のfromEnd/toEnd）由来。裸の
+  first_stmt/then_stmt/guarded_then_stmt/else_stmt文は対象外――遷移元が
+  「直前の兄弟文」という文脈に依存するため、意図的に未対応としている）
+- flow（表現力強化Stage 2, Group A e3。flow_from_stmt/flow_short_stmtの
+  from_port/to_port由来。`owner.port`形式のドット区切り参照はownerまでの
+  解決に留める、`_resolve_reference`のフォールバックを参照）
 
 各エッジは resolution_status（拡張仕様書8.2章）を持つ:
 - "resolved"：このファイル内のノードへ解決できた
@@ -53,6 +62,11 @@ _REQUIREMENT_EDGE_KIND = {
     "satisfy_requirement_usage": "satisfy",
     "verify_requirement_usage": "verify",
 }
+
+# 状態遷移図対応（表現力強化Stage 2, Group A e1）。transitionStmt/
+# implicitTransitionStmt/initialTransitionMemberは、antlr_transformer.py側で
+# いずれも共通の"type": "transition"形（source/targetフィールド）に正規化
+# 済みのため、単一の判定で3種の文法をまとめて扱える。
 
 
 def _connector_end_references(node: Dict) -> List[str]:
@@ -119,6 +133,13 @@ def _resolve_reference(reference: str, linter: SysMLAdvancedLinter) -> Optional[
     割り切り）。標準ライブラリ型・他ファイル由来の型はここでは解決できず
     None を返す（意図的な既知の制約。次段階のresolution_status 3値分類で
     区別する）。
+
+    `owner.port`形式のドット区切りアクセス（flow文のfrom_port/to_port等、
+    表現力強化Stage 2 Group A e3で追加）は、シンボル表にはowner側の名前
+    だけが登録されておりポート部分までは個別に引けないため、最初の
+    セグメント（owner名）だけで再試行する。要素レベルの関連としては
+    ownerが分かれば十分に有用なため。既存の"::"区切り参照に"."を含む
+    文字列は現れないため、他のエッジ種別の解決挙動には影響しない。
     """
     if not reference:
         return None
@@ -127,6 +148,8 @@ def _resolve_reference(reference: str, linter: SysMLAdvancedLinter) -> Optional[
         for sym_name, node in table.items():
             if sym_name == reference or sym_name.split("::")[-1] == short_name:
                 return node
+    if "." in reference:
+        return _resolve_reference(reference.split(".", 1)[0], linter)
     return None
 
 
@@ -165,6 +188,94 @@ def _make_edge(
         "resolved": target_id is not None,
         "resolution_status": resolution_status,
         "reference_text": reference_text,
+    }
+
+
+def _make_transition_edge(
+    parent_id: Optional[str],
+    source_ref: Optional[str],
+    target_ref: str,
+    reverse_index: Dict[int, str],
+    linter: SysMLAdvancedLinter,
+) -> Dict:
+    """transitionは`_make_edge`の前提（宣言しているノード自身が関係の起点）と
+    異なり、source/targetという2つの外部参照の間の関係を表す。source省略時
+    （暗黙遷移）は、Semantic Modelの`parent_id`（このtransitionを直接囲む
+    state usage/state def自身）を遷移元として使う（`_assign_semantic_ids`が
+    ツリー上の親としてstable_idを既に確定させているため、追加の文脈受け渡しは
+    不要）。"""
+    if source_ref is not None:
+        source_target = _resolve_reference(source_ref, linter)
+        from_id = reverse_index.get(id(source_target)) if source_target is not None else None
+        from_status = _classify_resolution(source_ref, source_target, linter)
+    else:
+        from_id = parent_id
+        from_status = "resolved" if from_id is not None else "unresolved_error"
+
+    target = _resolve_reference(target_ref, linter)
+    to_id = reverse_index.get(id(target)) if target is not None else None
+    to_status = _classify_resolution(target_ref, target, linter)
+
+    resolved = from_id is not None and to_id is not None
+    if resolved:
+        resolution_status = "resolved"
+    elif "unresolved_error" in (from_status, to_status):
+        resolution_status = "unresolved_error"
+    else:
+        resolution_status = "unresolved_external"
+
+    return {
+        "from_id": from_id,
+        "to_id": to_id,
+        "kind": "transition",
+        "resolved": resolved,
+        "resolution_status": resolution_status,
+        "reference_text": target_ref,
+    }
+
+
+def _succession_end_reference(value) -> Optional[str]:
+    """succession/succession_usageのfirstEnd/thenEnd(またはisFlow=True時の
+    fromEnd/toEnd)から参照文字列を取り出す（表現力強化Stage 2, Group A e2）。
+    isFlow=Falseの場合はconnectorEnd形（`{"reference": str}`、connection系
+    エッジ抽出の`_connector_end_references`と同型）、isFlow=Trueの場合は
+    素の参照文字列そのもの、という2つの異なるAST形状を吸収する。"""
+    if isinstance(value, str) and value:
+        return value
+    if isinstance(value, dict) and value.get("reference"):
+        return value["reference"]
+    return None
+
+
+def _make_reference_pair_edge(
+    from_ref: str, to_ref: str, kind: str, reverse_index: Dict[int, str], linter: SysMLAdvancedLinter
+) -> Dict:
+    """宣言しているノード自身ではなく、2つの外部参照(from_ref, to_ref)間の
+    関係を表す種別（succession/flow）向けの汎用エッジ構築。`_make_edge`は
+    宣言ノード自身が関係の起点であることを前提にしているため使えない。"""
+    from_target = _resolve_reference(from_ref, linter)
+    from_id = reverse_index.get(id(from_target)) if from_target is not None else None
+    from_status = _classify_resolution(from_ref, from_target, linter)
+
+    to_target = _resolve_reference(to_ref, linter)
+    to_id = reverse_index.get(id(to_target)) if to_target is not None else None
+    to_status = _classify_resolution(to_ref, to_target, linter)
+
+    resolved = from_id is not None and to_id is not None
+    if resolved:
+        resolution_status = "resolved"
+    elif "unresolved_error" in (from_status, to_status):
+        resolution_status = "unresolved_error"
+    else:
+        resolution_status = "unresolved_external"
+
+    return {
+        "from_id": from_id,
+        "to_id": to_id,
+        "kind": kind,
+        "resolved": resolved,
+        "resolution_status": resolution_status,
+        "reference_text": f"{from_ref} -> {to_ref}",
     }
 
 
@@ -227,6 +338,31 @@ def build_relation_edges(
             if isinstance(by_ref, str) and by_ref:
                 target = _resolve_reference(by_ref, linter)
                 edges.append(_make_edge(stable_id, target, req_edge_kind, by_ref, reverse_index, linter))
+
+        if node_type == "transition":
+            target_ref = node.get("target")
+            if isinstance(target_ref, str) and target_ref:
+                edges.append(
+                    _make_transition_edge(
+                        entry["parent_id"], node.get("source"), target_ref, reverse_index, linter
+                    )
+                )
+
+        if node_type in ("succession", "succession_usage"):
+            if node.get("isFlow"):
+                from_raw, to_raw = node.get("fromEnd"), node.get("toEnd")
+            else:
+                from_raw, to_raw = node.get("firstEnd"), node.get("thenEnd")
+            from_ref = _succession_end_reference(from_raw)
+            to_ref = _succession_end_reference(to_raw)
+            if from_ref and to_ref:
+                edges.append(_make_reference_pair_edge(from_ref, to_ref, "succession", reverse_index, linter))
+
+        if node_type in ("flow_from_stmt", "flow_short_stmt"):
+            from_ref = node.get("from_port")
+            to_ref = node.get("to_port")
+            if isinstance(from_ref, str) and from_ref and isinstance(to_ref, str) and to_ref:
+                edges.append(_make_reference_pair_edge(from_ref, to_ref, "flow", reverse_index, linter))
 
     return edges
 

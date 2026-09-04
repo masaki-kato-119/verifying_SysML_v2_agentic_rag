@@ -20,6 +20,25 @@ def _leaf_size(label: str) -> Tuple[int, int]:
     return width, _MIN_HEIGHT
 
 
+def _rect_boundary_point(
+    cx: float, cy: float, half_w: float, half_h: float, dx: float, dy: float
+) -> Tuple[float, float]:
+    """矩形の中心(cx, cy)から方向(dx, dy)へ進んだときに矩形の縁と交わる点を
+    返す（表現力強化 Stage 0）。中心同士を直線で結ぶと矩形の内部を必ず貫通し、
+    ノードを後から重ねて描く限りその区間が隠れて見えなくなるため、エッジの
+    両端をあらかじめ矩形の縁で止める。`build_view_ir`（入れ子矩形）と
+    `build_flow_view_ir`（層状レイアウト）の両方で共有する純粋な幾何計算。"""
+    if dx == 0 and dy == 0:
+        return cx, cy
+    candidates = []
+    if dx != 0:
+        candidates.append(half_w / abs(dx))
+    if dy != 0:
+        candidates.append(half_h / abs(dy))
+    t = min(candidates)
+    return cx + t * dx, cy + t * dy
+
+
 def build_view_ir(graph_ir: Dict, collapsed_ids=None, pinned_positions=None) -> Dict:
     """Graph IRからView IR（構造ビュー）を構築する。
 
@@ -189,22 +208,9 @@ def build_view_ir(graph_ir: Dict, collapsed_ids=None, pinned_positions=None) -> 
         return x + w / 2, y + h / 2
 
     def _boundary_point(node_id: str, dx: float, dy: float) -> Tuple[float, float]:
-        """ノードの中心から方向(dx, dy)へ進んだときに矩形の縁と交わる点を返す
-        （表現力強化 Stage 0）。中心同士を直線で結ぶと矩形の内部を必ず貫通し、
-        ノードを後から重ねて描く限りその区間が隠れて見えなくなるため、
-        エッジの両端をあらかじめ矩形の縁で止める設計に変更した。"""
         cx, cy = _center(node_id)
-        if dx == 0 and dy == 0:
-            return cx, cy
-        _w, h = sizes[node_id]
-        half_w, half_h = _w / 2, h / 2
-        candidates = []
-        if dx != 0:
-            candidates.append(half_w / abs(dx))
-        if dy != 0:
-            candidates.append(half_h / abs(dy))
-        t = min(candidates)
-        return cx + t * dx, cy + t * dy
+        w, h = sizes[node_id]
+        return _rect_boundary_point(cx, cy, w / 2, h / 2, dx, dy)
 
     # 非包含エッジ（specialization/feature_typing/connection等）は、ボックス
     # 配置が確定した後に両端を結ぶ直線として後処理する（実装仕様書4.2節：
@@ -229,3 +235,128 @@ def build_view_ir(graph_ir: Dict, collapsed_ids=None, pinned_positions=None) -> 
         })
 
     return {"view_type": graph_ir.get("view_type", "structure"), "nodes": nodes_out, "edges": edges_out}
+
+
+# --- 層状（フロー）レイアウト（表現力強化 Stage 3, Group B f1） -----------
+# 状態遷移図・アクティビティ図向け。build_view_ir（入れ子矩形、包含関係の
+# 表現）とは根本的に異なる用途のため、独立した新規関数として追加する
+# （既存のbuild_view_irには一切手を入れない）。ここでは有向グラフの
+# トポロジー（transition/succession/flowエッジ）だけを見て、ノードを
+# 層（レイヤー）ごとに上から下へ並べる簡易Sugiyama系アルゴリズムを使う。
+# 対象ノードの入れ子構造（group_id）はこのビューでは考慮しない――複合状態
+# 等のネストは、最小限の対応としてこの段階ではスコープ外とする。
+
+_FLOW_LAYER_GAP = 60  # 層と層の間の縦方向の間隔
+_FLOW_NODE_GAP = 16  # 同じ層内でのノード間の横方向の間隔
+
+
+def _assign_layers(node_ids: List[str], edges: List[Dict]) -> Dict[str, int]:
+    """各ノードへ層番号（0始まり、入力が無いノードが0）を割り当てる。
+
+    「全ての直接の先行ノードの層+1の最大値」という素朴な最長路レイヤリング。
+    循環参照（A→B→A等）がある場合、DFSの再帰スタック上にある祖先への
+    エッジ（back edge）を検出したら、そのエッジは無いものとして扱う
+    （層0として扱うことで無限再帰を避ける。作業計画書のリスク欄で明示した
+    安全側フォールバック）。決定的にするため、開始順序をstable_id順で固定する。
+    """
+    node_id_set = set(node_ids)
+    predecessors: Dict[str, List[str]] = {nid: [] for nid in node_ids}
+    for edge in edges:
+        if edge["from"] in node_id_set and edge["to"] in node_id_set:
+            predecessors[edge["to"]].append(edge["from"])
+    for nid in predecessors:
+        predecessors[nid].sort()  # 決定的な走査順
+
+    layer: Dict[str, int] = {}
+    visiting: set = set()
+
+    def compute(nid: str) -> int:
+        if nid in layer:
+            return layer[nid]
+        if nid in visiting:
+            return 0  # 循環検出: back edgeを無視する安全側フォールバック
+        visiting.add(nid)
+        preds = predecessors[nid]
+        result = 0 if not preds else 1 + max(compute(p) for p in preds)
+        visiting.discard(nid)
+        layer[nid] = result
+        return result
+
+    for nid in sorted(node_ids):
+        compute(nid)
+    return layer
+
+
+def build_flow_view_ir(graph_ir: Dict) -> Dict:
+    """Graph IRから層状（フロー）レイアウトのView IRを構築する
+    （状態遷移図・アクティビティ図向け、表現力強化Stage 3）。
+
+    Args:
+        graph_ir: build_view_irと同じ形。`view_type`は`"state_machine"`
+            または`"activity"`を想定するが、この関数自体はどちらにも依存しない
+            （ノードの集合とエッジのトポロジーだけを見る）。
+
+    Returns:
+        build_view_irと同じ形の辞書（"view_type","nodes","edges"）。
+        乱数・現在時刻を使わない決定的な純粋関数（同一入力→常に同一出力）。
+    """
+    nodes_by_id = {n["id"]: n for n in graph_ir["nodes"]}
+    node_ids = list(nodes_by_id.keys())
+
+    layer_of = _assign_layers(node_ids, graph_ir["edges"])
+
+    nodes_by_layer: Dict[int, List[str]] = {}
+    for nid in sorted(node_ids):
+        nodes_by_layer.setdefault(layer_of[nid], []).append(nid)
+
+    sizes = {nid: _leaf_size(nodes_by_id[nid]["label"]) for nid in node_ids}
+    positions: Dict[str, Tuple[int, int]] = {}
+
+    y = _PADDING
+    for layer_index in sorted(nodes_by_layer):
+        ids_in_layer = nodes_by_layer[layer_index]
+        layer_height = max(sizes[nid][1] for nid in ids_in_layer)
+        x = _PADDING
+        for nid in ids_in_layer:
+            width, _height = sizes[nid]
+            positions[nid] = (x, y)
+            x += width + _FLOW_NODE_GAP
+        y += layer_height + _FLOW_LAYER_GAP
+
+    nodes_out = [
+        {
+            "id": nid,
+            "type": nodes_by_id[nid]["type"],
+            "label": nodes_by_id[nid]["label"],
+            "source_range": nodes_by_id[nid]["source_range"],
+            "x": positions[nid][0], "y": positions[nid][1],
+            "width": sizes[nid][0], "height": sizes[nid][1],
+        }
+        for nid in sorted(node_ids)
+    ]
+
+    def _center(nid: str) -> Tuple[float, float]:
+        x, y = positions[nid]
+        w, h = sizes[nid]
+        return x + w / 2, y + h / 2
+
+    edges_out = []
+    for edge in graph_ir["edges"]:
+        if edge["from"] not in positions or edge["to"] not in positions:
+            continue
+        from_c = _center(edge["from"])
+        to_c = _center(edge["to"])
+        dx, dy = to_c[0] - from_c[0], to_c[1] - from_c[1]
+        from_cx, from_cy = from_c
+        to_cx, to_cy = to_c
+        from_w, from_h = sizes[edge["from"]]
+        to_w, to_h = sizes[edge["to"]]
+        from_point = _rect_boundary_point(from_cx, from_cy, from_w / 2, from_h / 2, dx, dy)
+        to_point = _rect_boundary_point(to_cx, to_cy, to_w / 2, to_h / 2, -dx, -dy)
+        edges_out.append({
+            "id": edge["id"],
+            "kind": edge.get("kind"),
+            "points": [list(from_point), list(to_point)],
+        })
+
+    return {"view_type": graph_ir.get("view_type", "flow"), "nodes": nodes_out, "edges": edges_out}

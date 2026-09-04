@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from sysml_v2_checker_advanced.semantic_model import build_semantic_model
 from viewer.graph_ir import (
+    VIEW_TYPE_ACTIVITY,
     VIEW_TYPE_REQUIREMENT_TRACEABILITY,
+    VIEW_TYPE_STATE_MACHINE,
     VIEW_TYPE_VERIFICATION,
     build_graph_ir,
 )
@@ -215,3 +217,105 @@ def test_verification_view_with_no_finding_element_ids_is_empty():
     gir = build_graph_ir(model, view_type=VIEW_TYPE_VERIFICATION, finding_element_ids=set())
     assert gir["nodes"] == []
     assert gir["edges"] == []
+
+
+# --- state_machine（表現力強化Stage 3, Group B f2） -----------------------
+
+_STATE_MACHINE_SAMPLE = """
+state def AdvancedSwitch {
+    entry; then Off;
+
+    state Off;
+    state On;
+
+    transition first Off
+        accept TurnOn
+        then On;
+
+    transition OnToOff
+        first On
+        accept TurnOff
+        then Off;
+}
+"""
+
+
+def test_state_machine_view_includes_only_state_nodes_and_transition_edges():
+    _, model = build_semantic_model(_STATE_MACHINE_SAMPLE.strip())
+    gir = build_graph_ir(model, view_type=VIEW_TYPE_STATE_MACHINE)
+    types_by_id = {n["id"]: n["type"] for n in gir["nodes"]}
+    assert types_by_id == {
+        "$root::AdvancedSwitch": "state_def",
+        "$root::AdvancedSwitch::Off": "state_usage",
+        "$root::AdvancedSwitch::On": "state_usage",
+    }
+    kinds = {e["kind"] for e in gir["edges"]}
+    assert kinds == {"transition"}
+    assert len(gir["edges"]) == 3  # entry->Off(暗黙) + Off->On + On->Off
+
+
+def test_state_machine_view_excludes_unrelated_structure_nodes():
+    """構造図では出るはずのpart def等は、状態遷移図には含まれない。"""
+    _, model = build_semantic_model(_SAMPLE.strip())
+    gir = build_graph_ir(model, view_type=VIEW_TYPE_STATE_MACHINE)
+    assert gir["nodes"] == []
+    assert gir["edges"] == []
+
+
+def test_state_machine_view_edges_reference_only_state_machine_nodes():
+    _, model = build_semantic_model(_STATE_MACHINE_SAMPLE.strip())
+    gir = build_graph_ir(model, view_type=VIEW_TYPE_STATE_MACHINE)
+    node_ids = {n["id"] for n in gir["nodes"]}
+    for edge in gir["edges"]:
+        assert edge["from"] in node_ids
+        assert edge["to"] in node_ids
+
+
+# --- activity（表現力強化Stage 3, Group C g1） ----------------------------
+
+_ACTIVITY_SAMPLE = """
+action def Act {
+    action step1;
+    action step2;
+    action step3;
+    first step1 then step2;
+    succession flow f1 from step2 to step3;
+}
+"""
+
+
+def test_activity_view_includes_only_action_nodes_and_succession_flow_edges():
+    _, model = build_semantic_model(_ACTIVITY_SAMPLE.strip())
+    gir = build_graph_ir(model, view_type=VIEW_TYPE_ACTIVITY)
+    types_by_id = {n["id"]: n["type"] for n in gir["nodes"]}
+    assert types_by_id == {
+        "$root::Act": "action_def",
+        "$root::Act::step1": "action_usage",
+        "$root::Act::step2": "action_usage",
+        "$root::Act::step3": "action_usage",
+    }
+    kinds = {e["kind"] for e in gir["edges"]}
+    assert kinds == {"succession"}  # 表現力強化e3の"flow"kindも対象だが、
+    # このサンプルは"succession flow"形(kind="succession")のみを使用している
+    assert len(gir["edges"]) == 2  # step1->step2, step2->step3
+
+
+def test_activity_view_excludes_unrelated_structure_nodes():
+    _, model = build_semantic_model(_SAMPLE.strip())
+    gir = build_graph_ir(model, view_type=VIEW_TYPE_ACTIVITY)
+    assert gir["nodes"] == []
+    assert gir["edges"] == []
+
+
+def test_activity_view_includes_plain_flow_kind_edges():
+    text = """
+    action def Act {
+        action step1 { out item x; }
+        action step2 { in item y; }
+        flow step1.x to step2.y;
+    }
+    """
+    _, model = build_semantic_model(text.strip())
+    gir = build_graph_ir(model, view_type=VIEW_TYPE_ACTIVITY)
+    kinds = {e["kind"] for e in gir["edges"]}
+    assert kinds == {"flow"}

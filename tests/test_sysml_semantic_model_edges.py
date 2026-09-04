@@ -205,3 +205,204 @@ def test_verify_requirement_usage_produces_verify_edge():
     assert len(verify_edges) == 1
     assert verify_edges[0]["to_id"] == "$root::system"
     assert verify_edges[0]["resolved"] is True
+
+
+# --- transition（表現力強化Stage 2, Group A e1） --------------------------
+# 実在するコーパス(tests/fixtures/sysml_corpus/working/real_state_transition.sysml)
+# と同じ文法パターンを使い、合成dictではなく実際のパース結果で検証する
+# （AST形状の想定違いを早期に検出するため）。
+
+_STATE_MACHINE_SAMPLE = """
+state def AdvancedSwitch {
+    entry; then Off;
+
+    state Off;
+    state On;
+
+    transition first Off
+        accept TurnOn
+        then On;
+
+    transition OnToOff
+        first On
+        accept TurnOff
+        then Off;
+}
+"""
+
+
+def test_explicit_transition_resolves_source_and_target():
+    _, model = build_semantic_model(_STATE_MACHINE_SAMPLE.strip())
+    edge = next(e for e in model["edges"] if e["kind"] == "transition" and e["from_id"] == "$root::AdvancedSwitch::Off")
+    assert edge["to_id"] == "$root::AdvancedSwitch::On"
+    assert edge["resolved"] is True
+    assert edge["resolution_status"] == "resolved"
+
+
+def test_named_explicit_transition_resolves_source_and_target():
+    _, model = build_semantic_model(_STATE_MACHINE_SAMPLE.strip())
+    edge = next(e for e in model["edges"] if e["kind"] == "transition" and e["from_id"] == "$root::AdvancedSwitch::On")
+    assert edge["to_id"] == "$root::AdvancedSwitch::Off"
+    assert edge["resolved"] is True
+
+
+def test_implicit_transition_uses_enclosing_state_as_source():
+    """`entry; then Off;`はsourceを持たない暗黙の初期遷移。Semantic Modelの
+    parent_id（このtransitionを直接囲むstate def自身）を遷移元として使う。"""
+    _, model = build_semantic_model(_STATE_MACHINE_SAMPLE.strip())
+    implicit_edges = [
+        e for e in model["edges"] if e["kind"] == "transition" and e["from_id"] == "$root::AdvancedSwitch"
+    ]
+    assert len(implicit_edges) == 1
+    assert implicit_edges[0]["to_id"] == "$root::AdvancedSwitch::Off"
+    assert implicit_edges[0]["resolved"] is True
+
+
+def test_transition_count_matches_source_declarations():
+    _, model = build_semantic_model(_STATE_MACHINE_SAMPLE.strip())
+    transition_edges = [e for e in model["edges"] if e["kind"] == "transition"]
+    # entry->Off(暗黙) + Off->On(明示,無名) + On->Off(明示,命名)の3件。
+    assert len(transition_edges) == 3
+
+
+def test_transition_to_unknown_target_is_unresolved_error():
+    text = """
+    state def S {
+        state A;
+        transition first A then NoSuchState;
+    }
+    """
+    _, model = build_semantic_model(text.strip())
+    edge = next(e for e in model["edges"] if e["kind"] == "transition" and e["from_id"] == "$root::S::A")
+    assert edge["to_id"] is None
+    assert edge["resolved"] is False
+    assert edge["resolution_status"] == "unresolved_error"
+
+
+def test_existing_edge_kinds_unaffected_by_transition_support():
+    """既存のspecialization等のエッジ抽出は、transition対応の追加によって
+    無変更で動作する（回帰防止）。"""
+    _, model = build_semantic_model(_SAMPLE.strip())
+    assert not any(e["kind"] == "transition" for e in model["edges"])
+    assert any(e["kind"] == "subsetting" for e in model["edges"])
+
+
+# --- succession/succession_usage（表現力強化Stage 2, Group A e2） --------
+# 実在するコーパス(tests/fixtures/sysml_corpus/working/binding_connector_succession.sysml
+# の`first a then b;`、および対話的に確認した`succession NAME first A then B;`/
+# `succession flow NAME from A to B;`)と同じ文法パターンで検証する。
+
+
+def test_bare_succession_produces_succession_edge():
+    """`first a then b;`という裸のsuccessionStmt形（isFlowキー自体を持たず、
+    firstEnd/thenEndがconnectorEnd形）。"""
+    text = """
+    action def Act {
+        action a;
+        action b;
+        first a then b;
+    }
+    """
+    _, model = build_semantic_model(text.strip())
+    edge = next(e for e in model["edges"] if e["kind"] == "succession")
+    assert edge["from_id"] == "$root::Act::a"
+    assert edge["to_id"] == "$root::Act::b"
+    assert edge["resolved"] is True
+
+
+def test_named_succession_usage_first_then_produces_succession_edge():
+    """`succession s1 first A then B;`という名前付きsuccession_usage形
+    （isFlow=False、firstEnd/thenEndがconnectorEnd形）。"""
+    text = """
+    action def Act {
+        action step1;
+        action step2;
+        succession s1 first step1 then step2;
+    }
+    """
+    _, model = build_semantic_model(text.strip())
+    edge = next(e for e in model["edges"] if e["kind"] == "succession")
+    assert edge["from_id"] == "$root::Act::step1"
+    assert edge["to_id"] == "$root::Act::step2"
+    assert edge["resolved"] is True
+
+
+def test_succession_usage_flow_form_produces_succession_edge():
+    """`succession flow f1 from A to B;`というisFlow=True形
+    （fromEnd/toEndが素の参照文字列）。"""
+    text = """
+    action def Act {
+        action step1;
+        action step2;
+        succession flow f1 from step1 to step2;
+    }
+    """
+    _, model = build_semantic_model(text.strip())
+    edge = next(e for e in model["edges"] if e["kind"] == "succession")
+    assert edge["from_id"] == "$root::Act::step1"
+    assert edge["to_id"] == "$root::Act::step2"
+    assert edge["resolved"] is True
+
+
+def test_succession_to_unknown_target_is_unresolved_error():
+    text = """
+    action def Act {
+        action step1;
+        first step1 then NoSuchAction;
+    }
+    """
+    _, model = build_semantic_model(text.strip())
+    edge = next(e for e in model["edges"] if e["kind"] == "succession")
+    assert edge["to_id"] is None
+    assert edge["resolved"] is False
+    assert edge["resolution_status"] == "unresolved_error"
+
+
+# --- flow（表現力強化Stage 2, Group A e3） --------------------------------
+
+
+def test_flow_short_form_resolves_owner_actions():
+    """`flow step1.x to step2.y;`のowner.port形式は、シンボル表にownerまでしか
+    登録されていないため、ownerレベルで解決する
+    （`_resolve_reference`のドット区切りフォールバック）。"""
+    text = """
+    action def Act {
+        action step1 { out item x; }
+        action step2 { in item y; }
+        flow step1.x to step2.y;
+    }
+    """
+    _, model = build_semantic_model(text.strip())
+    edge = next(e for e in model["edges"] if e["kind"] == "flow")
+    assert edge["from_id"] == "$root::Act::step1"
+    assert edge["to_id"] == "$root::Act::step2"
+    assert edge["resolved"] is True
+
+
+def test_flow_from_form_resolves_owner_actions():
+    """`flow from step1.x to step2.y;`という`from`キーワード付きの完全形。"""
+    text = """
+    action def Act {
+        action step1 { out item x; }
+        action step2 { in item y; }
+        flow from step1.x to step2.y;
+    }
+    """
+    _, model = build_semantic_model(text.strip())
+    edge = next(e for e in model["edges"] if e["kind"] == "flow")
+    assert edge["from_id"] == "$root::Act::step1"
+    assert edge["to_id"] == "$root::Act::step2"
+    assert edge["resolved"] is True
+
+
+def test_flow_to_unknown_owner_is_unresolved_error():
+    text = """
+    action def Act {
+        action step1 { out item x; }
+        flow step1.x to noSuchAction.y;
+    }
+    """
+    _, model = build_semantic_model(text.strip())
+    edge = next(e for e in model["edges"] if e["kind"] == "flow")
+    assert edge["to_id"] is None
+    assert edge["resolved"] is False

@@ -91,6 +91,49 @@ def test_model_endpoint_accepts_requirement_traceability_view_type():
     assert types == {"requirement_def", "satisfy_requirement_usage", "part_instance"}
 
 
+def test_model_endpoint_state_machine_view_uses_flow_layout():
+    """表現力強化Stage 3, Group B f4: view_type="state_machine"は
+    build_flow_view_ir（層状レイアウト）を使う。build_view_ir（入れ子矩形）
+    とは異なり、ノードのx,yは親子の包含関係ではなく遷移の層に基づく。"""
+    text = """
+    state def AdvancedSwitch {
+        entry; then Off;
+        state Off;
+        state On;
+        transition first Off accept TurnOn then On;
+    }
+    """
+    response = client.post("/api/model", json={"text": text, "view_type": "state_machine"})
+    data = response.json()
+    assert data["view_type_error"] is None
+    assert data["view_ir"]["view_type"] == "state_machine"
+    types = {n["type"] for n in data["graph_ir"]["nodes"]}
+    assert types == {"state_def", "state_usage"}
+    by_id = {n["id"]: n for n in data["view_ir"]["nodes"]}
+    # Offは暗黙遷移の対象(層1)、Onはそこからの遷移先(層2)のため、yが単調に増える。
+    assert by_id["$root::AdvancedSwitch::Off"]["y"] < by_id["$root::AdvancedSwitch::On"]["y"]
+
+
+def test_model_endpoint_activity_view_uses_flow_layout():
+    """表現力強化Stage 3, Group C g3: view_type="activity"もstate_machineと
+    同じくbuild_flow_view_ir（層状レイアウト）を使う。"""
+    text = """
+    action def Act {
+        action step1;
+        action step2;
+        first step1 then step2;
+    }
+    """
+    response = client.post("/api/model", json={"text": text, "view_type": "activity"})
+    data = response.json()
+    assert data["view_type_error"] is None
+    assert data["view_ir"]["view_type"] == "activity"
+    types = {n["type"] for n in data["graph_ir"]["nodes"]}
+    assert types == {"action_def", "action_usage"}
+    by_id = {n["id"]: n for n in data["view_ir"]["nodes"]}
+    assert by_id["$root::Act::step1"]["y"] < by_id["$root::Act::step2"]["y"]
+
+
 def test_model_endpoint_verification_view_limits_to_finding_related_nodes():
     """Group2 b8(V2): view_type="verification"は、Findingが付いた要素
     (ここでは$root::A::x)だけに絞られる。xのfeature_typing参照先(NoSuchType)は

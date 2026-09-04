@@ -40,6 +40,22 @@ _REQUIREMENT_VIEW_EDGE_KINDS = {"satisfy", "verify"}
 VIEW_TYPE_STRUCTURE = "structure"
 VIEW_TYPE_REQUIREMENT_TRACEABILITY = "requirement_traceability"
 VIEW_TYPE_VERIFICATION = "verification"
+VIEW_TYPE_STATE_MACHINE = "state_machine"
+VIEW_TYPE_ACTIVITY = "activity"
+
+# 表現力強化Stage 3, Group B f2: 状態遷移図。state_def/state_usage系ノードと
+# transitionエッジのみに絞る。transitionは常に2つの状態を結ぶ（暗黙遷移の
+# 遷移元＝囲むstate自身もstate_def/state_usageであるため）、要求トレーサビリ
+# ティビューのような「相手側を追加で含める」処理は不要。
+_STATE_MACHINE_NODE_TYPES = {"state_def", "state_usage"}
+_STATE_MACHINE_EDGE_KINDS = {"transition"}
+
+# 表現力強化Stage 3, Group C g1: アクティビティ図。action_def/action_usage系
+# ノードとsuccession/flowエッジのみに絞る。succession/flowも常に2つの
+# アクション（またはそのポート、e3のフォールバックによりownerアクションへ
+# 解決される）を結ぶため、state_machineと同様に相手側の追加取り込みは不要。
+_ACTIVITY_NODE_TYPES = {"action_def", "action_usage"}
+_ACTIVITY_EDGE_KINDS = {"succession", "flow"}
 
 # Group2 b8(V2): 検証ビュー。Findingが付いた要素を起点に、b2(I2影響範囲ハイライト,
 # viewer/frontend/app.jsのfindImpactedElementIds)と同じBFS・既定2次までの
@@ -123,10 +139,34 @@ def _select_verification_view(semantic_model: Dict, finding_element_ids):
     return visited, selected_edges
 
 
+def _select_state_machine_view(semantic_model: Dict, finding_element_ids=None):
+    nodes_in = semantic_model["nodes"]
+    node_ids = {
+        sid for sid, entry in nodes_in.items() if entry["type"] in _STATE_MACHINE_NODE_TYPES
+    }
+    selected_edges = [
+        edge for edge in semantic_model["edges"] if edge["kind"] in _STATE_MACHINE_EDGE_KINDS
+    ]
+    return node_ids, selected_edges
+
+
+def _select_activity_view(semantic_model: Dict, finding_element_ids=None):
+    nodes_in = semantic_model["nodes"]
+    node_ids = {
+        sid for sid, entry in nodes_in.items() if entry["type"] in _ACTIVITY_NODE_TYPES
+    }
+    selected_edges = [
+        edge for edge in semantic_model["edges"] if edge["kind"] in _ACTIVITY_EDGE_KINDS
+    ]
+    return node_ids, selected_edges
+
+
 _VIEW_SELECTORS = {
     VIEW_TYPE_STRUCTURE: _select_structure_view,
     VIEW_TYPE_REQUIREMENT_TRACEABILITY: _select_requirement_traceability_view,
     VIEW_TYPE_VERIFICATION: _select_verification_view,
+    VIEW_TYPE_STATE_MACHINE: _select_state_machine_view,
+    VIEW_TYPE_ACTIVITY: _select_activity_view,
 }
 
 
@@ -143,9 +183,15 @@ def build_graph_ir(
         view_type: "structure"（既定、実装仕様書3章）、
             "requirement_traceability"（Group2 b6、requirement_def/
             satisfy_requirement_usage/verify_requirement_usageとその
-            satisfy/verify先を中心にしたビュー）、または
+            satisfy/verify先を中心にしたビュー）、
             "verification"（Group2 b8、finding_element_idsを起点に
-            resolvedエッジ上をBFSで既定2次まで辿った要素に絞ったビュー）
+            resolvedエッジ上をBFSで既定2次まで辿った要素に絞ったビュー）、または
+            "state_machine"（表現力強化Stage 3 Group B f2、state_def/
+            state_usage系ノードとtransitionエッジのみに絞ったビュー。
+            `viewer.view_ir.build_flow_view_ir`と組み合わせて使う想定）、または
+            "activity"（表現力強化Stage 3 Group C g1、action_def/
+            action_usage系ノードとsuccession/flowエッジのみに絞ったビュー。
+            同じく`build_flow_view_ir`と組み合わせて使う）
         finding_element_ids: view_type="verification"の起点となる要素id集合
             （Findingが付いた要素のelement_id）。他のview_typeでは無視される。
 

@@ -51,6 +51,15 @@ _KIND_DASH = {
     "verify": "4 2",
 }
 
+# 表現力強化 Stage 3: 状態遷移図の状態ノード（Group B f3）とアクティビティ図の
+# アクションノード（Group C g2）は、いずれもSysML/UML標準記法で角丸矩形が
+# 使われる慣習のため、同じ仕組みを流用する（ガード条件ラベル等の詳細な記法は
+# 対象外）。transition/succession/flowエッジ自体は、`_KIND_MARKER`に個別の
+# キーが無いため既存の既定（塗り矢印）にフォールバックする挙動がそのまま
+# 「方向のある矢印」という要件を満たすため、変更不要だった（g2で確認済み）。
+_ROUNDED_NODE_TYPES = {"state_def", "state_usage", "action_def", "action_usage"}
+_ROUNDED_CORNER_RADIUS = 10
+
 
 def _source_range_attrs(source_range: Optional[Dict]) -> str:
     """source_rangeをdata-*属性の文字列へ変換する（実装仕様書5.2節）。
@@ -75,12 +84,17 @@ def _render_node(node: Dict) -> str:
     node_type = escape(node["type"], quote=True)
     label = escape(node["label"])
     x, y, width, height = node["x"], node["y"], node["width"], node["height"]
+    corner_attrs = (
+        f' rx="{_ROUNDED_CORNER_RADIUS}" ry="{_ROUNDED_CORNER_RADIUS}"'
+        if node["type"] in _ROUNDED_NODE_TYPES
+        else ""
+    )
 
     return (
         f'<g class="sysml-node" data-element-id="{element_id}" data-type="{node_type}"'
         f'{_source_range_attrs(node["source_range"])}>'
         f'<rect x="{x}" y="{y}" width="{width}" height="{height}"'
-        f' fill="{_NODE_FILL}" stroke="{_NODE_STROKE}" />'
+        f' fill="{_NODE_FILL}" stroke="{_NODE_STROKE}"{corner_attrs} />'
         f'<text x="{x + 6}" y="{y + 16}" fill="{_TEXT_COLOR}" font-size="12">{label}</text>'
         f"</g>"
     )

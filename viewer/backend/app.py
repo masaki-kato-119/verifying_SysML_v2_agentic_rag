@@ -25,9 +25,9 @@ from sysml_v2_checker_advanced.semantic_model import (
 from viewer.backend.explain import explain_element
 from viewer.backend.rag_client import get_rag_client
 from viewer.backend.related_concepts import search_related_concepts
-from viewer.graph_ir import VIEW_TYPE_STRUCTURE, build_graph_ir
+from viewer.graph_ir import VIEW_TYPE_ACTIVITY, VIEW_TYPE_STATE_MACHINE, VIEW_TYPE_STRUCTURE, build_graph_ir
 from viewer.svg_renderer import render_svg
-from viewer.view_ir import build_view_ir
+from viewer.view_ir import build_flow_view_ir, build_view_ir
 
 _FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
@@ -94,9 +94,16 @@ def get_model(request: ModelRequest) -> ModelResponse:
         )
     except ValueError as e:
         return ModelResponse(view_type_error=str(e))
-    view_ir = build_view_ir(
-        graph_ir, collapsed_ids=set(request.collapsed_ids), pinned_positions=request.pinned_positions
-    )
+    # 表現力強化Stage 3, Group B f4 / Group C g3: state_machine/activityは
+    # 入れ子矩形（包含関係の表現）ではなく層状（フロー）レイアウトを使う。
+    # 折りたたみ・手動配置はこれらのビューではまだ対応しない
+    # （build_flow_view_irは対応する引数を持たない）。
+    if request.view_type in (VIEW_TYPE_STATE_MACHINE, VIEW_TYPE_ACTIVITY):
+        view_ir = build_flow_view_ir(graph_ir)
+    else:
+        view_ir = build_view_ir(
+            graph_ir, collapsed_ids=set(request.collapsed_ids), pinned_positions=request.pinned_positions
+        )
     svg = render_svg(view_ir)
 
     return ModelResponse(
