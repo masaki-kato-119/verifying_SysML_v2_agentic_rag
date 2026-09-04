@@ -223,10 +223,31 @@ E1 の修正で最小再現とAST反映は確認できたが、**対象4ファ�
 | QPE（`value v: Integer[0..*] = .*/.*[Integer];`） | `QPE-Qualifier.sysml:6`, `QPE-Wildcard.sysml:8`, `QPE-Traversal.sysml:6` | 同じ行で `no viable alternative`。XPECTヘッダに `noErrors` と書かれているがjar 0.61.0経由では拒否される |
 | `transition first then <対象>;`（source欠落）＋行コメント | `25-accept-transition-trailing-comment.{input,expected}.sysml:1` | 1行目で `no viable alternative at input 'transition'` |
 | `final <名前>;` | `WebShopBehavior.sysml:26` | 26行で `no viable alternative at input 'final'` |
+| `entry state <名前>;` | `sysml2-cli/tests/fixtures/vehicle.sysml:75,77` | 75行・77行で `no viable alternative at input 'entry'`。`private import` へ書き換えたコピーでも同じ（下記の注記参照） |
 | `usecase`（1語） | `EIT_System_Use_Cases.sysml:10` | 参照実装はそれ以前の4行目 `actor EngineerTechnician;`（package直下のactor。ローカルは受理する）を拒否して解析を打ち切る。ファイル全体が非標準 |
 
 いずれも `alias ... as ...` のように**ローカルと参照実装が同一の理由で拒否している**ため、
 ローカル側を直す必要はない。以後の計測で「偽のギャップ」として再浮上させないための記録。
+
+### 【2026-09-04 訂正】`entry state <名前>;` は当初「真のギャップ」と誤判定していた
+
+`fix_entry_state_in_state_body`（E4）は「参照実装が構文エラー0件で受理する」という
+根拠で起票したが、**その判定は誤りだった**。検証スクリプトが `vehicle.sysml` を
+basename で探し、`sysml-v2-lsp/examples` というパスを優先指定していたが該当パスが
+存在せず、フォールバックで**別の `vehicle.sysml`（59行・`entry` を一切含まない
+`sysml-v2-lsp/test/fixtures/valid/`）**を検査していた。存在しない75行目について
+「構文エラー0件」と読んでいたことになる。
+
+改めて実ファイル（`sysml2-cli/tests/fixtures/vehicle.sysml`）と最小形の両方で
+確認した結果、参照実装は `entry state e;` を**全形で拒否**する
+（`do state e;`・`exit state e;`・本体付き・型節付き・state usage内も同様に拒否。
+`entry action a;` は受理）。したがってこのファイルが非標準であり、ローカルの
+修正は不要。
+
+**教訓**: サンプルを basename で引くときは、パス指定が一致しなかった場合に
+黙って別ファイルへフォールバックする実装にしないこと。行番号まで指定して
+検証しているなら、対象ファイルの行数と実際の該当行の内容も一緒に出力して
+突き合わせること。
 
 ## v2-6. Annex A 車両モデルの完全なギャップ一覧（2026-09-04追記）
 
