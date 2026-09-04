@@ -3534,7 +3534,10 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             # `exhibit state 'vehicle states': 'Vehicle States';`のような型節
             # （2026-08-28、参照実装比較レポートP1-2で発見）。
             "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
-            "redefines": [],
+            # `exhibit state vehicleStates redefines vehicleStates;`のような
+            # redefine節。`state`付きの形にも付きうる（2026-09-04、比較レポート
+            # v2 §v2-4 E1。postKind/postTargetのラベルは両代替で共有される）。
+            "redefines": self._redefine_list_namespace(ctx.postKind, ctx.postTarget),
             # `exhibit state vehicleStates parallel { ... }`のような直交
             # (orthogonal)状態修飾子・本体（2026-08-28、state parallel
             # 修飾子の調査で発見）。

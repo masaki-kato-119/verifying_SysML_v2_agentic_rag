@@ -242,8 +242,16 @@ eventOccurrenceUsageStmt
 // （5-State-based Behavior-1.sysml）のように、`state`キーワードを省略した
 // 裸形（参照は`.`/`::`混在のnamespacePath、redefine節も持ちうる）もある
 // （2026-08-29、235件パース失敗の要因分析で発見）。
+// `exhibit state vehicleStates redefines vehicleStates;`（SysML v2 Spec Annex A
+// SimpleVehicleModel.sysml:573・Annex_A_VehicleViews.sysml:169 等、OMG公式サンプル）
+// のように、`state`キーワード付きの形もredefine節を持ちうる。裸形（第2代替）には
+// 既にあったのに`state`付き（第1代替）には無いという実装の非対称性だった
+// （2026-09-04、比較レポートv2 §v2-4 E1。参照実装は該当4ファイルすべてで
+// 構文エラー0件＝この構文を受理することを確認済み）。
 exhibitStateUsageStmt
-    : 'exhibit' 'state' simpleName (':' typeRef=namespacePath)? isParallel='parallel'? ( '{' stateBodyElement* '}' | ';' )
+    : 'exhibit' 'state' simpleName (':' typeRef=namespacePath)?
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      isParallel='parallel'? ( '{' stateBodyElement* '}' | ';' )
     | 'exhibit' ref=namespacePath
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
       isParallel='parallel'?
