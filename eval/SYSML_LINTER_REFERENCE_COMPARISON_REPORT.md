@@ -1,12 +1,244 @@
 # SysML v2 独自チェッカー vs OMG公式Pilot Implementation 比較評価レポート
 
-作成日: 2026-08-28
 対象: `sysml_v2_checker_advanced/`（ANTLR4ベース、`sysml_v2_checker_advanced/antlr/SysMLMin.g4`という「最小」文法）
-比較対象: OMG公式 SysML v2 Pilot Implementation（`sysml-v2-pilot-implementation` 由来の Jupyter kernel jar 経由）
+比較対象: OMG公式 SysML v2 Pilot Implementation（`sysml-v2-pilot-implementation` 由来の Jupyter kernel jar 0.61.0 経由）
+
+このファイルは2つの測定を並記している。
+
+- **v2（2026-09-04）** — 下記「v2」節。8/28のレポートで挙げた問題を修正した後の再測定。
+- **v1（2026-08-28）** — 「v1」以降の節（旧レポート本文をそのまま残してある）。修正前のベースライン。
+  v2の差分表はこれを基準に取っている。
+
+---
+
+# v2（2026-09-04）: 修正後の再測定
+
+測定日: 2026-09-04
+ハーネス: `scripts/run_reference_comparison_eval.py --timeout 120 --workers 1 --canary-interval 25`
+差分集計: `scripts/compare_reference_eval_runs.py --baseline eval/sysml_results_baseline_20260828`
+
+## v2-0. この測定の信頼性について（先に読むこと）
+
+v2の実行中に**ハーネス自体の重大な欠陥**を発見し、修正してから測り直している。
+
+並列実行（`--workers 4`〜`6`）中は、参照実装が**明らかに不正な入力
+`package P { part def }` に対してさえ診断0件を返す**ことがあった。負荷が無い状態で
+同じ入力を単独実行すれば正しくエラー1件を返すので間欠障害であり、しかもこの失敗は
+**「本当にクリーンなファイル」と区別が付かない**。放置すると `local_only_error` を
+不当に増やし `both_error` を減らす形で集計を静かに壊す。原因は複数JVMが同一の
+`sysml.library` ツリーを demand-load する際の失敗（EMFが
+`FileNotFoundException: ...sysml.library\Kernel%20Libraries\...` を報告する。空白が
+URIエンコードされた `%20` のまま解決されており、ライブラリ自身のディレクトリ名に
+空白が含まれるため置き場所を変えても回避できない）。
+
+対策として次を入れた（詳細は各ファイルのdocstring）。
+
+1. **canary**: 実行前・25件ごと・実行後に既知の不正スニペットを参照実装へ流し、
+   error診断が返ることを確認する。結果はcanaryが通るまでディスクへ書かず、
+   落ちたら直前のcanary以降をまとめて破棄して中断する。
+2. `reference_driver.py` が stderr のライブラリロード失敗マーカーを検出したら、
+   診断が返っていても `crashed` として破棄する。8/28のベースライン730件に対して
+   この判定で棄却されるものは0件（＝健全な実行を誤って落とさない）。
+3. `--workers` の既定を6→1（逐次）へ変更。
+4. **`--timeout` が無視されていたバグを修正**。`process_one` が受け取った値を
+   `run_reference_check()` へ中継しておらず、何秒を指定してもドライバ側の既定30秒が
+   使われていた。v1の `reference_crash` 5件も実際には30秒でのタイムアウトである。
+
+**v2の実行ではcanaryを23回すべて通過し、1件も破棄していない。** したがって以下の数値は
+「参照実装が終始検証を行っていたことが確認された状態」で得たものである。
+
+## v2-1. agreement の変化（730件、確定値）
+
+| agreement | v1 (8/28) | v2 (9/04) | 差分 |
+|---|---:|---:|---:|
+| both_clean | 253 (34.7%) | **433 (59.3%)** | +180 |
+| both_error | 215 (29.5%) | 186 (25.5%) | −29 |
+| local_only_error（偽陽性疑い） | 231 (31.6%) | **52 (7.1%)** | **−179** |
+| reference_only_error（偽陰性疑い） | 26 (3.6%) | 59 (8.1%) | +33 |
+| reference_crash（無関係） | 5 (0.7%) | **0** | −5 |
+
+遷移の内訳:
+
+| v1 → v2 | 件数 | 評価 |
+|---|---:|---|
+| local_only_error → both_clean | **180** | 改善 |
+| both_error → reference_only_error | 40 | 要トリアージ（§v2-3） |
+| reference_only_error → both_error | 7 | 改善 |
+| reference_crash → both_error / local_only_error | 4 / 1 | 改善（タイムアウト解消） |
+| （変化なし） | 498 | — |
+
+カテゴリ別（v2）:
+
+| category | n | both_clean | both_error | local_only | reference_only |
+|---|---:|---:|---:|---:|---:|
+| official_examples | 322 | 230 (71.4%) | 57 (17.7%) | 33 (10.2%) | 2 (0.6%) |
+| tooling_fixtures | 192 | 115 (59.9%) | 43 (22.4%) | 8 (4.2%) | 26 (13.5%) |
+| xpect_test_cases | 126 | 74 (58.7%) | 19 (15.1%) | 9 (7.1%) | 24 (19.0%) |
+| curated_models | 36 | 6 (16.7%) | 24 (66.7%) | 2 (5.6%) | 4 (11.1%) |
+| industry | 28 | 3 (10.7%) | 25 (89.3%) | 0 | 0 |
+| educational | 25 | 5 (20.0%) | 17 (68.0%) | 0 | 3 (12.0%) |
+| textbook | 1 | 0 | 1 (100%) | 0 | 0 |
+
+v1が最重要問題として挙げた「official_examples の `local_only_error` 47.8%」は
+**10.2% へ低下**した（154件 → 33件）。
+
+参考: 同じ730件に対する**パース成功率は 702/730 = 96.2%**（official_examples は
+319/322 = **99.1%**、industry は 28/28 = 100%）。
+
+## v2-2. 残った `local_only_error` 52件の性質（重要）
+
+**52件のうち、パースエラーは1件しかない。残り51件はパースに成功しており、
+lintルールだけが誤検出している。**
+
+つまり **v1の中心的な問題だった「文法カバレッジ不足」は実質的に解消した**。
+残っているのは lint 側の問題である。
+
+唯一のパースエラーは
+`eval/sysml_samples/raw/sysml-v2-pilot-implementation/sysml/src/examples/Vehicle Example/SysML v2 Spec Annex A SimpleVehicleModel.sysml:573`
+の `exhibit state vehicleStates redefines vehicleStates;`（このファイルは参照実装が
+**エラー0件**を返しているため、ローカルの真の文法ギャップと確定。§v2-4のE1）。
+
+lintのみ51件の頻出ルール（ファイル数）:
+
+| ファイル数 | ルール |
+|---:|---|
+| 10 | `Import 'X' が存在しないパッケージ 'Y' を参照しています` |
+| 10 | `Interface usage 'X' の from エンドが存在しない要素を参照しています` |
+| 10 | `Interface usage 'X' の to エンドが存在しない要素を参照しています` |
+| 6 | `Individual definition 'X' は空の多重度を持つ必要があります` |
+| 6 | `Allocation usage 'X' の to エンドが存在しない要素を参照しています` |
+| 5 | `Allocation usage 'X' の from エンドが存在しない要素を参照しています` |
+| 4 | `Part instance 'X' が存在しない型 'Y' を参照しています` |
+| 4 | `Import 'X' が存在しない要素を参照しています` |
+| 3 | `Transition のターゲットステート 'X' が存在しません` |
+
+上位のほとんどが「**他ファイルや標準ライブラリにある要素を参照しており、単一ファイル
+解析では解決できないものをエラーとして報告している**」ものである。これは v1 §4.2 が
+`reference_only_error` 側の限界として説明した単一ファイル解析の制約の、鏡像にあたる。
+`Individual definition` の多重度ルールだけは性質が異なり、独自ルールの妥当性そのものを
+再検討すべき候補。
+
+## v2-3. `both_error → reference_only_error` 40件のトリアージ（v1 P1-Dへの回答）
+
+**問い**: 偽陽性を179件減らした代償として、「文法を緩めすぎて本来検出すべきものを
+見逃すようになった」分が混ざっていないか。
+
+**答え: 混ざっていない。** 40件の内訳は次の通りで、文法の過度な寛容化に由来するものは無い。
+
+| 分類 | 件数 | 扱い |
+|---|---:|---|
+| 型解決カスケード（`Couldn't resolve` / `must be typed by`） | 21 | 設計上スコープ外（v1 §4.2）。偽陰性として数えない |
+| **意味検証ルール未実装** | **14** | **真の偽陰性。ただし文法とは無関係** |
+| 参照実装側の構文エラー（裸import artifact 等） | 5 | v1 §4.3。参照実装側の制約 |
+
+40件はいずれも「**v1ではローカルがパースエラーを出していたため both_error に分類されて
+いたファイル**」であり、文法を直してパースが通った結果、参照実装の**意味制約エラーだけが
+残った**ものである。つまりルールは元から存在しておらず、パースエラーの陰に隠れていた。
+**文法が緩くなったのではなく、隠れていた lint ルールの欠落が見えるようになった**と読むのが
+正しい。
+
+未実装の意味検証ルール14件の内訳（`semantic_rule` バケット）:
+
+| 参照実装のメッセージ | 該当ファイル |
+|---|---|
+| `Subject must be first parameter.` | `16-concern-stakeholder.{input,expected}.sysml`, `26-subject-actor-stakeholder-trailing-comment.{input,expected}.sysml` |
+| `Only one objective is allowed.` | `CaseSubjectObjective_Invalid.sysml` |
+| `Must be model-level evaluable` | `MetadataUsage_Invalid.sysml` |
+| `Must be owned by an occurrence definition or usage.` | `PortionUsage_Invalid.sysml` |
+| `A package-level feature cannot be redefined` | `Redefinition_OwningType_Invalid.sysml` |
+| `Must have at least two related elements` | `Relationship_invalid_relatedElement{0,1}.sysml` |
+| `A parallel state cannot have successions or transitions.` | `TransitionUsage_invalid.sysml` |
+| `An owned usage of a variation must be a variant.` | `Variability_invalid.sysml` |
+| `A requirement verification must be in the objective of a verification case.` | `Verification_invalid.sysml` |
+| `A view definition may have at most one view rendering.` | `ViewRendering_invalid.sysml` |
+
+**`Subject must be first parameter.` は v1 §4.1 で未実装として挙げられ、
+`sysml_linter_fixes` プランで実装済みとされたルールである。** 4ファイルで検出できて
+いないため、実装の網羅漏れの疑いがある（最優先で確認すべき項目）。
+
+それ以外の10件は、いずれも公式Pilot Implementation自身の
+`xpect/tests/validation/invalid/*.sysml`（1ファイル1ルールの意図的invalidフィクスチャ）
+由来であり、**既製の最小テストケースが揃っているため実装コストは低い**。
+
+## v2-4. 文法ギャップの確定結果
+
+730件のパース失敗28件を、最小再現の作成と参照実装の判定で分類した。参照実装の判定は
+「当該ファイルが裸の `import` を含む場合は v1 §4.3 の artifact でファイル全体の解析に
+失敗するため、その先の行の判定は使えない」ことを考慮し、必要なものは裸importを
+`private import` へ書き換えたコピーで再確認している（canaryを前後に挟んで実施）。
+
+### 修正すべきギャップ（3種）
+
+| # | 構文 | 該当 | 参照実装の判定 |
+|---|---|---:|---|
+| E1 | `exhibit state <名前> redefines <対象>;` | 4（うち公式2） | 4ファイルすべて**構文エラー0件＝受理** |
+| E2 | 括弧式の中のコメント `= ( /* c */ )` | 1（公式） | 構文エラー0件＝受理 |
+| E4 | `entry state <名前>;`（state本体） | 1 | 構文エラー0件＝受理 |
+
+- **E1**: `SysMLMin.g4:245-251`。第2代替（`exhibit ref` 形、247-250行）には継承節反復が
+  あるのに第1代替（`exhibit state <名前>` 形、246行）には無い、という実装の非対称性。
+  該当: 公式 `SysML v2 Spec Annex A SimpleVehicleModel.sysml:573`、同内容の
+  `SimpleVehicleModel.sysml:573`、`Annex_A_VehicleViews.sysml:169`、
+  `smart-home-complex2.sysml:676`。**246行への1節追加で4ファイルが通る見込み。**
+- **E2**: `package P { attribute a : X[*] = ( /* c */ ); }` が
+  `no viable alternative at input '(/* c */'` で失敗する。`= ( )`（空括弧）・`= ( b )`・
+  `= ( b, c )` は通るので、**括弧の中にコメントが入ると壊れる**。エラーメッセージに
+  コメント本文がそのまま現れるため、ブロックコメントが hidden チャネルへ送られていない
+  疑いが強い。該当: 公式 `training/33. Analysis/Analysis Case Usage Example.sysml:11-12`。
+- **E4**: `package P { state def S { entry state e; state x; } }` が
+  `no viable alternative at input 'entrystate'` で失敗する。`entry; then x;` は通る。
+  該当: `sysml-v2-lsp/examples/vehicle.sysml:75`。
+
+### パースできないが修正対象ではないサンプル
+
+**意図的な不正フィクスチャ（11件）** — 失敗が正しい挙動:
+`missing_name` / `unclosed_brace` / `unterminated_string` / `bad_doc_syntax` /
+`double_colon_typo` / `invalid_operator` / `syntax-error` / `missing_semicolon` /
+`bad_multiplicity` / `unexpected_keyword` / `e3007_negative`。
+
+**KerMLの構文（2件、SysML v2の範囲外）** — `datatype Real`:
+`cross_file_a.sysml:4`、`datatype_basic.sysml:3`。
+
+**参照実装も同じ行で拒否した＝ファイル側が非標準（10件）**:
+
+| 構文 | 該当 | 参照実装の判定 |
+|---|---|---|
+| `alias <修飾名> as <名前>;` | `VehicleModel.sysml:201` | 201行で `mismatched input '::' expecting 'for'`（ローカルと同一のメッセージ）。SysML v2のalias記法は `alias <名前> for <修飾名>` |
+| 制約式中の `&&` | `HVACSystemRequirements.sysml:51` | 51行で `no viable alternative at input '&'` |
+| QPE（`value v: Integer[0..*] = .*/.*[Integer];`） | `QPE-Qualifier.sysml:6`, `QPE-Wildcard.sysml:8`, `QPE-Traversal.sysml:6` | 同じ行で `no viable alternative`。XPECTヘッダに `noErrors` と書かれているがjar 0.61.0経由では拒否される |
+| `transition first then <対象>;`（source欠落）＋行コメント | `25-accept-transition-trailing-comment.{input,expected}.sysml:1` | 1行目で `no viable alternative at input 'transition'` |
+| `final <名前>;` | `WebShopBehavior.sysml:26` | 26行で `no viable alternative at input 'final'` |
+| `usecase`（1語） | `EIT_System_Use_Cases.sysml:10` | 参照実装はそれ以前の4行目 `actor EngineerTechnician;`（package直下のactor。ローカルは受理する）を拒否して解析を打ち切る。ファイル全体が非標準 |
+
+いずれも `alias ... as ...` のように**ローカルと参照実装が同一の理由で拒否している**ため、
+ローカル側を直す必要はない。以後の計測で「偽のギャップ」として再浮上させないための記録。
+
+## v2-5. 次のアクション（blackboardプラン `sysml_linter_fixes_v2`）
+
+| 優先 | 内容 |
+|---|---|
+| 済 | `fix_reference_harness_silent_failure`（§v2-0） |
+| 高 | E1（`exhibit state ... redefines`）— 公式サンプル4件が1節追加で通る |
+| 高 | `Subject must be first parameter.` の網羅漏れ確認（§v2-3） |
+| 中 | E2・E4 の文法追加 |
+| 中 | xpect invalid フィクスチャ由来の意味検証ルール10種（§v2-3。最小テストケースが既製） |
+| 中 | `local_only_error` 51件の lint 偽陽性（§v2-2。単一ファイル解析の制約とどう折り合うかの設計判断を含む） |
+
+---
+
+# v1（2026-08-28）: 修正前のベースライン
+
+作成日: 2026-08-28
 
 **本レポートのスコープは「問題の洗い出し」までであり、修正の実装は別プランとする。**
 次にこのプロジェクトへ入る人が本レポートだけを読んで各問題を再現・着手できることを目標に、
 具体的なファイルパス・行番号・コード抜粋・診断メッセージを添えている。
+
+> **v2からの注記**: 以下のv1本文に挙げられたP0-1〜P2-2の文法ギャップは、
+> `sysml_linter_fixes` プラン（188タスク中186完了）で対応済みである。
+> v1 §2.1 の数値は §v2-1 の "v1" 列に対応する。v1 §1.4-2 の
+> 「参照実装はタイムアウトする」は、実際には `--timeout` が無視されていた
+> ハーネスのバグ（§v2-0）が原因で、修正後は `reference_crash` 0件になった。
 
 ---
 
