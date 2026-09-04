@@ -3299,12 +3299,17 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
 
     def visitMetadataUsageShorthand(self, ctx: SysMLMinParser.MetadataUsageShorthandContext) -> Dict:
         # `@Classified { ... }`/`@Security;`という`metadata`キーワード省略形。
+        # `@Rationale about X::y { ... }`のようにabout節も持ちうる
+        # （2026-09-04、レポートv2 §v2-6 G3）。キーワード形（_named_simple_node）
+        # と同じく、空のときはキー自体を省略して既存の完全一致テストを壊さない。
+        about_targets = ctx.aboutTargets or []
         return {
             "type": "metadata_usage",
             "name": _namespace_path_text(ctx.typeRef),
             "shortName": None,
             "inheritance": None,
             "isAbstract": False,
+            **({"about": [_namespace_path_text(t) for t in about_targets]} if about_targets else {}),
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 

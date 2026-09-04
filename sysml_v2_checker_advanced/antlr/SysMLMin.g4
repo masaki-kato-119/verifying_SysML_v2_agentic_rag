@@ -751,7 +751,15 @@ metadataUsage
     : prefixMetadataAnnotation* isAbstract='abstract'? 'metadata' simpleName (':' typeRef=namespacePath)? inheritanceClause?
       ('about' aboutTargets+=namespacePath (',' aboutTargets+=namespacePath)*)?
       ( '{' partBodyElement* '}' | ';' )  # metadataUsageKeyword
-    | '@' typeRef=namespacePath ( '{' partBodyElement* '}' | ';' )                                        # metadataUsageShorthand
+    // `@Rationale about engineTradeOffAnalysis::vehicle_b_engine4cyl{ ... }`・
+    // `@Risk about X::y::z { ... }`（SysML v2 Spec Annex A SimpleVehicleModel.sysml:
+    // 1121,1128,1134）のように、`@`短縮形も`about`節を持ちうる。`metadata`
+    // キーワード形（上の代替）には既にあったのに短縮形には無い、という
+    // 実装の非対称性だった（2026-09-04、比較レポートv2 §v2-6 G3。参照実装は
+    // 同ファイル全体に対して診断0件＝この記法を受理する）。
+    | '@' typeRef=namespacePath
+      ('about' aboutTargets+=namespacePath (',' aboutTargets+=namespacePath)*)?
+      ( '{' partBodyElement* '}' | ';' )                                                                 # metadataUsageShorthand
     ;
 
 // --- calculation def / constraint def (8.2.2.19, 8.2.2.20) --------------------
