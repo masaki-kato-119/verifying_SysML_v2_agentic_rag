@@ -191,12 +191,77 @@ def _make_edge(
     }
 
 
+def _format_expression(expr: object) -> str:
+    """式ASTを人間可読な短い文字列へ変換する（h2: guard式のラベル表示用）。
+    未知の式形は`"…"`にフォールバックする（ラベル表示は補助情報であり、
+    完全な式を再現する必要はないため）。"""
+    if not isinstance(expr, dict):
+        return str(expr) if expr is not None else "…"
+    expr_type = expr.get("type")
+    if expr_type == "name_ref":
+        return str(expr.get("reference", "?"))
+    if expr_type == "literal":
+        return str(expr.get("value"))
+    if expr_type == "binary_expr":
+        left = _format_expression(expr.get("left"))
+        right = _format_expression(expr.get("right"))
+        return f"{left} {expr.get('op', '?')} {right}"
+    return "…"
+
+
+def _format_trigger(trigger: Optional[Dict]) -> Optional[str]:
+    """h2: transitionの`trigger`（accept節）をラベル用文字列へ変換する。"""
+    if not isinstance(trigger, dict):
+        return None
+    if "reference" in trigger:
+        return str(trigger["reference"])
+    if "trigger_kind" in trigger:
+        return str(trigger["trigger_kind"])
+    return None
+
+
+def _format_effect(effect: Optional[Dict]) -> Optional[str]:
+    """h2: transitionの`effect`（do節）をラベル用文字列へ変換する。"""
+    if not isinstance(effect, dict):
+        return None
+    if "action_reference" in effect:
+        return str(effect["action_reference"])
+    send = effect.get("send")
+    if isinstance(send, dict):
+        to = send.get("to")
+        return f"send to {to}" if to else "send"
+    return None
+
+
+def _format_transition_label(
+    trigger: Optional[Dict], guard: Optional[Dict], effect: Optional[Dict]
+) -> Optional[str]:
+    """h2: UML/SysML標準記法に近い`trigger [guard] / effect`形のラベルを
+    組み立てる。いずれも無ければNone（ラベル無し、遷移矢印のみ）を返す。"""
+    trigger_text = _format_trigger(trigger)
+    guard_text = _format_expression(guard["expression"]) if isinstance(guard, dict) else None
+    effect_text = _format_effect(effect)
+
+    if trigger_text is None and guard_text is None and effect_text is None:
+        return None
+
+    label = trigger_text or ""
+    if guard_text is not None:
+        label = f"{label} [{guard_text}]" if label else f"[{guard_text}]"
+    if effect_text is not None:
+        label = f"{label} / {effect_text}" if label else f"/ {effect_text}"
+    return label
+
+
 def _make_transition_edge(
     parent_id: Optional[str],
     source_ref: Optional[str],
     target_ref: str,
     reverse_index: Dict[int, str],
     linter: SysMLAdvancedLinter,
+    trigger: Optional[Dict] = None,
+    guard: Optional[Dict] = None,
+    effect: Optional[Dict] = None,
 ) -> Dict:
     """transitionは`_make_edge`の前提（宣言しているノード自身が関係の起点）と
     異なり、source/targetという2つの外部参照の間の関係を表す。source省略時
@@ -224,7 +289,7 @@ def _make_transition_edge(
     else:
         resolution_status = "unresolved_external"
 
-    return {
+    edge = {
         "from_id": from_id,
         "to_id": to_id,
         "kind": "transition",
@@ -232,6 +297,10 @@ def _make_transition_edge(
         "resolution_status": resolution_status,
         "reference_text": target_ref,
     }
+    label = _format_transition_label(trigger, guard, effect)
+    if label is not None:
+        edge["label"] = label
+    return edge
 
 
 def _succession_end_reference(value) -> Optional[str]:
@@ -344,7 +413,14 @@ def build_relation_edges(
             if isinstance(target_ref, str) and target_ref:
                 edges.append(
                     _make_transition_edge(
-                        entry["parent_id"], node.get("source"), target_ref, reverse_index, linter
+                        entry["parent_id"],
+                        node.get("source"),
+                        target_ref,
+                        reverse_index,
+                        linter,
+                        trigger=node.get("trigger"),
+                        guard=node.get("guard"),
+                        effect=node.get("effect"),
                     )
                 )
 

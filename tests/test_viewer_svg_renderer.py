@@ -229,6 +229,57 @@ def test_end_to_end_state_machine_renders_rounded_states_with_arrows():
     assert "<marker" in svg
 
 
+def test_node_shows_dimmed_type_keyword_above_label():
+    """表現力強化 h1: ノードの名前の上に、ギユメで囲んだ種別キーワードを
+    別行（UMLのステレオタイプ表記）として小さく薄い色で添える。
+    SysML v2の慣習に合わせ、定義（_def）は"part def"のように"def"を残し、
+    使用（_usage）は接尾辞を落として"part"のみ表示する。"""
+    svg = _render(_SAMPLE)
+    assert '<tspan x="22" fill="#888888" font-size="9">«part def»</tspan>' in svg
+    assert '<tspan x="22" dy="14">Engine</tspan>' in svg
+    assert "«part»" in svg  # myEngine (part_usage、defを含まないキーワード)
+
+
+def test_type_keyword_distinguishes_def_from_usage():
+    from viewer.svg_renderer import _type_keyword
+
+    assert _type_keyword("part_def") == "part def"
+    assert _type_keyword("part_usage") == "part"
+    assert _type_keyword("state_def") == "state def"
+    assert _type_keyword("state_usage") == "state"
+    assert _type_keyword("satisfy_requirement_usage") == "satisfy requirement"
+
+
+def test_transition_edge_with_trigger_guard_effect_renders_label():
+    """表現力強化 h2: transitionのtrigger/guard/effectを
+    「trigger [guard] / effect」形のラベルとしてエッジ中点付近に描画する。"""
+    from sysml_v2_checker_advanced.semantic_model import build_semantic_model
+    from viewer.graph_ir import VIEW_TYPE_STATE_MACHINE, build_graph_ir
+    from viewer.view_ir import build_flow_view_ir
+
+    text = """
+    state def PowerState {
+        state Off;
+        state On;
+        transition first Off accept TurnOn if powerLevel > 0.0 do action logStart then On;
+    }
+    """
+    _, model = build_semantic_model(text.strip())
+    gir = build_graph_ir(model, view_type=VIEW_TYPE_STATE_MACHINE)
+    vir = build_flow_view_ir(gir)
+    svg = render_svg(vir)
+
+    assert 'class="sysml-edge-label"' in svg
+    assert "TurnOn [powerLevel &gt; 0.0] / logStart" in svg
+
+
+def test_transition_edge_without_label_renders_no_label_text():
+    """暗黙遷移などtrigger/guard/effectを持たないtransitionは、ラベル用の
+    <text>を一切出力しない（既存の描画を無駄に増やさない）。"""
+    svg = _render_single_edge("connection")
+    assert 'class="sysml-edge-label"' not in svg
+
+
 def test_no_marker_defs_when_there_are_no_edges():
     """エッジが1本も無い場合はdefs自体を出さない（出力を無駄に増やさない）。"""
     view_ir = {

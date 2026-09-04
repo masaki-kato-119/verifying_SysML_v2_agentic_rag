@@ -4,6 +4,7 @@ View IRを純粋に走査してSVG文字列を生成する。乱数・現在時�
 一切使わない（同じView IR入力 → 常に同じSVGバイト列。5.1節）。
 """
 
+import re
 from html import escape
 from typing import Dict, Optional
 
@@ -60,6 +61,31 @@ _KIND_DASH = {
 _ROUNDED_NODE_TYPES = {"state_def", "state_usage", "action_def", "action_usage"}
 _ROUNDED_CORNER_RADIUS = 10
 
+# 表現力強化 h2: 状態遷移のtrigger/guard/effectラベル。UML/SysML標準記法の
+# 慣習である「trigger [guard] / effect」文字列を、Semantic Model側
+# （_format_transition_label）で組み立て済みの状態でedge["label"]として
+# 受け取り、エッジの中点付近にテキストとして描画するだけの薄い対応とする。
+_EDGE_LABEL_COLOR = "#444444"
+_EDGE_LABEL_FONT_SIZE = 10
+
+# 表現力強化 h1: 要素の種別キーワード表示。UMLのステレオタイプ表記に合わせ
+# 「«part def»」のようにギユメで囲み、名前とは別の行に表示する（同じ行に
+# 並べると読みにくいとのフィードバックにより2行表示へ変更）。ジオメトリは
+# コンテナの見出し高さ（`view_ir.py`の`_LABEL_HEIGHT`）のみ2行分に拡張した。
+_TYPE_KEYWORD_USAGE_SUFFIX_RE = re.compile(r"(_usage|_instance)$")
+_TYPE_KEYWORD_COLOR = "#888888"
+_TYPE_KEYWORD_FONT_SIZE = 9
+
+
+def _type_keyword(node_type: str) -> str:
+    """SysML v2の慣習に合わせ、定義（`_def`）は"part def"のように"def"を
+    残し、使用（`_usage`/`_instance`）は接尾辞を落として"part"のように
+    キーワードのみ表示する（定義・使用を区別する記法上意味のある差のため、
+    単純な接尾辞除去ではなく`_def`だけ扱いを変える）。"""
+    if node_type.endswith("_def"):
+        return node_type[: -len("_def")].replace("_", " ") + " def"
+    return _TYPE_KEYWORD_USAGE_SUFFIX_RE.sub("", node_type).replace("_", " ")
+
 
 def _source_range_attrs(source_range: Optional[Dict]) -> str:
     """source_rangeをdata-*属性の文字列へ変換する（実装仕様書5.2節）。
@@ -83,6 +109,7 @@ def _render_node(node: Dict) -> str:
     element_id = escape(node["id"], quote=True)
     node_type = escape(node["type"], quote=True)
     label = escape(node["label"])
+    keyword = escape(_type_keyword(node["type"]))
     x, y, width, height = node["x"], node["y"], node["width"], node["height"]
     corner_attrs = (
         f' rx="{_ROUNDED_CORNER_RADIUS}" ry="{_ROUNDED_CORNER_RADIUS}"'
@@ -95,7 +122,11 @@ def _render_node(node: Dict) -> str:
         f'{_source_range_attrs(node["source_range"])}>'
         f'<rect x="{x}" y="{y}" width="{width}" height="{height}"'
         f' fill="{_NODE_FILL}" stroke="{_NODE_STROKE}"{corner_attrs} />'
-        f'<text x="{x + 6}" y="{y + 16}" fill="{_TEXT_COLOR}" font-size="12">{label}</text>'
+        f'<text x="{x + 6}" y="{y + 10}" fill="{_TEXT_COLOR}" font-size="12">'
+        f'<tspan x="{x + 6}" fill="{_TYPE_KEYWORD_COLOR}" font-size="{_TYPE_KEYWORD_FONT_SIZE}">'
+        f"«{keyword}»</tspan>"
+        f'<tspan x="{x + 6}" dy="14">{label}</tspan>'
+        f"</text>"
         f"</g>"
     )
 
@@ -111,11 +142,21 @@ def _render_edge(edge: Dict) -> str:
     dash = _KIND_DASH.get(kind)
     dash_attr = f' stroke-dasharray="{dash}"' if dash else ""
     kind_attr = f' data-kind="{escape(kind, quote=True)}"' if kind else ""
-    return (
+    line = (
         f'<line class="sysml-edge" data-edge-id="{edge_id}"{kind_attr}'
         f' x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}"'
         f' stroke="{_EDGE_STROKE}" stroke-width="1"{dash_attr}{marker_attr} />'
     )
+    label = edge.get("label")
+    if not label:
+        return line
+    mid_x, mid_y = (x1 + x2) / 2, (y1 + y2) / 2
+    label_text = (
+        f'<text class="sysml-edge-label" x="{mid_x}" y="{mid_y - 4}"'
+        f' fill="{_EDGE_LABEL_COLOR}" font-size="{_EDGE_LABEL_FONT_SIZE}"'
+        f' text-anchor="middle">{escape(label)}</text>'
+    )
+    return line + label_text
 
 
 def render_svg(view_ir: Dict) -> str:

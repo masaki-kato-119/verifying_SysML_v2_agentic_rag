@@ -279,6 +279,44 @@ def test_transition_to_unknown_target_is_unresolved_error():
     assert edge["resolution_status"] == "unresolved_error"
 
 
+# --- transitionのtrigger/guard/effectラベル（表現力強化h2） ---------------
+
+_GUARDED_TRANSITION_SAMPLE = """
+state def PowerState {
+    state Off;
+    state On;
+
+    transition first Off
+        accept TurnOn
+        if powerLevel > 0.0
+        do action logStart
+        then On;
+}
+"""
+
+
+def test_transition_label_includes_trigger_guard_effect():
+    _, model = build_semantic_model(_GUARDED_TRANSITION_SAMPLE.strip())
+    edge = next(e for e in model["edges"] if e["kind"] == "transition" and e["from_id"] == "$root::PowerState::Off")
+    assert edge["label"] == "TurnOn [powerLevel > 0.0] / logStart"
+
+
+def test_transition_label_absent_when_no_trigger_guard_effect():
+    """暗黙遷移（entry; then Off;）はtrigger/guard/effectを一切持たないため、
+    "label"キー自体を持たない（ラベル無しの遷移矢印のみ描画される）。"""
+    _, model = build_semantic_model(_STATE_MACHINE_SAMPLE.strip())
+    implicit_edge = next(
+        e for e in model["edges"] if e["kind"] == "transition" and e["from_id"] == "$root::AdvancedSwitch"
+    )
+    assert "label" not in implicit_edge
+
+
+def test_transition_label_trigger_only():
+    _, model = build_semantic_model(_STATE_MACHINE_SAMPLE.strip())
+    edge = next(e for e in model["edges"] if e["kind"] == "transition" and e["from_id"] == "$root::AdvancedSwitch::Off")
+    assert edge["label"] == "TurnOn"
+
+
 def test_existing_edge_kinds_unaffected_by_transition_support():
     """既存のspecialization等のエッジ抽出は、transition対応の追加によって
     無変更で動作する（回帰防止）。"""

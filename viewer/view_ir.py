@@ -9,7 +9,10 @@ from typing import Dict, List, Optional, Tuple
 # レイアウト定数（実装仕様書4.2節：力学モデル等の非決定的手法を避け、
 # 固定パラメータによる決定的な再帰配置にする）。
 _PADDING = 8
-_LABEL_HEIGHT = 24
+# 表現力強化 h1: 種別キーワード（«package»等）と名前を2行に分けて表示する
+# ようになったため（旧: 同じ行に並べていた）、ヘッダー用の高さを24→30へ
+# 拡げて2行分の見た目が窮屈にならないようにする。
+_LABEL_HEIGHT = 30
 _MIN_WIDTH = 90
 _MIN_HEIGHT = 40
 _CHAR_WIDTH = 8  # ラベル長からの概算幅（フォントメトリクスは使わない簡易推定）
@@ -228,11 +231,14 @@ def build_view_ir(graph_ir: Dict, collapsed_ids=None, pinned_positions=None) -> 
         dy = to_center[1] - from_center[1]
         from_point = _boundary_point(edge["from"], dx, dy)
         to_point = _boundary_point(edge["to"], -dx, -dy)
-        edges_out.append({
+        edge_out = {
             "id": edge["id"],
             "kind": edge["kind"],  # 表現力強化Stage 1: SVGレンダラーが種別ごとに矢印・線種を描き分けるために保持する。
             "points": [list(from_point), list(to_point)],
-        })
+        }
+        if "label" in edge:
+            edge_out["label"] = edge["label"]  # 表現力強化h2: transitionのtrigger/guard/effectラベル。
+        edges_out.append(edge_out)
 
     return {"view_type": graph_ir.get("view_type", "structure"), "nodes": nodes_out, "edges": edges_out}
 
@@ -353,10 +359,13 @@ def build_flow_view_ir(graph_ir: Dict) -> Dict:
         to_w, to_h = sizes[edge["to"]]
         from_point = _rect_boundary_point(from_cx, from_cy, from_w / 2, from_h / 2, dx, dy)
         to_point = _rect_boundary_point(to_cx, to_cy, to_w / 2, to_h / 2, -dx, -dy)
-        edges_out.append({
+        edge_out = {
             "id": edge["id"],
             "kind": edge.get("kind"),
             "points": [list(from_point), list(to_point)],
-        })
+        }
+        if "label" in edge:
+            edge_out["label"] = edge["label"]  # 表現力強化h2: transitionのtrigger/guard/effectラベル。
+        edges_out.append(edge_out)
 
     return {"view_type": graph_ir.get("view_type", "flow"), "nodes": nodes_out, "edges": edges_out}

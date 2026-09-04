@@ -244,11 +244,14 @@ def build_graph_ir(
             continue
         # 同じfrom/kind/toの組が複数回起きうる（例: 同じ相手への複数connect）ため、
         # SVG要素idとしての一意性を保証するためインデックスを含める。
-        edges_out.append({
+        edge_out = {
             "id": f"{edge['from_id']}->{edge['kind']}->{edge['to_id']}#{index}",
             "from": edge["from_id"],
             "to": edge["to_id"],
             "kind": edge["kind"],
-        })
+        }
+        if "label" in edge:
+            edge_out["label"] = edge["label"]
+        edges_out.append(edge_out)
 
     return {"view_type": view_type, "nodes": nodes_out, "edges": edges_out}
