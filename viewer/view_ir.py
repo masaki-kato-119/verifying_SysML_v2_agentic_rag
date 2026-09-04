@@ -263,16 +263,37 @@ def build_view_ir(graph_ir: Dict, collapsed_ids=None, pinned_positions=None) -> 
         port_edge_partners.setdefault(edge["from"], []).append(edge["to"])
         port_edge_partners.setdefault(edge["to"], []).append(edge["from"])
 
+    # ポート同士が直接繋がる（例: 出力ポート→入力ポート）ことも多く、その
+    # 場合は接続先もこの時点ではまだ最終座標が無い（このブロックでこれから
+    # 決める側のため）。処理順によって「まだ決まっていない側」を除外して
+    # しまうと片方だけ判定が狂うため、ポートの相手を直接参照する代わりに
+    # 「そのポートの親ボックス」の確定済み座標で代用する（親は必ずこの
+    # 時点までに配置済み。ポート自身の位置は親のすぐ縁なので、左右判定の
+    # 目的には十分な近似になる）。
+    port_parent: Dict[str, str] = {
+        port_id: parent_id for parent_id, port_children in pending_ports for port_id in port_children
+    }
+
+    def _approx_rect(node_id: str) -> Optional[Tuple[float, float, float, float]]:
+        anchor_id = port_parent.get(node_id, node_id)
+        if anchor_id not in positions:
+            return None
+        x, y = positions[anchor_id]
+        w, h = sizes[anchor_id]
+        return x, y, w, h
+
     def _preferred_side(port_id: str, parent_x: float, parent_width: float) -> str:
-        partner_ids = [pid for pid in port_edge_partners.get(port_id, []) if pid in positions]
-        if not partner_ids:
-            return "left"  # 接続が無いポートは、従来通り左辺を既定とする。
+        partner_rects = [
+            rect
+            for rect in (_approx_rect(pid) for pid in port_edge_partners.get(port_id, []))
+            if rect is not None
+        ]
+        if not partner_rects:
+            return "left"  # 接続が無い（または相手の位置が分からない）ポートは、従来通り左辺を既定とする。
         left_x = parent_x - _PORT_SIZE / 2
         right_x = parent_x + parent_width - _PORT_SIZE / 2
         left_total = right_total = 0.0
-        for partner_id in partner_ids:
-            px, py = positions[partner_id]
-            pw, ph = sizes[partner_id]
+        for px, py, pw, ph in partner_rects:
             partner_cx = px + pw / 2
             left_total += abs(left_x - partner_cx)
             right_total += abs(right_x - partner_cx)

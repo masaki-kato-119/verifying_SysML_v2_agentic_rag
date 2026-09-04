@@ -147,6 +147,42 @@ def test_port_moves_to_the_side_that_shortens_its_connection():
     assert rightish["x"] == battery["x"] + battery["width"] - rightish["width"] / 2
 
 
+def test_port_connected_to_another_port_still_moves_to_the_shorter_side():
+    """実際のバグ報告で発覚したケース: 接続先がpartではなく別のport自身の
+    場合（例: 出力ポート→入力ポート）、その相手ポートも同じ「配置未確定の
+    ポート一覧」に含まれる。処理順によっては相手ポートがまだpositionsに
+    登録されておらず「相手が見つからない」ものとして扱われ、常に既定の
+    左辺にフォールバックしてしまっていた（親ボックスの位置で近似することで
+    修正）。"""
+    text = """
+    package P {
+        part sender {
+            port outp;
+        }
+        part receiver {
+            port inp;
+        }
+        connect sender.outp to receiver.inp;
+    }
+    """
+    vir = _build_view_ir_with_pins(
+        text,
+        {
+            "$root::sender": {"x": -500, "y": 0},
+            "$root::receiver": {"x": 500, "y": 0},
+        },
+    )
+    by_id = {n["id"]: n for n in vir["nodes"]}
+    receiver = by_id["$root::receiver"]
+    inp = by_id["$root::receiver::inp"]
+    sender = by_id["$root::sender"]
+    outp = by_id["$root::sender::outp"]
+    # receiverはsenderよりずっと右にあるため、inpはreceiverの左辺
+    # （senderに近い側）へ来る。同様にoutpはsenderの右辺へ来る。
+    assert inp["x"] == receiver["x"] - inp["width"] / 2
+    assert outp["x"] == sender["x"] + sender["width"] - outp["width"] / 2
+
+
 def test_port_without_a_resolvable_partner_position_defaults_to_left():
     """接続はあるが相手が現在のビューに存在しない（未解決や対象外）場合は、
     エラーにせず既定の左辺にフォールバックする。"""
