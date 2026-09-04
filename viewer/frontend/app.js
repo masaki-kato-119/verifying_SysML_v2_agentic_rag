@@ -71,7 +71,18 @@ const collapsedIds = new Set();
 // Group3 b12(L1-2): 手動レイアウト。ドラッグで確定した座標をノードidごとに
 // 保持し、リクエストごとに/api/modelへpinned_positionsとして送る
 // （viewer/view_ir.pyのbuild_view_irのpinned_positions引数、b11で追加済み）。
-const pinnedPositions = {};
+// ビュー種別ごとに独立させて保持する（構造/要求トレーサビリティ/検証/
+// 状態遷移/アクティビティの間では、同じ要素idでも「オフセットの基準となる
+// 親」が全く異なる――状態遷移/アクティビティが使うbuild_flow_view_irは
+// pinned_positions自体を受け付けない。1つのオブジェクトを共有したままだと、
+// あるビューでのドラッグが別のビューのレイアウトを汚染してしまう不具合が
+// あったため、この設計にした。ユーザー報告により発見・修正）。
+const pinnedPositionsByView = {};
+
+function getPinnedPositionsForView(viewType) {
+  if (!pinnedPositionsByView[viewType]) pinnedPositionsByView[viewType] = {};
+  return pinnedPositionsByView[viewType];
+}
 
 // Group3 b13(L2): View定義の保存。b9(フィルタ)・b10(折りたたみ)・
 // b12(手動レイアウト)の状態をlocalStorageへ保存し、次回読み込み時に復元する
@@ -87,7 +98,7 @@ function saveViewState() {
         typeFilterState,
         severityFilterState,
         collapsedIds: [...collapsedIds],
-        pinnedPositions,
+        pinnedPositionsByView,
       })
     );
   } catch (e) {
@@ -104,7 +115,7 @@ function loadViewState() {
     Object.assign(typeFilterState, stored.typeFilterState || {});
     Object.assign(severityFilterState, stored.severityFilterState || {});
     for (const id of stored.collapsedIds || []) collapsedIds.add(id);
-    Object.assign(pinnedPositions, stored.pinnedPositions || {});
+    Object.assign(pinnedPositionsByView, stored.pinnedPositionsByView || {});
   } catch (e) {
     // 壊れた保存データは無視し、既定状態のまま続行する。
   }
@@ -118,7 +129,7 @@ async function fetchModel(text) {
       text,
       view_type: currentViewType,
       collapsed_ids: [...collapsedIds],
-      pinned_positions: pinnedPositions,
+      pinned_positions: getPinnedPositionsForView(currentViewType),
     }),
   });
   return response.json();
@@ -155,7 +166,7 @@ function startNodeDrag(startEvent, g, elementId) {
     if (!moved) return;
     const dx = upEvent.clientX - startClientX;
     const dy = upEvent.clientY - startClientY;
-    pinnedPositions[elementId] = toPinnedPosition(elementId, startX + dx, startY + dy);
+    getPinnedPositionsForView(currentViewType)[elementId] = toPinnedPosition(elementId, startX + dx, startY + dy);
     saveViewState();
     updateModelNow();
   }
