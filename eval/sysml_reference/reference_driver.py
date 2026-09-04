@@ -67,6 +67,57 @@ class ReferenceSetupError(RuntimeError):
     """Raised when the reference implementation isn't set up correctly."""
 
 
+# Markers that mean si.loadLibrary() did not fully load the standard library.
+# Measured 2026-09-04: when several JVMs read eval/sysml_reference/sysml.library
+# at the same time, EMF can fail to demand-load a library resource and reports
+# e.g. "FileNotFoundException: ...sysml.library\Kernel%20Libraries\..." (the
+# space in the library's own directory name left URI-encoded). RefDriver returns
+# crashed:true when that aborts the load outright -- but a load that only
+# partially fails leaves the driver returning issues:[] as if the file were
+# clean, which is indistinguishable from a genuinely clean file and silently
+# corrupts a comparison run. So: if any of these appear on stderr, the library
+# was not in a known-good state and the diagnostics from that process must not
+# be trusted, no matter how many were reported.
+_LIBRARY_LOAD_FAILURE_MARKERS = (
+    "FileNotFoundException",
+    "DiagnosticWrappedException",
+    "handleDemandLoadException",
+)
+
+
+def _library_load_failed(stderr: str) -> str | None:
+    """Return the offending marker if stderr shows a library-load failure."""
+    for marker in _LIBRARY_LOAD_FAILURE_MARKERS:
+        if marker in stderr:
+            return marker
+    return None
+
+
+# A snippet the reference implementation must reject. Used as a canary: if this
+# comes back with no error-severity diagnostic, the reference is not actually
+# validating anything and every result from that process is worthless.
+CANARY_SOURCE = "package P { part def }"
+
+
+def run_canary(timeout: float = 60.0) -> tuple[bool, str]:
+    """Check that the reference implementation still reports errors at all.
+
+    Returns (ok, detail). ok is True only when the canary snippet came back
+    with at least one error-severity diagnostic.
+    """
+    result = run_reference_check(CANARY_SOURCE, timeout=timeout)
+    if result["crashed"]:
+        excerpt = (result.get("raw_stderr") or "").strip()[-300:]
+        return False, f"canary crashed: {excerpt}"
+    errors = [d for d in result["diagnostics"] if (d.get("severity") or "").lower() == "error"]
+    if not errors:
+        return False, (
+            "canary returned no error-severity diagnostic for "
+            f"{CANARY_SOURCE!r} -- the reference implementation is not validating"
+        )
+    return True, f"canary ok ({len(errors)} error diagnostics)"
+
+
 def _find_java() -> str:
     java = shutil.which("java")
     if java:
@@ -186,6 +237,23 @@ def run_reference_check(sysml_text: str, timeout: float = 30.0) -> dict[str, Any
                 "success": False,
                 "diagnostics": [],
                 "raw_stderr": raw_stderr + "\n" + (result.get("exception") or ""),
+                "crashed": True,
+            }
+
+        # The driver said it completed, but the standard library may not have
+        # loaded cleanly -- in which case the diagnostics are meaningless (and
+        # an empty list looks exactly like a clean file). Treat that as a crash
+        # so callers discard it instead of recording it as a result.
+        marker = _library_load_failed(raw_stderr)
+        if marker is not None:
+            return {
+                "success": False,
+                "diagnostics": [],
+                "raw_stderr": (
+                    raw_stderr
+                    + f"\n[library load failure detected on stderr ({marker}); "
+                    "diagnostics discarded as untrustworthy]"
+                ),
                 "crashed": True,
             }
 

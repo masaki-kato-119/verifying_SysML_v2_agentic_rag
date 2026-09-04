@@ -29,9 +29,37 @@ LLMは一切使わない決定的な評価。ただし参照実装側はJavaプ�
 使い方::
 
     python scripts/run_reference_comparison_eval.py --limit 20          # 動作確認用の小規模実行
-    python scripts/run_reference_comparison_eval.py                     # 全件実行（要 --yes は無し、時間がかかる旨だけ表示）
+    python scripts/run_reference_comparison_eval.py                     # 全件実行（逐次。730件で2時間強）
     python scripts/run_reference_comparison_eval.py --category official_library
     python scripts/run_reference_comparison_eval.py --force             # 既存結果を無視して再実行
+
+並列実行の危険性（2026-09-04に実測。既定を --workers 6 から 1 に変えた理由）
+--------------------------------------------------------------------------
+複数のJVMが同時に ``eval/sysml_reference/sysml.library`` を読むと、参照実装の
+``si.loadLibrary()`` が標準ライブラリの一部を読み込めないことがある。完全に失敗すれば
+``crashed`` として検出できるが、**部分的にしか失敗しないと診断0件のまま success として
+返る**。これは「本当にクリーンなファイル」と区別が付かないため、``local_only_error`` を
+不当に増やし ``both_error`` を減らす形で集計結果を静かに壊す。
+
+実測: ``--workers 4`` で347件処理した時点で ``reference_crash`` が81件（23%）。
+2026-08-28のベースラインでは 5件/730件（0.7%）だった。並列実行中に不正な入力
+``package P { part def }`` を流すと、エラー0件が返ることが再現する。
+
+対策として2つ入れてある:
+
+1. **canary** — 実行開始前、``--canary-interval`` 件ごと、そして実行終了時に、
+   参照実装へ既知の不正スニペットを流して error 診断が返ることを確認する。
+   結果はcanaryが通るまでディスクへ書かず、落ちたら直前のcanary以降の分を
+   まとめて破棄して中断する（書き出されていない分は未処理のまま残るので、
+   ``--force`` 無しの再実行で続きから埋められる）。
+2. ``reference_driver.py`` 側で、stderr にライブラリロード失敗のマーカーが出ていたら
+   診断が空でなくても ``crashed`` として扱う。
+
+したがって ``--workers`` を1より上げても壊れた結果が保存されることは無いが、
+canaryで中断して進まなくなるだけなので、上げる意味は薄い。
+高速化は ``RefDriver.java`` のバッチモード化（JVM1個でライブラリを1回だけロードする
+逐次実行）で行う予定で、blackboardプラン ``sysml_linter_fixes_v2`` の
+``add_refdriver_batch_mode`` として起票済み。
 """
 
 from __future__ import annotations
@@ -129,9 +157,11 @@ def run_local_check(text: str) -> dict:
     }
 
 
-def run_reference_check_normalized(reference_module, text: str) -> dict:
+def run_reference_check_normalized(reference_module, text: str, timeout: float) -> dict:
     t0 = time.perf_counter()
-    result = reference_module.run_reference_check(text)
+    # 2026-09-04: timeoutを渡し忘れており、--timeoutを何秒に指定してもドライバ側の
+    # 既定30秒が使われていた（process_oneは受け取っていたが中継していなかった）。
+    result = reference_module.run_reference_check(text, timeout=timeout)
     duration_ms = (time.perf_counter() - t0) * 1000
     diagnostics = [
         {"severity": (d.get("severity") or "").lower(), "line": d.get("line"), "message": d.get("message") or ""}
@@ -179,7 +209,7 @@ def process_one(entry: dict, reference_module, timeout: float) -> tuple[dict, di
 
     local = run_local_check(text)
     try:
-        reference = run_reference_check_normalized(reference_module, text)
+        reference = run_reference_check_normalized(reference_module, text, timeout)
     except reference_module.ReferenceSetupError as exc:
         return entry, None, f"参照実装セットアップエラー: {exc}"
 
@@ -207,13 +237,31 @@ def main() -> int:
     parser.add_argument(
         "--workers",
         type=int,
-        default=6,
-        help="並列実行するJavaプロセス数（参照実装がボトルネックなので既定6で並列化。"
-        "マシンのメモリに応じて調整可）",
+        default=1,
+        help="並列実行するJavaプロセス数（既定1＝逐次。2026-09-04に並列実行が結果を"
+        "静かに汚染することが判明したため既定を6から1へ変更した。docstringの"
+        "「並列実行の危険性」を読んだうえでのみ上げること）",
+    )
+    parser.add_argument(
+        "--canary-interval",
+        type=int,
+        default=25,
+        help="このサンプル数ごとに参照実装の健全性チェック（canary）を挟む。0で無効化（非推奨）",
     )
     args = parser.parse_args()
 
     reference_module = _load_reference_driver()
+
+    # 実行開始前の健全性チェック。参照実装が「不正な入力にエラーを返す」ことを
+    # 確認できないうちは1件も処理しない（汚染された結果を書かないため）。
+    ok, detail = reference_module.run_canary(timeout=max(args.timeout, 60.0))
+    print(f"canary (実行前): {detail}")
+    if not ok:
+        print(
+            "参照実装が健全でないため中断した。他のJavaプロセスが動いていないか確認し、"
+            "--workers を下げて再実行すること。"
+        )
+        return 2
 
     entries = load_manifest()
     if args.category:
@@ -242,6 +290,28 @@ def main() -> int:
 
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
+    # canaryが通るまで結果をディスクへ書かない。canaryが落ちた時点で、直前のcanary
+    # 以降に得た結果は「参照実装が健全だった」保証が無いため、まとめて破棄する。
+    pending: list[tuple[dict, dict]] = []
+    canary_failed = False
+
+    def flush_pending() -> None:
+        for pending_entry, pending_record in pending:
+            result_path(pending_entry).write_text(
+                json.dumps(pending_record, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        pending.clear()
+
+    def discard_pending() -> int:
+        """破棄した件数を集計からも差し引く（書いていないものを処理済みに数えない）。"""
+        for _, pending_record in pending:
+            agreement_counter[pending_record["agreement"]] -= 1
+            if agreement_counter[pending_record["agreement"]] <= 0:
+                del agreement_counter[pending_record["agreement"]]
+        discarded = len(pending)
+        pending.clear()
+        return discarded
+
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
         futures = {
             executor.submit(process_one, entry, reference_module, args.timeout): entry for entry in todo
@@ -256,9 +326,24 @@ def main() -> int:
 
             agreement_counter[record["agreement"]] += 1
             processed += 1
-            result_path(entry).write_text(
-                json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
+            pending.append((entry, record))
+
+            if args.canary_interval and processed % args.canary_interval == 0:
+                ok, detail = reference_module.run_canary(timeout=max(args.timeout, 60.0))
+                if not ok:
+                    print(f"  canary NG ({detail})")
+                    discarded = discard_pending()
+                    processed -= discarded
+                    print(
+                        f"  直前のcanary以降の{discarded}件を破棄して中断する"
+                        "（参照実装が健全だった保証が無いため）"
+                    )
+                    canary_failed = True
+                    for pending_future in futures:
+                        pending_future.cancel()
+                    break
+                flush_pending()
+                print(f"  canary ok [{processed}/{len(todo)}]")
 
             if processed % 10 == 0 or processed == len(todo):
                 elapsed = time.time() - t_start
@@ -268,6 +353,18 @@ def main() -> int:
                     f"({rate:.2f}件/秒, 経過{elapsed:.0f}秒) 直近: {record['agreement']} — {entry['path']}"
                 )
 
+    # 最後の部分バッチもcanaryで裏付けてから書き出す。
+    if not canary_failed and pending:
+        ok, detail = reference_module.run_canary(timeout=max(args.timeout, 60.0))
+        print(f"canary (実行後): {detail}")
+        if ok:
+            flush_pending()
+        else:
+            discarded = discard_pending()
+            processed -= discarded
+            print(f"最後の{discarded}件を破棄した（参照実装が健全だった保証が無いため）")
+            canary_failed = True
+
     print("\n== 集計（このスクリプト実行分のみ、--forceなしなら既存分も含む累積） ==")
     total = sum(agreement_counter.values())
     for label, count in agreement_counter.most_common():
@@ -275,6 +372,13 @@ def main() -> int:
         print(f"  {label:<22} {count:5d}件 ({pct}%)")
     print(f"\n合計: {total}件（新規処理 {processed}件 / スキップ {skipped}件 / 読み込み等エラー {errors}件）")
     print(f"サンプル毎の結果: {RESULTS_DIR}/<sha256[:16]>.json")
+
+    if canary_failed:
+        print(
+            "\ncanaryが落ちたため実行を打ち切った。書き出されていない分は未処理として残るので、"
+            "他のJavaプロセスを止めてから --force 無しで再実行すれば続きから埋められる。"
+        )
+        return 2
 
     return 0
 
