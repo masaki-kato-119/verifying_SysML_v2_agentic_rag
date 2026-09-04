@@ -7,6 +7,18 @@ eval/sysml_reference/vendor/*.class
 eval/sysml_reference/sysml.library/
 eval/sysml_reference/__pycache__/
 
+# Evaluation corpora and run results (regenerable; large). The harness itself
+# (scripts/run_reference_comparison_eval.py, scripts/analyze_reference_comparison.py,
+# eval/sysml_reference/reference_driver.py, eval/sysml_reference/vendor/RefDriver.java)
+# and the comparison report ARE tracked -- only the inputs and outputs are not.
+# - sysml_samples/  : 221MB, third-party OSS models catalogued in manifest.json.
+# - sysml_results/  : per-sample local-vs-reference comparison output (7.4MB).
+# - results/        : golden-set / conformance eval run results (3.8MB).
+eval/sysml_samples/
+eval/sysml_results/
+eval/sysml_results_baseline_*/
+eval/results/
+
 # --- Python ---
 __pycache__/
 *.py[cod]
@@ -67,4 +79,5 @@ SysMLv2_Viewer_PhaseBC_機能選択計画書.md
 SysMLv2_Viewer_PhaseBC_作業計画書.md
 SysMLv2_Viewer_表現力強化_機能選択計画書.md
 SysMLv2_Viewer_状態遷移アクティビティ図_作業計画書.md
+PROJECT_REVIEW_2026-09-04.md
 SysML_Language_Specification_v2.pdf
