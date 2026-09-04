@@ -2539,7 +2539,15 @@ assignmentStmt
 sendActionStmt
     : isThen='then'? 'action' name=simpleName 'send'
       ( payload=namespacePath | 'new' newPayloadType=qualifiedName '(' (newPayloadArgs+=newArgument (',' newPayloadArgs+=newArgument)*)? ')' )
-      ( 'to' receiver=qualifiedName | 'via' receiverVia=qualifiedName ) ';'          # sendActionNamed
+      // `action turnVehicleOn send ignitionCmd via driver.p1{ in ignitionCmd:IgnitionCmd; }`
+      // （SysML v2 Spec Annex A SimpleVehicleModel.sysml:755,765）のように、
+      // payload・to/via をインラインで書いたうえで本体も持つ形がある
+      // （2026-09-04、比較レポートv2 §v2-6 G2）。参照実装に問い合わせ、
+      // named+via・named+to・named+via+to・匿名の4形すべてで本体を受理する
+      // ことを確認したので、`;`だけだった3つの代替すべてを揃えて広げる
+      // （過去にexhibit/itemDefで同種の非対称性が繰り返し問題になっている）。
+      ( 'to' receiver=qualifiedName | 'via' receiverVia=qualifiedName )
+      ( '{' actionBodyElement* '}' | ';' )                                          # sendActionNamed
     // `action snd send { in :>> payload = s; }`（ActionTest.sysml）のように、
     // payload/target（to/via）をインラインではなく、actionParameter形の
     // redefine+値代入（`in :>> payload = s;`）を並べたbodyで表すことも
@@ -2549,14 +2557,16 @@ sendActionStmt
     // payloadを省略し、`via <port>`と`to <target>`を併記する形もある
     // （現行は`to`/`via`が排他選択かつpayload必須。2026-08-29、730件
     // ベースライン154件エラー要因分析で発見）。
-    | isThen='then'? 'action' name=simpleName 'send' 'via' viaPort=qualifiedName 'to' viaToReceiver=qualifiedName ';' # sendActionNamedViaTo
+    | isThen='then'? 'action' name=simpleName 'send' 'via' viaPort=qualifiedName 'to' viaToReceiver=qualifiedName
+      ( '{' actionBodyElement* '}' | ';' )                                          # sendActionNamedViaTo
     // `then send new Show(shoot.picture) to screen;`（Messaging Example.sysml、
     // Messaging with Ports.sysml、ActionTest.sysml）のように、匿名形にも
     // named形と同じ先頭の裸`then`（直前ノードとの暗黙の連鎖）を持ちうる
     // （2026-08-29、730件ベースライン154件エラー要因分析で発見）。
     | isThen='then'? 'send'
       ( payload=namespacePath | 'new' newPayloadType=qualifiedName '(' (newPayloadArgs+=newArgument (',' newPayloadArgs+=newArgument)*)? ')' )
-      ( 'to' toTarget=qualifiedName | 'via' viaTarget=qualifiedName ) ';' # sendActionAnonymous
+      ( 'to' toTarget=qualifiedName | 'via' viaTarget=qualifiedName )
+      ( '{' actionBodyElement* '}' | ';' )                              # sendActionAnonymous
     ;
 
 // --- accept action (Section 7.17 AcceptActionUsage) --------------------------

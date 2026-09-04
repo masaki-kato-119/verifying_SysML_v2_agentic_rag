@@ -1121,12 +1121,18 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             receiver, receiver_type = ctx.receiver, "to"
         else:
             receiver, receiver_type = ctx.receiverVia, "via"
+        # payload・to/via をインラインで書いたうえで本体も持つ形（Annex A
+        # SimpleVehicleModel.sysml:755,765。2026-09-04、レポートv2 §v2-6 G2）。
+        # 本体が無い`;`形では両方とも空リストになる。
+        params, children = self._split_send_action_body(ctx)
         return {
             "type": "send_action",
             "name": _simple_name_text(ctx.name),
             "payload": self._send_action_payload(ctx),
             "receiver": _qualified_name_text(receiver),
             "receiver_type": receiver_type,
+            "params": params,
+            "children": children,
             **({"isThen": True} if ctx.isThen is not None else {}),
         }
 
@@ -1135,14 +1141,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # ように、payload/target（to/via）をインラインではなく、
         # actionParameter形の宣言を並べたbodyで表すことがある（2026-08-29、
         # 730件ベースライン154件エラー要因分析で発見）。
-        params = []
-        children = []
-        for el in ctx.actionBodyElement():
-            node = self.visit(el)
-            if isinstance(node, dict) and node.get("type") == "param":
-                params.append(node)
-            else:
-                children.append(node)
+        params, children = self._split_send_action_body(ctx)
         return {
             "type": "send_action",
             "name": _simple_name_text(ctx.name),
@@ -1153,6 +1152,20 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "children": children,
             **({"isThen": True} if ctx.isThen is not None else {}),
         }
+
+    def _split_send_action_body(self, ctx) -> tuple:
+        """send action本体の要素を、actionParameter形（`in :>> payload = s;`）と
+        それ以外の子要素に振り分ける。本体が無い（`;`で終わる）代替でも
+        `actionBodyElement()`は空リストを返すので、そのまま呼べる。"""
+        params = []
+        children = []
+        for el in ctx.actionBodyElement():
+            node = self.visit(el)
+            if isinstance(node, dict) and node.get("type") == "param":
+                params.append(node)
+            else:
+                children.append(node)
+        return params, children
 
     def visitSendActionNamedViaTo(self, ctx: SysMLMinParser.SendActionNamedViaToContext) -> Dict:
         # `action snd2 send via this to aa.target;`（ActionTest.sysml）の
@@ -1166,6 +1179,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "receiver": _qualified_name_text(ctx.viaToReceiver),
             "receiver_type": "to",
             "via": _qualified_name_text(ctx.viaPort),
+            **dict(zip(("params", "children"), self._split_send_action_body(ctx))),
             **({"isThen": True} if ctx.isThen is not None else {}),
         }
 
@@ -1180,6 +1194,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "payload": self._send_action_payload(ctx),
             "target": _qualified_name_text(target),
             "target_type": target_type,
+            **dict(zip(("params", "children"), self._split_send_action_body(ctx))),
             # `then send new Show(shoot.picture) to screen;`（Messaging
             # Example.sysml）のように、named形と同じ先頭の裸`then`を持ちうる
             # （2026-08-29、730件ベースライン154件エラー要因分析で発見）。

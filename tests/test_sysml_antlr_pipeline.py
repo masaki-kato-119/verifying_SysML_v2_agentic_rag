@@ -1297,7 +1297,8 @@ def test_antlr_decision_with_nested_body():
             "operator": "=",
             "value": {"type": "literal", "literal_type": "int", "value": 1},
         },
-        {"type": "send_action", "name": None, "payload": "p", "target": "q", "target_type": "to"},
+        {"type": "send_action", "name": None, "payload": "p", "target": "q", "target_type": "to",
+         "params": [], "children": []},
     ]
 
 
@@ -1330,9 +1331,12 @@ def test_antlr_send_action_all_forms():
     )
     ast = parse_sysml_antlr(text)
     assert ast["children"][0]["children"] == [
-        {"type": "send_action", "name": "snd", "payload": "x", "receiver": "y", "receiver_type": "to"},
-        {"type": "send_action", "name": None, "payload": "x", "target": "y", "target_type": "to"},
-        {"type": "send_action", "name": None, "payload": "x", "target": "y", "target_type": "via"},
+        {"type": "send_action", "name": "snd", "payload": "x", "receiver": "y", "receiver_type": "to",
+         "params": [], "children": []},
+        {"type": "send_action", "name": None, "payload": "x", "target": "y", "target_type": "to",
+         "params": [], "children": []},
+        {"type": "send_action", "name": None, "payload": "x", "target": "y", "target_type": "via",
+         "params": [], "children": []},
     ]
 
 
@@ -1352,6 +1356,11 @@ def test_antlr_send_action_double_colon_qualified_payload():
         "payload": "FCW::B::C",
         "target": "port2",
         "target_type": "via",
+        # 2026-09-04(G2): send actionはto/via形でも本体を持てるように
+        # なったため、本体が無い場合も空のparams/childrenを持つ
+        # （sendActionNamedBody形と形を揃えた）。
+        "params": [],
+        "children": [],
     }
 
 
