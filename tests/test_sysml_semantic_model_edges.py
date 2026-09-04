@@ -568,3 +568,65 @@ def test_flow_to_unknown_owner_is_unresolved_error():
     edge = next(e for e in model["edges"] if e["kind"] == "flow")
     assert edge["to_id"] is None
     assert edge["resolved"] is False
+
+
+# --- flow_usage（別のAST形状、2026-09-04追加。以前は未対応で0件だった） ----
+# `flow 'X'.'Y' to 'Z'.'W';`は、片方の参照が`::`区切りの名前空間修飾を
+# 含む場合（例: `LDW::step2.sig2`のような、外部パッケージ配下の要素への
+# 参照）、flow_from_stmt/flow_short_stmtとは別の"flow_usage"型
+# （from_end/to_end、"::"区切り）に正規化されることが実際のADASモデルの
+# 調査で判明した。この形状は以前一切エッジ抽出されていなかった。
+
+
+def test_flow_usage_with_qualified_target_resolves_owner_actions():
+    """片方が`::`修飾された参照(`Ext::step2.y`)を持つ場合に
+    `flow_usage`型になる。ownerである`step1`/`Ext`まではフォールバックで
+    解決を試みる（`Ext`自体は未定義の外部名前空間のためunresolved_error）。"""
+    text = """
+    action def Act {
+        action step1 { out item x; }
+        flow step1.x to Ext::step2.y;
+    }
+    """
+    _, model = build_semantic_model(text.strip())
+    edge = next(e for e in model["edges"] if e["kind"] == "flow")
+    assert edge["from_id"] == "$root::Act::step1"
+    assert edge["to_id"] is None
+    assert edge["resolved"] is False
+
+
+def test_flow_usage_resolves_when_both_ends_are_local():
+    text = """
+    package P {
+        action def Helper {
+            action step2 { in item y; }
+        }
+        action def Act {
+            action step1 { out item x; }
+            flow step1.x to Helper::step2.y;
+        }
+    }
+    """
+    _, model = build_semantic_model(text.strip())
+    edge = next(e for e in model["edges"] if e["kind"] == "flow")
+    assert edge["from_id"] == "$root::Act::step1"
+    assert edge["to_id"] == "$root::Helper"
+    assert edge["resolved"] is True
+    assert edge["resolution_status"] == "resolved"
+
+
+def test_flow_usage_and_flow_short_stmt_are_both_kind_flow():
+    """flow_usage（新規対応）とflow_short_stmt（既存対応）は、AST形状こそ
+    異なるが、Semantic Model上は同じ"flow"種別のエッジとして扱われる
+    （Graph IR/View IR/SVGレンダラー側の変更が不要であることの確認）。"""
+    text = """
+    action def Act {
+        action step1 { out item x; }
+        action step2 { in item y; }
+        flow step1.x to step2.y;
+        flow step1.x to Ext::step2.y;
+    }
+    """
+    _, model = build_semantic_model(text.strip())
+    flow_edges = [e for e in model["edges"] if e["kind"] == "flow"]
+    assert len(flow_edges) == 2

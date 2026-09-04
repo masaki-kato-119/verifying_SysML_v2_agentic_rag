@@ -29,7 +29,11 @@ linter.py には一切手を入れない。SysMLAdvancedLinter().lint(ast) を�
   「直前の兄弟文」という文脈に依存するため、意図的に未対応としている）
 - flow（表現力強化Stage 2, Group A e3。flow_from_stmt/flow_short_stmtの
   from_port/to_port由来。`owner.port`形式のドット区切り参照はownerまでの
-  解決に留める、`_resolve_reference`のフォールバックを参照）
+  解決に留める、`_resolve_reference`のフォールバックを参照。
+  2026-09-04追加：`flow_usage`（from_end/to_end、`::`区切り）という別のAST
+  形状も同じ"flow"種別として抽出する。以前はこの形状が一切扱われておらず、
+  `flow 'X'.'Y' to 'Z'.'W';`という書き方を使うモデルでflowエッジが1本も
+  抽出されていなかった）
 
 各エッジは resolution_status（拡張仕様書8.2章）を持つ:
 - "resolved"：このファイル内のノードへ解決できた
@@ -208,6 +212,15 @@ def _resolve_reference(reference: str, linter: SysMLAdvancedLinter) -> Optional[
                 return node
     if "." in reference:
         return _resolve_reference(reference.split(".", 1)[0], linter)
+    if "::" in reference:
+        # `owner::feature`形式（flow_usageのfrom_end/to_end等、表現力強化で
+        # 追加）で、末尾セグメント一致（上のループ）でも見つからない場合、
+        # ownerだけで再試行する（"."区切り参照に対する既存のフォールバックと
+        # 同じ考え方）。owner自体もシンボル表に登録されていない場合
+        # （例：accept_actionの`actionName`はシンボル表に登録されない既知の
+        # 制約）は、このフォールバックでも解決できずNoneのまま返る。
+        owner = reference.split("::", 1)[0]
+        return _resolve_reference(owner, linter)
     return None
 
 
@@ -530,6 +543,16 @@ def build_relation_edges(
         if node_type in ("flow_from_stmt", "flow_short_stmt"):
             from_ref = node.get("from_port")
             to_ref = node.get("to_port")
+            if isinstance(from_ref, str) and from_ref and isinstance(to_ref, str) and to_ref:
+                edges.append(_make_reference_pair_edge(from_ref, to_ref, "flow", reverse_index, linter))
+
+        if node_type == "flow_usage":
+            # `flow 'X'.'Y' to 'Z'.'W';`は、flow_from_stmt/flow_short_stmt
+            # （from_port/to_port、"."区切り）とは別のAST形状（from_end/to_end、
+            # "::"区切り）に正規化される。以前は一切エッジ抽出していなかった
+            # （フォローアップ課題として発見・起票）。
+            from_ref = node.get("from_end")
+            to_ref = node.get("to_end")
             if isinstance(from_ref, str) and from_ref and isinstance(to_ref, str) and to_ref:
                 edges.append(_make_reference_pair_edge(from_ref, to_ref, "flow", reverse_index, linter))
 
