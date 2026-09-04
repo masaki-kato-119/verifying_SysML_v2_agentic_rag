@@ -30,6 +30,17 @@ _OBJECTIVE_LIMIT_NODE_TYPES = (
 # 素のrendering usageは対象外（参照実装で実測、2026-09-04）。
 _VIEW_RENDERING_LIMIT_NODE_TYPES = ("view_def", "view_usage")
 
+# snapshot / timeslice（portion usage）は occurrence の定義か使用が所有して
+# いなければならない(8.2.2.9)。ここは「所有者として不正だと実測できた型」の
+# 拒否リストにしてある。参照実装での実測（2026-09-04）:
+#   package直下 → エラー / attribute def内 → エラー
+#   package を書かないファイル直下（このパーサーでは `root` ノード）→ エラー
+#   part usage内・part def内・timeslice内 → クリーン
+# 「occurrenceか」を型階層から判定する実装にすると、列挙し漏れた所有者型を
+# 一律エラーにして偽陽性を出す危険があるため、実測できた2つに限定する
+# （検出漏れは許容する。PortionUsage_Invalid.sysmlはpackage直下なので拾える）。
+_PORTION_USAGE_INVALID_OWNER_TYPES = ("root", "package", "attribute_def")
+
 
 class CaseAndViewRulesMixin:
     def _check_occurrence_advanced_rules(self) -> None:
@@ -294,6 +305,27 @@ class CaseAndViewRulesMixin:
                 f"[8.2.2.26] {kind} '{name}' のview renderingは1つのみ許可されます",
                 extra
             ))
+
+    def _check_portion_usage_owner(self, node: Dict, namespace: str) -> None:
+        """snapshot / timeslice は occurrence の定義か使用が所有していなければ
+        ならない (8.2.2.9)。
+
+        参照実装との比較評価で見つかった偽陰性（PortionUsage_Invalid.sysml、
+        比較レポートv2 §v2-3、`Must be owned by an occurrence definition or
+        usage.`）。所有者側から見て判定する。対象の所有者型は
+        `_PORTION_USAGE_INVALID_OWNER_TYPES`（実測できたものだけの拒否リスト）。
+        """
+        owner_name = node.get("name", namespace)
+        for child in node.get("children", []):
+            if isinstance(child, dict) and child.get("type") == "portion_usage":
+                kind = child.get("kind") or "snapshot/timeslice"
+                self.issues.append(LintIssue(
+                    SEVERITY_ERROR,
+                    f"[8.2.2.9] {kind} '{child.get('name')}' は "
+                    f"occurrenceの定義または使用が所有していなければなりません"
+                    f"（現在の所有者: '{owner_name}'）",
+                    child
+                ))
 
     def _check_case_def(self, node: Dict, namespace: str) -> None:
         """case定義のチェック (8.2.2.22)"""
