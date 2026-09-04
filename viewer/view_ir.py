@@ -31,13 +31,21 @@ def build_view_ir(graph_ir: Dict, collapsed_ids=None, pinned_positions=None) -> 
             除外し、指定ノード自身は子を持たない葉として最小サイズで描画する。
             省略時は従来どおり全ノードを描画する（後方互換）。
         pinned_positions: 手動配置を尊重するノードid→{"x","y"}の辞書
-            （Group3 b11, L1-1）。指定ノードは計算結果ではなくこの座標で
-            配置し、その子孫は引き続きこの座標を起点に相対配置する
-            （包含関係を保つため）。他のノード（兄弟・非対象ノード）は
-            従来どおりの決定的アルゴリズムで計算する――ピン留めノードとの
-            重なりを解消する制約解法は行わない、既存コードの「手動調整は
-            Phase D以降の課題」という割り切り（4.2節）を踏襲した設計判断。
-            省略時は従来どおり（後方互換）。
+            （Group3 b11/b12。表現力強化「手動レイアウトの階層整合性」案Bで
+            座標の意味を変更した）。**親を持つノードについては、値は親の
+            内容領域の起点（親の描画位置 + パディング + ラベル高さ。非ピン留め
+            の子が通常並ぶのと同じ基準点）からの相対オフセットとして解釈する。
+            親要素はこの相対オフセットも包含するよう自身のサイズを拡張する**
+            （子が親の矩形からはみ出して見える不整合を解消するため）。
+            親を持たない（ルート直下の）ノードは、相対化の基準となる親が
+            存在しないため従来どおり絶対座標のまま扱う。
+            兄弟の通常配置（フロー配置）はピン留めの有無に関わらず必ず計算し
+            続ける――ピン留めされた子も自身の「通常時のスロット」の高さ分は
+            引き続きcursorを進めるため、ピン留めしても他の兄弟の位置はずれない
+            （b11時点で確立した「兄弟は影響を受けない」という保証を維持する）。
+            重なり自体を解消する制約解法までは行わない――既存コードの
+            「手動調整はPhase D以降の課題」という割り切り（4.2節）を踏襲した
+            設計判断。省略時は従来どおり（後方互換）。
 
     Returns:
         {"view_type": graph_irのview_type（省略時は"structure"を既定とする）,
@@ -78,42 +86,86 @@ def build_view_ir(graph_ir: Dict, collapsed_ids=None, pinned_positions=None) -> 
 
     sizes: Dict[str, Tuple[int, int]] = {}
     positions: Dict[str, Tuple[int, int]] = {}
+    # ノードごとの「フロー原点からのずれ」。ピン留めされた子が通常のフロー
+    # 領域より左・上にはみ出す場合、親の矩形自体をその分だけ左・上に広げる
+    # 必要がある。この値がその「広げ幅」（0以下の値）を保持する。
+    content_offset: Dict[str, Tuple[int, int]] = {}
 
     def compute_size(node_id: str) -> Tuple[int, int]:
         children = _children_of(node_id)
         if not children:
             size = _leaf_size(nodes_by_id[node_id]["label"])
             sizes[node_id] = size
+            content_offset[node_id] = (0, 0)
             return size
 
+        # 通常のフロー配置は、ピン留めの有無に関わらず全ての子について計算する
+        # （後述のplace()でも同様。兄弟の位置をピン留めの影響から独立させるため）。
         child_sizes = [compute_size(c) for c in children]
-        content_width = max(w for w, _h in child_sizes)
-        content_height = sum(h for _w, h in child_sizes) + _PADDING * (len(children) - 1)
-        width = max(_MIN_WIDTH, content_width + 2 * _PADDING)
-        height = _LABEL_HEIGHT + content_height + 2 * _PADDING
+        flow_width = max(w for w, _h in child_sizes)
+        flow_height = sum(h for _w, h in child_sizes) + _PADDING * (len(children) - 1)
+
+        # 親の内容領域は「通常のフロー領域」と「各ピン留め子の相対矩形」の
+        # 和集合の外接矩形にする。ピン留め子がフロー領域より左・上にはみ出す
+        # 場合はcontent_left/topが負になり、後述のplace()で親の矩形自体を
+        # その分だけ左・上にずらして広げる。
+        content_left, content_top = 0, 0
+        content_right, content_bottom = flow_width, flow_height
+        for child_id in children:
+            pinned = pinned_positions.get(child_id)
+            if pinned is None:
+                continue
+            child_w, child_h = sizes[child_id]
+            content_left = min(content_left, pinned["x"])
+            content_top = min(content_top, pinned["y"])
+            content_right = max(content_right, pinned["x"] + child_w)
+            content_bottom = max(content_bottom, pinned["y"] + child_h)
+
+        width = max(_MIN_WIDTH, (content_right - content_left) + 2 * _PADDING)
+        height = _LABEL_HEIGHT + (content_bottom - content_top) + 2 * _PADDING
         size = (width, height)
         sizes[node_id] = size
+        content_offset[node_id] = (content_left, content_top)
         return size
 
-    def place(node_id: str, x: int, y: int) -> None:
-        pinned = pinned_positions.get(node_id)
-        if pinned is not None:
-            x, y = pinned["x"], pinned["y"]
+    def place(node_id: str, anchor_x: int, anchor_y: int) -> None:
+        """anchor_x/yは「親から見た通常のフロー配置上の位置」。実際の矩形は
+        content_offset分だけずらして配置する（ピン留め子を包含するための
+        拡張分。ピン留めが無ければcontent_offsetは(0, 0)で従来と同じ）。"""
+        offset_x, offset_y = content_offset.get(node_id, (0, 0))
+        x, y = anchor_x + offset_x, anchor_y + offset_y
         positions[node_id] = (x, y)
         children = _children_of(node_id)
-        cursor_y = y + _LABEL_HEIGHT + _PADDING
+        if not children:
+            return
+        origin_x = anchor_x + _PADDING
+        origin_y = anchor_y + _LABEL_HEIGHT + _PADDING
+        cursor_y = origin_y
         for child_id in children:
-            place(child_id, x + _PADDING, cursor_y)
-            cursor_y += sizes[child_id][1] + _PADDING
+            flow_y = cursor_y
+            cursor_y += sizes[child_id][1] + _PADDING  # ピン留めの有無に関わらず必ず進める
+            pinned = pinned_positions.get(child_id)
+            if pinned is not None:
+                place(child_id, origin_x + pinned["x"], origin_y + pinned["y"])
+            else:
+                place(child_id, origin_x, flow_y)
 
     # group_id が None のノード（ルートのみのはず。Semantic Modelのルートは
     # 常に1個。$root自身のparent_id=Noneであるため）を最上位として配置する。
+    # ルート直下のノードには相対化の基準となる親が無いため、ピン留めされて
+    # いれば従来どおり絶対座標として扱う。
     roots = sorted(c for c in children_by_parent.get(None, []) if c not in excluded_ids)
     cursor_x = _PADDING
     for root_id in roots:
         compute_size(root_id)
-        place(root_id, cursor_x, _PADDING)
+        flow_x = cursor_x
         cursor_x += sizes[root_id][0] + _PADDING
+        pinned = pinned_positions.get(root_id)
+        if pinned is not None:
+            offset_x, offset_y = content_offset[root_id]
+            place(root_id, pinned["x"] - offset_x, pinned["y"] - offset_y)
+        else:
+            place(root_id, flow_x, _PADDING)
 
     # type/label/source_rangeはGraph IRからそのまま引き継ぐ（5章のSVG
     # レンダラーがレイアウト結果に加えてこれらを必要とするため。View IRは

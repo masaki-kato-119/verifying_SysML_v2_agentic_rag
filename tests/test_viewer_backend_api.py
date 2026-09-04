@@ -13,6 +13,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from viewer.backend.app import app
+from viewer.view_ir import _LABEL_HEIGHT, _PADDING
 
 client = TestClient(app)
 
@@ -122,15 +123,18 @@ def test_model_endpoint_collapsed_ids_excludes_descendants_from_view_ir():
 
 
 def test_model_endpoint_pinned_positions_are_reflected_in_view_ir():
-    """Group3 b11(L1-1): pinned_positionsに指定した座標がView IR出力に反映される。"""
+    """Group3 b11(L1-1): pinned_positionsに指定した座標がView IR出力に反映される。
+    $root::Aは親($root)を持つため、値は親の内容領域起点からの相対オフセットとして
+    解釈される（表現力強化「手動レイアウトの階層整合性」案B）。"""
     text = "package P { part def A; }"
     response = client.post(
         "/api/model",
         json={"text": text, "pinned_positions": {"$root::A": {"x": 123, "y": 456}}},
     )
     data = response.json()
+    root = next(n for n in data["view_ir"]["nodes"] if n["id"] == "$root")
     node = next(n for n in data["view_ir"]["nodes"] if n["id"] == "$root::A")
-    assert (node["x"], node["y"]) == (123, 456)
+    assert (node["x"], node["y"]) == (root["x"] + _PADDING + 123, root["y"] + _LABEL_HEIGHT + _PADDING + 456)
 
 
 async def test_related_concepts_endpoint_queries_graphrag_when_available():

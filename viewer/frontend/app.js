@@ -155,13 +155,40 @@ function startNodeDrag(startEvent, g, elementId) {
     if (!moved) return;
     const dx = upEvent.clientX - startClientX;
     const dy = upEvent.clientY - startClientY;
-    pinnedPositions[elementId] = { x: startX + dx, y: startY + dy };
+    pinnedPositions[elementId] = toPinnedPosition(elementId, startX + dx, startY + dy);
     saveViewState();
     updateModelNow();
   }
 
   document.addEventListener("mousemove", onMouseMove);
   document.addEventListener("mouseup", onMouseUp);
+}
+
+// viewer/view_ir.pyの_PADDING/_LABEL_HEIGHTと一致させる（表現力強化「手動
+// レイアウトの階層整合性」案B）。バックエンドはpinned_positionsを、親を持つ
+// 要素については「親の内容領域の起点（親の描画位置 + パディング/ラベル高さ）
+// からの相対オフセット」として解釈し、親要素はその分だけ自身のサイズを
+// 拡張して子を包含する（子が親の矩形からはみ出す不整合を解消するため）。
+// ここでは、既に他のピン留め要素がある場合に親自身がさらに広がっている
+// 可能性までは追跡せず、親の直近の描画位置を基準に近似する（同じ親を持つ
+// 複数要素を同時にはみ出す方向へピン留めする場合にのみ生じる既知の簡易化。
+// 手動調整の重なり自体を解消しないという既存の割り切りの範囲内とみなす）。
+const FLOW_PADDING = 8;
+const FLOW_LABEL_HEIGHT = 24;
+
+function toPinnedPosition(elementId, absoluteX, absoluteY) {
+  const node = latestModel && latestModel.graph_ir.nodes.find((n) => n.id === elementId);
+  if (!node || !node.group_id) {
+    return { x: absoluteX, y: absoluteY }; // ルート直下は相対化の基準となる親が無いため絶対座標のまま
+  }
+  const parent = latestModel.view_ir.nodes.find((n) => n.id === node.group_id);
+  if (!parent) {
+    return { x: absoluteX, y: absoluteY };
+  }
+  return {
+    x: absoluteX - (parent.x + FLOW_PADDING),
+    y: absoluteY - (parent.y + FLOW_LABEL_HEIGHT + FLOW_PADDING),
+  };
 }
 
 function renderDiagram(svg) {

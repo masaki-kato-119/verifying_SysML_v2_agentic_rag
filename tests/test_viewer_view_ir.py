@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from sysml_v2_checker_advanced.semantic_model import build_semantic_model
 from viewer.graph_ir import build_graph_ir
-from viewer.view_ir import build_view_ir
+from viewer.view_ir import _LABEL_HEIGHT, _PADDING, build_view_ir
 
 _SAMPLE = """
 package Vehicle {
@@ -183,7 +183,11 @@ def test_edges_into_collapsed_descendants_are_excluded():
     assert not any("powerSource" in edge["id"] for edge in vir["edges"])
 
 
-# --- pinned_positions（Group3 b11, L1-1） ---------------------------------
+# --- pinned_positions（Group3 b11/b12。表現力強化「手動レイアウトの階層
+# 整合性」案Bで座標の意味を絶対座標→親の内容領域起点からの相対オフセットへ
+# 変更した。親の内容領域の起点は「親の描画位置 + _PADDING（横）/
+# _LABEL_HEIGHT + _PADDING（縦）」。ルート直下のノードは相対化の基準となる
+# 親を持たないため従来どおり絶対座標のまま） -------------------------------
 
 
 def test_default_pinned_positions_is_unchanged_behavior():
@@ -193,12 +197,27 @@ def test_default_pinned_positions_is_unchanged_behavior():
     assert build_view_ir(gir) == build_view_ir(gir, pinned_positions=None)
 
 
-def test_pinned_node_position_is_respected():
+def test_pinned_node_position_is_relative_to_parent_content_origin():
     _, model = build_semantic_model(_SAMPLE.strip())
     gir = build_graph_ir(model)
     vir = build_view_ir(gir, pinned_positions={"$root::Engine": {"x": 500, "y": 700}})
     by_id = {n["id"]: n for n in vir["nodes"]}
-    assert (by_id["$root::Engine"]["x"], by_id["$root::Engine"]["y"]) == (500, 700)
+    root = by_id["$root"]
+    engine = by_id["$root::Engine"]
+    expected_x = root["x"] + _PADDING + 500
+    expected_y = root["y"] + _LABEL_HEIGHT + _PADDING + 700
+    assert (engine["x"], engine["y"]) == (expected_x, expected_y)
+
+
+def test_root_level_pin_is_still_absolute():
+    """親を持たない（ルート直下の）ノードには相対化の基準となる親が無いため、
+    従来どおり絶対座標のまま扱う。"""
+    text = "package P { part def A; } package Q { part def B; }"
+    _, model = build_semantic_model(text)
+    gir = build_graph_ir(model)
+    vir = build_view_ir(gir, pinned_positions={"$root::P": {"x": 300, "y": 400}})
+    by_id = {n["id"]: n for n in vir["nodes"]}
+    assert (by_id["$root::P"]["x"], by_id["$root::P"]["y"]) == (300, 400)
 
 
 def test_pinned_node_children_stay_relative_to_pinned_position():
@@ -217,6 +236,9 @@ def test_pinned_node_children_stay_relative_to_pinned_position():
 
 
 def test_unpinned_siblings_are_unaffected_by_a_pin():
+    """ピン留めされた子も自身の「通常時のスロット」の高さ分はcursorを
+    進め続けるため、他の兄弟(Machine)の位置はピン留めの影響を受けない
+    （b11時点で確立した保証の維持）。"""
     _, model = build_semantic_model(_SAMPLE.strip())
     gir = build_graph_ir(model)
     vir_plain = build_view_ir(gir)
@@ -224,3 +246,43 @@ def test_unpinned_siblings_are_unaffected_by_a_pin():
     by_id_plain = {n["id"]: n for n in vir_plain["nodes"]}
     by_id_pinned = {n["id"]: n for n in vir_pinned["nodes"]}
     assert by_id_plain["$root::Machine"] == by_id_pinned["$root::Machine"]
+
+
+def test_parent_expands_to_contain_a_pinned_child_dragged_outside_flow_area():
+    """表現力強化「手動レイアウトの階層整合性」案B: 子要素を通常のフロー
+    配置の外（左・上方向）へピン留めすると、親の矩形がそれを包含するよう
+    自動的に広がる（ユーザー指摘: 親の外に子が出て見える不整合の解消）。"""
+    _, model = build_semantic_model(_SAMPLE.strip())
+    gir = build_graph_ir(model)
+    vir_plain = build_view_ir(gir)
+    vir_pinned = build_view_ir(gir, pinned_positions={"$root::Engine": {"x": -200, "y": -200}})
+    by_id_plain = {n["id"]: n for n in vir_plain["nodes"]}
+    by_id_pinned = {n["id"]: n for n in vir_pinned["nodes"]}
+
+    root_plain = by_id_plain["$root"]
+    root_pinned = by_id_pinned["$root"]
+    engine_pinned = by_id_pinned["$root::Engine"]
+
+    # Engineが左・上に大きくはみ出すため、$rootの矩形もそれを包含するよう
+    # 左・上に広がる(x, yが小さくなり、width/heightが増える)。
+    assert root_pinned["x"] < root_plain["x"]
+    assert root_pinned["y"] < root_plain["y"]
+    assert root_pinned["width"] > root_plain["width"]
+    assert root_pinned["height"] > root_plain["height"]
+
+    # Engine自身は$rootの矩形の内側に収まる(以前ははみ出していた)。
+    assert engine_pinned["x"] >= root_pinned["x"]
+    assert engine_pinned["y"] >= root_pinned["y"]
+    assert engine_pinned["x"] + engine_pinned["width"] <= root_pinned["x"] + root_pinned["width"]
+    assert engine_pinned["y"] + engine_pinned["height"] <= root_pinned["y"] + root_pinned["height"]
+
+
+def test_pinning_a_child_to_its_normal_flow_position_is_a_no_op():
+    """通常のフロー配置と全く同じ位置を明示的にピン留めしても出力は変わらない
+    （無用な拡大をしないことの確認）。Engineは最初の子のため、通常時の
+    フロー位置がちょうど内容領域の起点(相対オフセット(0, 0))と一致する。"""
+    _, model = build_semantic_model(_SAMPLE.strip())
+    gir = build_graph_ir(model)
+    vir_plain = build_view_ir(gir)
+    vir_pinned = build_view_ir(gir, pinned_positions={"$root::Engine": {"x": 0, "y": 0}})
+    assert vir_plain == vir_pinned
