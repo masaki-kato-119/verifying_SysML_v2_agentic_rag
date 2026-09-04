@@ -17,13 +17,17 @@ from .lint_issue import LintIssue
 from .linter_rules.action_behavior_rules import ActionBehaviorRulesMixin
 from .linter_rules.case_and_view_rules import (
     _OBJECTIVE_LIMIT_NODE_TYPES,
+    _PORTION_USAGE_INVALID_OWNER_TYPES,
     _VIEW_RENDERING_LIMIT_NODE_TYPES,
     CaseAndViewRulesMixin,
 )
 from .linter_rules.connection_and_annotation_rules import ConnectionAndAnnotationRulesMixin
 from .linter_rules.definition_usage_rules import DefinitionUsageRulesMixin
 from .linter_rules.multiplicity_rules import MultiplicityRulesMixin
-from .linter_rules.state_machine_rules import StateMachineRulesMixin
+from .linter_rules.state_machine_rules import (
+    _PARALLEL_STATE_NODE_TYPES,
+    StateMachineRulesMixin,
+)
 from .linter_rules.type_and_inheritance_rules import TypeAndInheritanceRulesMixin
 from .linter_rules.usage_and_expression_rules import UsageAndExpressionRulesMixin
 from .type_system import TypeSystemFoundation
@@ -420,6 +424,14 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         # view renderingは1つまで(8.2.2.26)。
         if node_type in _VIEW_RENDERING_LIMIT_NODE_TYPES:
             self._check_single_view_rendering(node, namespace)
+
+        # snapshot/timesliceの所有者制約(8.2.2.9)。
+        if node_type in _PORTION_USAGE_INVALID_OWNER_TYPES:
+            self._check_portion_usage_owner(node, namespace)
+
+        # parallel stateは遷移を持てない(8.2.2.11)。
+        if node_type in _PARALLEL_STATE_NODE_TYPES:
+            self._check_parallel_state_has_no_transitions(node, namespace)
 
         if node_type in check_functions:
             check_functions[node_type](node, namespace)

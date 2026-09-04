@@ -12,6 +12,13 @@ from ..constants import (
 )
 from ..lint_issue import LintIssue
 
+# parallel な state は遷移を持てない(8.2.2.11)。所有者として見る型。
+# state_def / state_usage の両方で参照実装がエラーを返すことを実測済み
+# （2026-09-04）。数えるのは AST の `transition` ノードだけ:
+# `then b;`・`transition first a then b;` はどちらも transition になり、
+# `succession a then b;` は state 本体では参照実装がそもそも別のエラーを
+# 返す（＝この制約の対象として観測できない）ため含めない。
+_PARALLEL_STATE_NODE_TYPES = ("state_def", "state_usage")
 
 class StateMachineRulesMixin:
     def _check_state_def(self, node: Dict, namespace: str) -> None:
@@ -84,6 +91,25 @@ class StateMachineRulesMixin:
                 f"Transition のターゲットステート '{target}' が存在しません",
                 node
             ))
+    def _check_parallel_state_has_no_transitions(self, node: Dict, namespace: str) -> None:
+        """parallel な state は succession/transition を持てない (8.2.2.11)。
+
+        参照実装との比較評価で見つかった偽陰性（TransitionUsage_invalid.sysml、
+        比較レポートv2 §v2-3、`A parallel state cannot have successions or
+        transitions.`）。`state def S parallel { ... then b; ... }` と
+        `state s parallel { ... }` の両方が対象（参照実装で実測）。
+        """
+        if not node.get("isParallel"):
+            return
+        name = node.get("name", namespace)
+        for child in node.get("children", []):
+            if isinstance(child, dict) and child.get("type") == "transition":
+                self.issues.append(LintIssue(
+                    SEVERITY_ERROR,
+                    f"[8.2.2.11] parallel state '{name}' は遷移を持てません",
+                    child
+                ))
+
     def _check_state_machine_consistency(self) -> None:
         """
         ステートマシン関連の整合性チェック

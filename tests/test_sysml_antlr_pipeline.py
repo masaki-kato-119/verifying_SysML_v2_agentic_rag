@@ -5457,6 +5457,55 @@ def test_lint_requirement_subject_count_and_position():
     ) == 1
 
 
+def test_lint_portion_usage_owner():
+    """snapshot/timeslice は occurrence の定義か使用が所有していなければならない
+    （PortionUsage_Invalid.sysml参照、参照実装の
+    "Must be owned by an occurrence definition or usage."）。
+
+    所有者として不正だと実測できた型だけの拒否リストで判定する
+    （package直下とattribute def内。part usage/part def/timeslice内はクリーン）。
+    """
+    for src in ("snapshot s;", "timeslice t;", "attribute def AD { snapshot s; }"):
+        issues = lint_ast(parse_sysml_antlr(src))
+        assert any(
+            "occurrenceの定義または使用" in i.message for i in issues if i.severity == "error"
+        ), f"検出されるべきなのに検出されなかった: {src}"
+
+    for src in (
+        "part p { snapshot s; }",
+        "part def PD { snapshot s; }",
+        "part p { timeslice t { snapshot s; } }",
+    ):
+        issues = lint_ast(parse_sysml_antlr(src))
+        assert not any(
+            "occurrenceの定義または使用" in i.message for i in issues if i.severity == "error"
+        ), f"誤検出した: {src}"
+
+
+def test_lint_parallel_state_has_no_transitions():
+    """parallel な state は遷移を持てない（TransitionUsage_invalid.sysml参照、
+    参照実装の "A parallel state cannot have successions or transitions."）。
+    state def / state usage の両方が対象。"""
+    for src in (
+        "state def S parallel { state a; then b; state b; }",
+        "state s parallel { state a; then b; state b; }",
+        "state def S parallel { state a; state b; transition first a then b; }",
+    ):
+        issues = lint_ast(parse_sysml_antlr(src))
+        assert any(
+            "parallel state" in i.message for i in issues if i.severity == "error"
+        ), f"検出されるべきなのに検出されなかった: {src}"
+
+    for src in (
+        "state def S { state a; then b; state b; }",
+        "state def S parallel { state a; state b; }",
+    ):
+        issues = lint_ast(parse_sysml_antlr(src))
+        assert not any(
+            "parallel state" in i.message for i in issues if i.severity == "error"
+        ), f"誤検出した: {src}"
+
+
 def test_lint_variation_variant_ownership():
     """variationとvariantの所有関係（Variability_invalid.sysml参照）。
     参照実装の "An owned usage of a variation must be a variant." と
