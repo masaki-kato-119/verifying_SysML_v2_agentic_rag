@@ -196,6 +196,10 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         
         # 第3パス: ステートマシン関連の整合性チェック
         self._check_state_machine_consistency()
+
+        # 第3.5パス: verifyの配置チェック(8.2.2.25)。所有チェーンを2段見る
+        # 必要があり、ノード単位のディスパッチでは判定できないためここで走らせる。
+        self._check_verify_requirement_placement(ast)
         
         # 第4パス: 継承の整合性チェック
         self._check_inheritance_consistency()

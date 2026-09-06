@@ -5457,6 +5457,38 @@ def test_lint_requirement_subject_count_and_position():
     ) == 1
 
 
+def test_lint_verify_requirement_placement():
+    """verifyはverification caseのobjectiveの直下にしか置けない
+    （Verification_invalid.sysml参照、参照実装の "A requirement verification
+    must be in the objective of a verification case."）。
+
+    参照実装で実測した境界: verification case でも objective 以外はだめ、
+    objective でも所有者が verification case でなければだめ、objective の中で
+    1段ネストしてもだめ（**直下**であること）。
+    """
+    prelude = "requirement def R; requirement r : R; "
+    for src in (
+        "requirement def R2 { verify r; }",
+        "verification def VC { requirement { verify r; } }",
+        "case def VP { objective { verify r; } }",
+        "verification def VC { objective { requirement { verify r; } } }",
+    ):
+        issues = lint_ast(parse_sysml_antlr(prelude + src))
+        assert any(
+            "8.2.2.25" in i.message for i in issues if i.severity == "error"
+        ), f"検出されるべきなのに検出されなかった: {src}"
+
+    for src in (
+        "verification def VC { objective { verify r; } }",
+        "verification def VCD { objective { verify r; } } verification vc : VCD { objective { verify r; } }",
+        "requirement def R3 { attribute a; }",
+    ):
+        issues = lint_ast(parse_sysml_antlr(prelude + src))
+        assert not any(
+            "8.2.2.25" in i.message for i in issues if i.severity == "error"
+        ), f"誤検出した: {src}"
+
+
 def test_lint_at_least_two_related_elements():
     """connection/interfaceは2つ以上の要素を結ばなければならない
     （Relationship_invalid_relatedElement0.sysml参照、参照実装の

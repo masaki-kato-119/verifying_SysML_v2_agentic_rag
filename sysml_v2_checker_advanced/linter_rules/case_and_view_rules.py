@@ -41,6 +41,10 @@ _VIEW_RENDERING_LIMIT_NODE_TYPES = ("view_def", "view_usage")
 # （検出漏れは許容する。PortionUsage_Invalid.sysmlはpackage直下なので拾える）。
 _PORTION_USAGE_INVALID_OWNER_TYPES = ("root", "package", "attribute_def")
 
+# `verify` が置ける唯一の場所は「verification case の objective の直下」
+# (8.2.2.25)。参照実装で実測して確定（2026-09-05）。
+_VERIFICATION_CASE_NODE_TYPES = ("verification_case_def", "verification_case_usage")
+
 
 class CaseAndViewRulesMixin:
     def _check_occurrence_advanced_rules(self) -> None:
@@ -326,6 +330,51 @@ class CaseAndViewRulesMixin:
                     f"（現在の所有者: '{owner_name}'）",
                     child
                 ))
+
+    def _check_verify_requirement_placement(self, ast: Dict) -> None:
+        """`verify` は verification case の objective の直下にしか置けない
+        (8.2.2.25)。
+
+        参照実装との比較評価で見つかった偽陰性（Verification_invalid.sysml、
+        比較レポートv2 §v2-3、`A requirement verification must be in the
+        objective of a verification case.`）。
+
+        参照実装(jar 0.61.0)への問い合わせで確定した境界（2026-09-05）:
+
+        - `verification def VC { objective { verify r; } }` → クリーン。
+        - `verification vc : VCD { objective { verify r; } }`（usage）→ クリーン。
+        - `requirement def R { verify r; }` → エラー。
+        - `verification def VC { requirement { verify r; } }` → エラー
+          （verification case の中でも objective 以外はだめ）。
+        - `case def VP { objective { verify r; } }` → エラー
+          （objective でも所有者が verification case でなければだめ）。
+        - `verification def VC { objective { requirement { verify r; } } }`
+          → エラー（1段深いネストも不可。**直下**でなければならない）。
+
+        所有チェーンはASTにそのまま出ているので型解決は要らない。ただし
+        「直上がobjective」「その直上がverification case」という2段の関係な
+        ため、ノード単位のディスパッチでは判定できない。ここだけ祖先の型を
+        持ち回る再帰走査にしてある。
+        """
+
+        def walk(node: Dict, parent_type: str | None, grandparent_type: str | None) -> None:
+            for child in node.get("children", []):
+                if not isinstance(child, dict):
+                    continue
+                if child.get("type") == "verify_requirement_usage":
+                    in_objective = node.get("type") == "objective_usage"
+                    owner_is_verification = parent_type in _VERIFICATION_CASE_NODE_TYPES
+                    if not (in_objective and owner_is_verification):
+                        name = child.get("name") or child.get("type_name") or "(無名)"
+                        self.issues.append(LintIssue(
+                            SEVERITY_ERROR,
+                            f"[8.2.2.25] verify '{name}' は verification case の "
+                            f"objective の直下に置かなければなりません",
+                            child
+                        ))
+                walk(child, node.get("type"), parent_type)
+
+        walk(ast, None, None)
 
     def _check_case_def(self, node: Dict, namespace: str) -> None:
         """case定義のチェック (8.2.2.22)"""
