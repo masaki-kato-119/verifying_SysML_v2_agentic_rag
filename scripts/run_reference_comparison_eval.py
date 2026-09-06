@@ -4,8 +4,7 @@ OMG公式のSysML v2 Pilot Implementation（eval/sysml_reference/reference_drive
 経由）の両方を実行し、診断（エラー/警告）を比較可能な形式に正規化して
 サンプル単位でJSONに永続化する。
 
-LLMは一切使わない決定的な評価。ただし参照実装側はJavaプロセスをサンプルごとに
-起動するため、実行時間はサンプル数に比例して長くなる（1ファイルあたり数秒程度）。
+LLMは一切使わない決定的な評価。
 
 診断スキーマ（正規化後、両実装で共通）::
 
@@ -29,9 +28,29 @@ LLMは一切使わない決定的な評価。ただし参照実装側はJavaプ�
 使い方::
 
     python scripts/run_reference_comparison_eval.py --limit 20          # 動作確認用の小規模実行
-    python scripts/run_reference_comparison_eval.py                     # 全件実行（逐次。730件で2時間強）
+    python scripts/run_reference_comparison_eval.py                     # 全件実行（batchモード。730件で約23分）
     python scripts/run_reference_comparison_eval.py --category official_library
     python scripts/run_reference_comparison_eval.py --force             # 既存結果を無視して再実行
+    python scripts/run_reference_comparison_eval.py --mode serial       # 従来方式（1件1JVM）へ戻す
+
+実行モード
+----------
+既定は ``--mode batch``。``RefDriver`` を ``--batch`` で常駐させ、標準入力へ
+サンプルのパスを1行ずつ送って1行1JSONで受け取る。参照実装のライブラリロード
+（1件あたり13秒前後を占める）が1回で済むため、730件が2時間強から**約23分**になる。
+
+**バッチモードは並列化ではなく逐次化である**（JVMは1個、完全逐次）。下の
+「並列実行の危険性」で書いたライブラリロード障害は複数JVMの同時実行が原因なので、
+バッチ化はその問題を増やす方向ではない。
+
+**2026-09-05、全730件でバッチモードと逐次モードの診断が完全に一致することを
+確認済み**（crashedの一致と、診断の (severity, line, message) 多重集合の一致。
+不一致0件）。検証は ``scripts/compare_reference_runs_batch_vs_serial.py`` で再現できる。
+``SysMLInteractive`` はJupyterカーネルのセッションAPIで連続する ``process()`` は
+同一セッションのセル相当なので、**参照実装のjarやサンプルコーパスを入れ替えたら、
+batchを既定のまま使う前にこの検証をやり直すこと**（RefDriver側はファイルごとに
+``removeResource()`` を呼んで前のリソースを外しているが、それで十分かは実測でしか
+分からない）。
 
 並列実行の危険性（2026-09-04に実測。既定を --workers 6 から 1 に変えた理由）
 --------------------------------------------------------------------------
@@ -56,10 +75,12 @@ LLMは一切使わない決定的な評価。ただし参照実装側はJavaプ�
    診断が空でなくても ``crashed`` として扱う。
 
 したがって ``--workers`` を1より上げても壊れた結果が保存されることは無いが、
-canaryで中断して進まなくなるだけなので、上げる意味は薄い。
-高速化は ``RefDriver.java`` のバッチモード化（JVM1個でライブラリを1回だけロードする
-逐次実行）で行う予定で、blackboardプラン ``sysml_linter_fixes_v2`` の
-``add_refdriver_batch_mode`` として起票済み。
+canaryで中断して進まなくなるだけなので、上げる意味は薄い。``--workers`` は
+``--mode serial`` のときだけ効く。
+
+高速化はバッチモード（上記）で行った。canaryはバッチ側にも入っている
+（``ReferenceBatch.run_canary()``）ので、常駐JVMが途中で検証をやめた場合も
+同じように検出して中断する。
 """
 
 from __future__ import annotations
@@ -228,6 +249,53 @@ def process_one(entry: dict, reference_module, timeout: float) -> tuple[dict, di
     return entry, record, None
 
 
+def process_one_batched(entry: dict, batch, reference_module) -> tuple[dict, dict | None, str | None]:
+    """process_one のバッチ版。参照実装の呼び出しだけを常駐JVMへ差し替える。
+
+    ローカル側は変わらない。参照実装へはテキストではなくファイルパスを渡す
+    （常駐側が読む）ので、一時ファイルの作成も要らない。
+    """
+    file_path = REPO_ROOT / entry["path"]
+    try:
+        text = file_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return entry, None, f"読み込み失敗: {exc}"
+
+    local = run_local_check(text)
+
+    t0 = time.perf_counter()
+    result = batch.check_file(str(file_path))
+    duration_ms = (time.perf_counter() - t0) * 1000
+    reference = {
+        "parsed": not result.get("crashed", False),
+        "crashed": bool(result.get("crashed", False)),
+        "raw_stderr_excerpt": (result.get("raw_stderr") or "")[-2000:] or None,
+        "diagnostics": [
+            {
+                "severity": (d.get("severity") or "").lower(),
+                "line": d.get("line"),
+                "message": d.get("message") or "",
+            }
+            for d in result.get("diagnostics", [])
+        ],
+        "duration_ms": duration_ms,
+    }
+
+    agreement = classify_agreement(local, reference)
+    record = {
+        "sample": {
+            "path": entry["path"],
+            "source_repo": entry["source_repo"],
+            "category": entry["category"],
+            "sha256": entry["sha256"],
+        },
+        "local": local,
+        "reference": reference,
+        "agreement": agreement,
+    }
+    return entry, record, None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--limit", type=int, default=None, help="先頭N件のみ処理する（動作確認用）")
@@ -248,20 +316,31 @@ def main() -> int:
         default=25,
         help="このサンプル数ごとに参照実装の健全性チェック（canary）を挟む。0で無効化（非推奨）",
     )
+    parser.add_argument(
+        "--mode",
+        choices=("batch", "serial"),
+        default="batch",
+        help="batch（既定）は常駐JVM1個へパスを送り続ける。serialはサンプル1件ごとに"
+        "JVMを起動する従来方式。2026-09-05に全730件で両者の診断が完全一致することを"
+        "確認済み（scripts/compare_reference_runs_batch_vs_serial.py）。"
+        "参照実装のjarやサンプルを入れ替えたら、batchを使う前に再検証すること",
+    )
     args = parser.parse_args()
 
     reference_module = _load_reference_driver()
 
     # 実行開始前の健全性チェック。参照実装が「不正な入力にエラーを返す」ことを
     # 確認できないうちは1件も処理しない（汚染された結果を書かないため）。
-    ok, detail = reference_module.run_canary(timeout=max(args.timeout, 60.0))
-    print(f"canary (実行前): {detail}")
-    if not ok:
-        print(
-            "参照実装が健全でないため中断した。他のJavaプロセスが動いていないか確認し、"
-            "--workers を下げて再実行すること。"
-        )
-        return 2
+    # batchモードでは常駐JVM側でcanaryを回す必要があるので、後段で行う。
+    if args.mode == "serial":
+        ok, detail = reference_module.run_canary(timeout=max(args.timeout, 60.0))
+        print(f"canary (実行前): {detail}")
+        if not ok:
+            print(
+                "参照実装が健全でないため中断した。他のJavaプロセスが動いていないか確認し、"
+                "--workers を下げて再実行すること。"
+            )
+            return 2
 
     entries = load_manifest()
     if args.category:
@@ -283,7 +362,8 @@ def main() -> int:
             continue
         todo.append(entry)
 
-    print(f"対象サンプル数: {len(entries)}（うち新規処理対象 {len(todo)}件、スキップ {skipped}件、並列数 {args.workers}）")
+    mode_label = "batch（常駐JVM1個・逐次）" if args.mode == "batch" else f"serial（並列数 {args.workers}）"
+    print(f"対象サンプル数: {len(entries)}（うち新規処理対象 {len(todo)}件、スキップ {skipped}件、{mode_label}）")
     processed = 0
     errors = 0
     t_start = time.time()
@@ -312,7 +392,66 @@ def main() -> int:
         pending.clear()
         return discarded
 
-    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+    def note_progress(record: dict, entry: dict) -> None:
+        if processed % 10 == 0 or processed == len(todo):
+            elapsed = time.time() - t_start
+            rate = processed / elapsed if elapsed > 0 else 0
+            print(
+                f"  [{processed}/{len(todo)}] "
+                f"({rate:.2f}件/秒, 経過{elapsed:.0f}秒) 直近: {record['agreement']} — {entry['path']}"
+            )
+
+    if args.mode == "batch":
+        # 常駐JVM1個へパスを送り続ける。並列化ではなく逐次化であることに注意
+        # （複数JVMを同時に走らせると、docstringの「並列実行の危険性」にある
+        # ライブラリロード障害が再発する）。
+        with reference_module.ReferenceBatch(timeout=max(args.timeout, 300.0)) as batch:
+            ok, detail = batch.run_canary()
+            print(f"canary (実行前): {detail}")
+            if not ok:
+                print("参照実装が健全でないため中断した。他のJavaプロセスが動いていないか確認すること。")
+                return 2
+
+            for entry in todo:
+                _, record, error = process_one_batched(entry, batch, reference_module)
+                if error is not None:
+                    errors += 1
+                    print(f"  SKIP ({error}): {entry['path']}")
+                    continue
+
+                agreement_counter[record["agreement"]] += 1
+                processed += 1
+                pending.append((entry, record))
+
+                if args.canary_interval and processed % args.canary_interval == 0:
+                    ok, detail = batch.run_canary()
+                    if not ok:
+                        print(f"  canary NG ({detail})")
+                        discarded = discard_pending()
+                        processed -= discarded
+                        print(
+                            f"  直前のcanary以降の{discarded}件を破棄して中断する"
+                            "（参照実装が健全だった保証が無いため）"
+                        )
+                        canary_failed = True
+                        break
+                    flush_pending()
+                    print(f"  canary ok [{processed}/{len(todo)}]")
+
+                note_progress(record, entry)
+
+            if not canary_failed and pending:
+                ok, detail = batch.run_canary()
+                print(f"canary (実行後): {detail}")
+                if ok:
+                    flush_pending()
+                else:
+                    discarded = discard_pending()
+                    processed -= discarded
+                    print(f"最後の{discarded}件を破棄した（参照実装が健全だった保証が無いため）")
+                    canary_failed = True
+    else:
+      with ThreadPoolExecutor(max_workers=args.workers) as executor:
         futures = {
             executor.submit(process_one, entry, reference_module, args.timeout): entry for entry in todo
         }
@@ -345,16 +484,11 @@ def main() -> int:
                 flush_pending()
                 print(f"  canary ok [{processed}/{len(todo)}]")
 
-            if processed % 10 == 0 or processed == len(todo):
-                elapsed = time.time() - t_start
-                rate = processed / elapsed if elapsed > 0 else 0
-                print(
-                    f"  [{processed}/{len(todo)}] "
-                    f"({rate:.2f}件/秒, 経過{elapsed:.0f}秒) 直近: {record['agreement']} — {entry['path']}"
-                )
+            note_progress(record, entry)
 
-    # 最後の部分バッチもcanaryで裏付けてから書き出す。
-    if not canary_failed and pending:
+    # 最後の部分バッチもcanaryで裏付けてから書き出す（serialパス用。batchは
+    # 常駐JVMを閉じる前に上で済ませてある）。
+    if args.mode == "serial" and not canary_failed and pending:
         ok, detail = reference_module.run_canary(timeout=max(args.timeout, 60.0))
         print(f"canary (実行後): {detail}")
         if ok:

@@ -22,6 +22,17 @@ single line of JSON with the resulting diagnostics. This module just shells
 out to ``java`` to run that driver and translates its output into the
 dict shape used by the rest of the eval harness.
 
+Two ways to call it:
+
+- ``run_reference_check(text)`` starts one JVM per call. Simple, fully
+  isolated, and about 13 seconds a sample because ``si.loadLibrary()`` runs
+  every time.
+- ``ReferenceBatch`` keeps one JVM alive and feeds it paths on stdin, paying
+  the library load once. **Verified 2026-09-05 to produce diagnostics
+  identical to the per-call mode across all 730 corpus samples** (zero
+  mismatches; see ``scripts/compare_reference_runs_batch_vs_serial.py``).
+  Re-run that verification if the jar or the sample corpus changes.
+
 Setup (already done once for this checkout; see eval/sysml_reference/):
   - vendor/jupyter-sysml-kernel-0.61.0-pyhd8ed1ab_0.conda downloaded from
     conda-forge (contains the fat jar with the parser/validator).
@@ -150,6 +161,172 @@ def _check_setup() -> None:
             f'javac -cp "{EXTRACTED_JAR}" -d "{DRIVER_CLASS_DIR}" '
             f'"{DRIVER_CLASS_DIR / "RefDriver.java"}"'
         )
+
+
+RESULT_PREFIX = "@@REFDRIVER@@"
+
+
+class ReferenceBatch:
+    """Keep one RefDriver JVM alive and feed it file paths, one per line.
+
+    Single-file mode spends about 13 seconds per sample on JVM startup plus
+    ``si.loadLibrary()``; batch mode pays that once. Use it as a context
+    manager::
+
+        with ReferenceBatch() as batch:
+            for path in paths:
+                result = batch.check_file(path)
+
+    The result dicts have the same shape ``run_reference_check`` returns, so
+    callers can swap between the two.
+
+    **Do not treat batch results as interchangeable with serial ones without
+    checking.** ``SysMLInteractive`` is the Jupyter kernel's session API, and
+    consecutive ``process()`` calls are cells of one session; RefDriver calls
+    ``removeResource()`` after each file to drop the previous declarations, but
+    whether that fully isolates files is an empirical question. The two modes
+    were compared over all 730 samples before batch mode was used for anything
+    (see ``scripts/compare_reference_runs_batch_vs_serial.py``).
+
+    Not thread-safe, and deliberately so: one JVM answers one request at a time.
+    Running several of these in parallel would reintroduce the library-load
+    failures that made concurrent single-file runs unusable.
+    """
+
+    def __init__(self, timeout: float = 300.0) -> None:
+        _check_setup()
+        self._timeout = timeout
+        self._proc = None
+
+    def __enter__(self) -> "ReferenceBatch":
+        java = _find_java()
+        classpath = f"{DRIVER_CLASS_DIR}{os.pathsep}{EXTRACTED_JAR}"
+        self._proc = subprocess.Popen(
+            [java, "-cp", classpath, "RefDriver", str(LIBRARY_DIR), "--batch"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+        )
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
+
+    def close(self) -> None:
+        if self._proc is None:
+            return
+        try:
+            if self._proc.stdin is not None:
+                self._proc.stdin.close()
+            self._proc.wait(timeout=30)
+        except Exception:  # noqa: BLE001 -- 終了処理。相手のJVMがどう死んでいてもkillへ倒す
+            self._proc.kill()
+        finally:
+            self._proc = None
+
+    def check_file(self, source_path: str) -> dict[str, Any]:
+        """Send one path and read back its result line."""
+        if self._proc is None or self._proc.poll() is not None:
+            return {
+                "success": False,
+                "diagnostics": [],
+                "raw_stderr": "[batch process is not running]",
+                "crashed": True,
+            }
+        try:
+            self._proc.stdin.write(str(source_path) + "\n")
+            self._proc.stdin.flush()
+        except Exception as exc:  # noqa: BLE001 -- 相手のJVMが落ちている場合を含む
+            return {
+                "success": False,
+                "diagnostics": [],
+                "raw_stderr": f"[failed to send path: {exc!r}]",
+                "crashed": True,
+            }
+
+        # Skip anything the JVM or its libraries print on their own; only lines
+        # carrying RESULT_PREFIX are answers.
+        while True:
+            line = self._proc.stdout.readline()
+            if line == "":
+                return {
+                    "success": False,
+                    "diagnostics": [],
+                    "raw_stderr": "[batch process closed stdout before answering]",
+                    "crashed": True,
+                }
+            if line.startswith(RESULT_PREFIX):
+                payload = line[len(RESULT_PREFIX):].strip()
+                break
+
+        return _normalize_driver_json(payload, raw_stderr="")
+
+    def run_canary(self) -> tuple[bool, str]:
+        """Same health check as the module-level run_canary, over the batch."""
+        import tempfile
+
+        fd, tmp = tempfile.mkstemp(suffix=".sysml")
+        os.close(fd)
+        try:
+            Path(tmp).write_text(CANARY_SOURCE, encoding="utf-8")
+            result = self.check_file(tmp)
+        finally:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+        if result["crashed"]:
+            return False, f"batch canary crashed: {(result.get('raw_stderr') or '')[-200:]}"
+        errors = [d for d in result["diagnostics"] if (d.get("severity") or "").lower() == "error"]
+        if not errors:
+            return False, "batch canary returned no error-severity diagnostic"
+        return True, f"batch canary ok ({len(errors)} error diagnostics)"
+
+
+def _normalize_driver_json(payload: str, raw_stderr: str) -> dict[str, Any]:
+    """Turn one RefDriver JSON line into the dict shape callers expect."""
+    marker = _library_load_failed(raw_stderr)
+    if marker is not None:
+        return {
+            "success": False,
+            "diagnostics": [],
+            "raw_stderr": raw_stderr + f"\n[library load failure detected ({marker})]",
+            "crashed": True,
+        }
+    try:
+        result = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        return {
+            "success": False,
+            "diagnostics": [],
+            "raw_stderr": raw_stderr + f"\n[JSON decode error: {exc}]\n{payload}",
+            "crashed": True,
+        }
+    if result.get("crashed"):
+        return {
+            "success": False,
+            "diagnostics": [],
+            "raw_stderr": raw_stderr + "\n" + (result.get("exception") or ""),
+            "crashed": True,
+        }
+    diagnostics = [
+        {
+            "severity": issue.get("severity"),
+            "line": issue.get("line"),
+            "message": issue.get("message"),
+        }
+        for issue in result.get("issues", [])
+    ]
+    return {
+        "success": bool(result.get("success")),
+        "diagnostics": diagnostics,
+        "raw_stderr": raw_stderr,
+        "crashed": False,
+    }
 
 
 def run_reference_check(sysml_text: str, timeout: float = 30.0) -> dict[str, Any]:
