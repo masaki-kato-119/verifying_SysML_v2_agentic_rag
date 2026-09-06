@@ -13,8 +13,85 @@ from ..constants import (
 )
 from ..lint_issue import LintIssue
 
+# 「関連は2つ以上の要素を結ばなければならない」(8.2.2.12/8.2.2.14)を検査する
+# ノード種別。`end` メンバーで端点を宣言する形だけが対象で、`connect a to b;`
+# のように端点をインラインで書く形は常に2つ揃うので含めない。
+_RELATED_ELEMENTS_NODE_TYPES = (
+    "connection_def", "connection_usage",
+    "interface_def", "interface_usage",
+)
+
+
+
+def _count_related_elements(node: Dict) -> int:
+    """connection / interface が結んでいる端点の数を数える。
+
+    端点は書き方によってASTの入り方が違うので全部見る（2026-09-05、
+    `connection frontLeftPin connect deck to frontLeftWheel;`
+    （lawnmowerPackage.sysml:35）をendが0個と数えて誤検出したため追加）:
+
+    - `connection { end ::> a; end ::> b; }` → `connection_end_member` の子。
+    - `connection fp connect a to b;` → `firstEnd` / `thenEnd`。
+    - `connect a to b;` 系 → `from_end` / `to_end`。
+    - `interface i connect a to b;` → `interface_part` の中の from_end/to_end。
+    - `connection fp connect (a, b, c);` （n項）→ `ends` リスト。
+    """
+    count = sum(
+        1 for c in node.get("children", [])
+        if isinstance(c, dict) and c.get("type") == "connection_end_member"
+    )
+    for key in ("firstEnd", "thenEnd", "from_end", "to_end"):
+        if node.get(key):
+            count += 1
+    for part_key in ("interface_part", "connector_part"):
+        part = node.get(part_key)
+        if isinstance(part, dict):
+            count += sum(1 for k in ("from_end", "to_end") if part.get(k))
+    ends = node.get("ends")
+    if isinstance(ends, list):
+        count += len(ends)
+    return count
+
 
 class ConnectionAndAnnotationRulesMixin:
+    def _check_at_least_two_related_elements(self, node: Dict, namespace: str) -> None:
+        """connection / interface は2つ以上の要素を結ばなければならない
+        （Relationship_invalid_relatedElement0.sysml、参照実装の
+        "Must have at least two related elements"）。
+
+        参照実装(jar 0.61.0)への問い合わせで確定した境界（2026-09-05）:
+
+        - `connection { end ::> b0; }`（end 1つ）→ エラー。end 0個・名前付きでも同じ。
+        - `connection { end ::> b0; end ::> b1; }`（end 2つ）→ クリーン。
+        - `connection def CD;` / `interface def ID;`（本体なし＝end 0個）→ エラー。
+        - **`abstract` が付いていると常にクリーン**（end 0個でも1個でも）。
+        - **`interface def ID :> Base;`（Baseがendを2つ持つ）→ クリーン。**
+          つまり参照実装は継承した端点も数える。
+        - `connect a to b;` は端点がインラインなので常に2つ揃い、対象外。
+
+        最後の2点があるため、判定は「自ノードが直接持つ end が2つ未満」だけでは
+        できない。継承や型指定で端点を得ているケースを誤検出しないよう、
+        **abstract でなく、継承節も型指定も持たないノードだけ**を対象にする
+        （検出漏れは許容し、偽陽性は出さない。他の実装済み意味ルールと同じ方針）。
+        """
+        if node.get("isAbstract"):
+            return
+        # 継承・型指定があると端点を外から得ている可能性がある。解決せずに
+        # 判断できないので、そういうノードには触れない。
+        if node.get("inheritance") or node.get("type_name") or node.get("redefines"):
+            return
+        end_count = _count_related_elements(node)
+        if end_count >= 2:
+            return
+        name = node.get("name") or "(無名)"
+        kind = "Interface" if node.get("type", "").startswith("interface") else "Connection"
+        self.issues.append(LintIssue(
+            SEVERITY_ERROR,
+            f"[8.2.2.12] {kind} '{name}' は2つ以上の要素を結ばなければなりません"
+            f"（endが{end_count}個）",
+            node
+        ))
+
     def _check_connection_advanced_rules(self) -> None:
         """
         接続高度ルールチェック (SysML v2 8.2.2.13)

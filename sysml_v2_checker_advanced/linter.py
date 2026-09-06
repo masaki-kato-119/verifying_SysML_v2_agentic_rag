@@ -21,7 +21,10 @@ from .linter_rules.case_and_view_rules import (
     _VIEW_RENDERING_LIMIT_NODE_TYPES,
     CaseAndViewRulesMixin,
 )
-from .linter_rules.connection_and_annotation_rules import ConnectionAndAnnotationRulesMixin
+from .linter_rules.connection_and_annotation_rules import (
+    _RELATED_ELEMENTS_NODE_TYPES,
+    ConnectionAndAnnotationRulesMixin,
+)
 from .linter_rules.definition_usage_rules import DefinitionUsageRulesMixin
 from .linter_rules.multiplicity_rules import MultiplicityRulesMixin
 from .linter_rules.state_machine_rules import (
@@ -432,6 +435,10 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         # parallel stateは遷移を持てない(8.2.2.11)。
         if node_type in _PARALLEL_STATE_NODE_TYPES:
             self._check_parallel_state_has_no_transitions(node, namespace)
+
+        # 関連は2つ以上の要素を結ばなければならない(8.2.2.12/8.2.2.14)。
+        if node_type in _RELATED_ELEMENTS_NODE_TYPES:
+            self._check_at_least_two_related_elements(node, namespace)
 
         if node_type in check_functions:
             check_functions[node_type](node, namespace)

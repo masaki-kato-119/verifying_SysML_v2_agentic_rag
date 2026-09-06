@@ -5457,6 +5457,48 @@ def test_lint_requirement_subject_count_and_position():
     ) == 1
 
 
+def test_lint_at_least_two_related_elements():
+    """connection/interfaceは2つ以上の要素を結ばなければならない
+    （Relationship_invalid_relatedElement0.sysml参照、参照実装の
+    "Must have at least two related elements"）。
+
+    参照実装で実測した境界: abstract は常にクリーン、継承で端点を得ている形
+    （`interface def ID :> Base;`）もクリーン。したがって abstract・継承節・
+    型指定のいずれかを持つノードには触れない（偽陽性を出さないための制限で、
+    検出漏れは許容する）。
+    """
+    for src in (
+        "part v { part b0; connection { end ::> b0; } }",
+        "part v { connection { } }",
+        "part v { part b0; connection c { end ::> b0; } }",
+        "connection def CD;",
+        "port def Pt; interface def ID { end p1 : Pt; }",
+    ):
+        issues = lint_ast(parse_sysml_antlr(src))
+        assert any(
+            "2つ以上の要素" in i.message for i in issues if i.severity == "error"
+        ), f"検出されるべきなのに検出されなかった: {src}"
+
+    for src in (
+        "part v { part b0; part b1; connection { end ::> b0; end ::> b1; } }",
+        "part v { part b0; abstract connection { end ::> b0; } }",
+        # 端点をインラインで書く形。ASTでは firstEnd/thenEnd・ends・
+        # interface_part に入るので、connection_end_member だけを数えると
+        # 0個と誤判定する（lawnmowerPackage.sysml:35 で実際に誤検出した）。
+        "part v { part a; part b; connection fp connect a to b; }",
+        "part v { part a; part b; part c; connection fp connect (a, b, c); }",
+        "part v { part a; part b; interface i connect a to b; }",
+        "part def B; connection def CD { end e1 : B; end e2 : B; }",
+        "port def Pt; interface def Base { end a : Pt; end b : Pt; } interface def ID :> Base;",
+        "port def Pt; abstract interface def ID { end p1 : Pt; }",
+        "part v { part b0; part b1; connect b0 to b1; }",
+    ):
+        issues = lint_ast(parse_sysml_antlr(src))
+        assert not any(
+            "2つ以上の要素" in i.message for i in issues if i.severity == "error"
+        ), f"誤検出した: {src}"
+
+
 def test_lint_portion_usage_owner():
     """snapshot/timeslice は occurrence の定義か使用が所有していなければならない
     （PortionUsage_Invalid.sysml参照、参照実装の
