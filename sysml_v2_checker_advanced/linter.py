@@ -200,6 +200,10 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         # 第3.5パス: verifyの配置チェック(8.2.2.25)。所有チェーンを2段見る
         # 必要があり、ノード単位のディスパッチでは判定できないためここで走らせる。
         self._check_verify_requirement_placement(ast)
+
+        # 第3.6パス: package直下のfeatureのredefineチェック(8.2.2.6)。
+        # 所有者がpackageかどうかを見る必要があるためここで走らせる。
+        self._check_package_level_feature_redefinition(ast)
         
         # 第4パス: 継承の整合性チェック
         self._check_inheritance_consistency()

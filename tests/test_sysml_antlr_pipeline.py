@@ -5457,6 +5457,38 @@ def test_lint_requirement_subject_count_and_position():
     ) == 1
 
 
+def test_lint_package_level_feature_redefinition():
+    """package直下のfeatureはredefineできない
+    （Redefinition_OwningType_Invalid.sysml参照、参照実装の
+    "A package-level feature cannot be redefined"）。
+
+    参照実装で実測した境界: `:>>` も対象（ASTでは kind="redefines" に正規化
+    される）、`subsets` と `:>` は対象外、所有者がpackageでなければクリーン。
+    同一package内で完結する場合だけを見る（より内側のスコープに同名要素が
+    ある場合の取り違えを避けるため）。
+    """
+    for src in (
+        "part def W; part wheel : W; part wheel1 redefines wheel;",
+        "part def W; part wheel : W; part w2 :>> wheel;",
+        "attribute a; attribute a1 redefines a;",
+    ):
+        issues = lint_ast(parse_sysml_antlr(src))
+        assert any(
+            "8.2.2.6]" in i.message for i in issues if i.severity == "error"
+        ), f"検出されるべきなのに検出されなかった: {src}"
+
+    for src in (
+        "part def W; part wheel : W; part w3 subsets wheel;",
+        "part def W; part wheel : W; part w4 :> wheel;",
+        "part def W; part def V { part eng : W; part small : W redefines eng; }",
+        "part def W; part wheel : W;",
+    ):
+        issues = lint_ast(parse_sysml_antlr(src))
+        assert not any(
+            "8.2.2.6]" in i.message for i in issues if i.severity == "error"
+        ), f"誤検出した: {src}"
+
+
 def test_lint_verify_requirement_placement():
     """verifyはverification caseのobjectiveの直下にしか置けない
     （Verification_invalid.sysml参照、参照実装の "A requirement verification

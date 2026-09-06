@@ -36,6 +36,11 @@ _SUBJECT_PARAMETER_LIKE_TYPES = (
 # `part_instance`はこのパーサーでのpart usageのノード型名。
 _VARIATION_OWNED_USAGE_SUFFIXES = ("_usage", "_instance")
 
+# package直下のfeatureはredefineできない(8.2.2.6)。`_def`で終わる型は定義
+# （feature ではない）ので数えない。`part_instance` はこのパーサーでの
+# part usage のノード型名。
+_PACKAGE_SCOPE_NODE_TYPES = ("root", "package")
+
 class DefinitionUsageRulesMixin:
     @staticmethod
     def _conjugated_lookup_name(type_name: str) -> str:
@@ -724,6 +729,66 @@ class DefinitionUsageRulesMixin:
                     f"variationの所有メンバーでなければなりません",
                     child
                 ))
+
+    def _check_package_level_feature_redefinition(self, ast: Dict) -> None:
+        """package直下のfeatureをredefineしてはいけない (8.2.2.6)。
+
+        参照実装との比較評価で見つかった偽陰性（Redefinition_OwningType_Invalid.sysml、
+        比較レポートv2 §v2-3、`A package-level feature cannot be redefined`）。
+
+        参照実装(jar 0.61.0)への問い合わせで確定した境界（2026-09-05）:
+
+        - `package P { part wheel : W; part wheel1 redefines wheel; }` → エラー。
+        - `:>>` も同じくエラー（ASTでは kind="redefines" に正規化される）。
+        - `subsets` / `:>` → クリーン。redefinitionだけが対象。
+        - `part def V { part eng : W; part small : W redefines eng; }` → クリーン
+          （所有者がpackageでなければよい）。
+        - `attribute` でも同じく package 直下ならエラー。
+
+        **同一package内で完結する場合だけを見る。** redefine先の名前解決を
+        一般にやろうとすると、より内側のスコープに同名の要素がある場合に
+        取り違えて誤検出する。「redefineする側もされる側も同じpackageの直下」
+        という条件なら、そのpackageのスコープで名前が一意に決まるので安全。
+        別ファイル・別packageを指す `redefines Q::wheel` 形は検出しない
+        （参照実装はエラーにするが、こちらは検出漏れを許容する）。
+        """
+
+        def package_scope_features(package_node: Dict) -> dict:
+            """このpackageが直接持つfeature（定義ではなくusage）を名前で引く表。"""
+            features = {}
+            for child in package_node.get("children", []):
+                if not isinstance(child, dict):
+                    continue
+                child_type = child.get("type") or ""
+                if child_type.endswith("_def"):
+                    continue
+                name = child.get("name")
+                if name:
+                    features[name] = child
+            return features
+
+        def walk(node: Dict) -> None:
+            if (node.get("type") or "") in _PACKAGE_SCOPE_NODE_TYPES:
+                features = package_scope_features(node)
+                for child in node.get("children", []):
+                    if not isinstance(child, dict):
+                        continue
+                    for entry in child.get("redefines") or []:
+                        if not isinstance(entry, dict) or entry.get("kind") != "redefines":
+                            continue
+                        target = entry.get("target")
+                        if target in features and features[target] is not child:
+                            self.issues.append(LintIssue(
+                                SEVERITY_ERROR,
+                                f"[8.2.2.6] package直下のfeature '{target}' は "
+                                f"redefineできません（'{child.get('name')}' から）",
+                                child
+                            ))
+            for child in node.get("children", []):
+                if isinstance(child, dict):
+                    walk(child)
+
+        walk(ast)
 
     def _check_interface_def(self, node: Dict, namespace: str) -> None:
         """
