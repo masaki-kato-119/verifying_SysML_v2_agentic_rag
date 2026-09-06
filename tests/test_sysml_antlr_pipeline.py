@@ -5457,6 +5457,25 @@ def test_lint_requirement_subject_count_and_position():
     ) == 1
 
 
+def test_lint_accessible_feature_allows_package_qualification():
+    """`::` は名前空間限定の記法なので、直前のセグメントがpackageなら正当。
+
+    参照実装へ問い合わせて非対称を実測した（2026-09-05）:
+    `package Q { part v; } ... :>> Q::v;` はクリーンだが
+    `part def A { part x; } ... :>> A::x;` はエラーになる。この区別が無く、
+    official_examples 3ファイル（10a-Analysis / 10b-Trade-off /
+    VehicleModel_2_Simplified）で偽陽性を出していた。
+    """
+    for src in (
+        "package Q { part def W; part v : W; } part def X { part y :>> Q::v; }",
+        "package Q { package R { part def W; part v : W; } } part def X { part y :>> Q::R::v; }",
+    ):
+        issues = lint_ast(parse_sysml_antlr(src))
+        assert not any(
+            "accessible feature" in i.message for i in issues if i.severity == "error"
+        ), f"package限定を誤検出した: {src}"
+
+
 def test_lint_package_level_feature_redefinition():
     """package直下のfeatureはredefineできない
     （Redefinition_OwningType_Invalid.sysml参照、参照実装の

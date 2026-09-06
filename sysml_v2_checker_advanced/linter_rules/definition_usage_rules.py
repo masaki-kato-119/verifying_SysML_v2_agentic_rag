@@ -281,6 +281,21 @@ class DefinitionUsageRulesMixin:
                     SEVERITY_ERROR, "Cannot override a binding feature value", child
                 ))
 
+    def _is_package_name(self, name: str) -> bool:
+        """`name`が同ファイル内のpackageとして解決できるか
+        （`_is_feature_only_name`と同じ末尾一致方式）。
+
+        `::`は本来「名前空間限定」のための記法なので、直前のセグメントが
+        packageならその`::`は正当である。accessible feature path制約が
+        対象にしたいのは「型やfeatureの中の入れ子feature」へ`::`で入る形。
+        """
+        if not name:
+            return False
+        for pkg_name in self.packages:
+            if pkg_name == name or pkg_name.endswith(f"::{name}"):
+                return True
+        return False
+
     def _is_feature_only_name(self, name: str) -> bool:
         """`name`が型/パッケージとしては解決できず、feature/instance
         （self.element_refs）としてのみ解決できるかを判定する
@@ -367,6 +382,17 @@ class DefinitionUsageRulesMixin:
         `::`直後のセグメント名が確実にfeature/instanceとして解決でき、
         かつ型/パッケージとしては解決できない場合のみ判定する（型解決
         なしで安全に判定できる範囲に限定し、偽陽性リスクを抑えるため）。
+
+        (3) **直前のセグメントがpackageの場合**（2026-09-05追加）— `::`は
+        本来名前空間限定の記法なので、`VehicleDesignModel::vehicle`
+        （10a-Analysis.sysml:72）のようにpackage名で限定する形は正当。
+        参照実装へ問い合わせて非対称を実測した:
+        `package Q { part v; } ... :>> Q::v;` はクリーンだが
+        `part def A { part x; } ... :>> A::x;` はエラーになる。
+        この区別が無かったため official_examples 3ファイル
+        （10a-Analysis / 10b-Trade-off / VehicleModel_2_Simplified）で
+        偽陽性を出していた。判定は`::`の**直前**のセグメントに対して行う
+        （従来は直後のセグメント名しか見ていなかった）。
         """
         for candidate, ancestor_names, in_variability_scope in self._iter_reference_bearing_dicts(ast):
             segments = candidate.get("segments")
@@ -393,8 +419,19 @@ class DefinitionUsageRulesMixin:
             # 2026-08-28、730件回帰チェックで発見）。
             if isinstance(reference, str) and self._is_unverifiable_reference(reference):
                 continue
-            for seg_name, separator in segments[1:]:
+            for index in range(1, len(segments)):
+                seg_name, separator = segments[index]
                 if separator != "::":
+                    continue
+                # 直前のセグメントがpackageなら、この`::`は名前空間限定であり
+                # 正当（`VehicleDesignModel::vehicle`、10a-Analysis.sysml:72）。
+                # 参照実装で非対称を実測して確認した（2026-09-05）:
+                # `package Q { part v; } ... :>> Q::v;` はクリーンだが、
+                # `part def A { part x; } ... :>> A::x;` はエラーになる。
+                # この区別が無かったため official_examples 3ファイルで
+                # 偽陽性を出していた（VehicleModel_2_Simplified.sysml の
+                # `ActionTree::providePower::amplifyTorque` 等）。
+                if self._is_package_name(segments[index - 1][0]):
                     continue
                 if self._is_feature_only_name(seg_name):
                     self.issues.append(LintIssue(
