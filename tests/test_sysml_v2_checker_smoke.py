@@ -275,3 +275,75 @@ def test_transition_undeclared_simple_name_is_still_flagged():
     issues = [i for i in lint_sysml(parse_sysml(src)) if i.rule == "_check_transition"]
     assert len(issues) == 1
     assert "noSuchState" in issues[0].message
+
+
+def test_allocation_typed_by_non_allocation_definition_is_flagged():
+    """allocation は allocation definition で型付けしなければならない。
+
+    2026-09-07以前は存在判定しか持たず、`part def`や`part usage`で型付けした形は
+    「存在する」ため素通りしていた。参照実装は
+    `An allocation must be typed by allocation definitions.` を返す
+    （2026-09-07に実測。connection def / part def / part usage / attribute def /
+    action def / port def / allocation **usage** の7種すべてでエラー、
+    allocation def とその派生だけがクリーン）。
+    """
+    from sysml_v2_checker_advanced.parser import lint_sysml, parse_sysml
+
+    src = """
+    package P {
+        part def B;
+        part def C;
+        part p {
+            part b : B;
+            part c : C;
+            allocation x : B allocate b to c;
+        }
+    }
+    """
+    issues = [i for i in lint_sysml(parse_sysml(src)) if i.rule == "_check_allocation_usage"]
+    assert len(issues) == 1
+    assert "allocation definition" in issues[0].message
+
+
+def test_allocation_typed_by_allocation_definition_or_its_subtype_is_clean():
+    """派生した allocation definition での型付けも正当（参照実装で実測）。"""
+    from sysml_v2_checker_advanced.parser import lint_sysml, parse_sysml
+
+    src = """
+    package P {
+        part def B;
+        part def C;
+        allocation def BC2 { end : B[1]; end : C[1]; }
+        allocation def BC3 :> BC2;
+        part p {
+            part b : B;
+            part c : C;
+            allocation x : BC2 allocate b to c;
+            allocation y : BC3 allocate b to c;
+        }
+    }
+    """
+    issues = [i for i in lint_sysml(parse_sysml(src)) if i.rule == "_check_allocation_usage"]
+    assert issues == []
+
+
+def test_interface_typed_by_non_interface_definition_is_flagged():
+    """interface 側も同じ制約を持つ（参照実装のメッセージは
+    `An interface must be typed by interface definitions.`）。"""
+    from sysml_v2_checker_advanced.parser import lint_sysml, parse_sysml
+
+    src = """
+    package P {
+        port def PO;
+        port def PI;
+        part def Q;
+        part p {
+            port a : PO;
+            port b : PI;
+            interface i : Q connect a to b;
+        }
+    }
+    """
+    issues = [i for i in lint_sysml(parse_sysml(src)) if i.rule == "_check_interface_usage"]
+    assert len(issues) == 1
+    assert "interface definition" in issues[0].message

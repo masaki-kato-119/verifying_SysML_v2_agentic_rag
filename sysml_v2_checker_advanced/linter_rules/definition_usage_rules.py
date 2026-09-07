@@ -873,6 +873,48 @@ class DefinitionUsageRulesMixin:
                                 f"[8.2.2.14] Interface '{name}' の要素が存在しない型 '{type_name}' を参照しています",
                                 child
                             ))
+    def _type_is_wrong_kind(self, type_name: str, expected_node_type: str) -> bool:
+        """型参照が**同一ファイル内で解決でき、かつ期待する種別でない**ときTrue。
+
+        interface / allocation の usage は、それぞれ interface definition /
+        allocation definition で型付けしなければならない。参照実装のメッセージは
+        `An interface must be typed by interface definitions.` と
+        `An allocation must be typed by allocation definitions.`。
+
+        従来はこの制約を実装しておらず、存在判定（`_type_reference_exists`）だけを
+        持っていた。そのため`connection def BC1`で型付けした allocation を
+        「存在しないアロケーション 'BC1' を参照しています」と**誤った理由で**
+        報告し（`BC1`は実在する）、`part def`や`part usage`で型付けした形は
+        存在するがゆえに**素通りしていた**。2026-09-07、
+        invalid/AllocationUsage_Invalid.sysml で参照実装が3行に出すエラーのうち
+        1件だけを、しかも別の理由で報告していたことから発見した。
+
+        参照実装(jar 0.61.0)へ問い合わせて確定した境界（2026-09-07、canaryを
+        前後に挟んで実施）。allocation・interface で完全に対称:
+
+        - `allocation x : BC2 ...`（allocation def）→ クリーン
+        - `allocation x : BC3 ...`（`allocation def BC3 :> BC2`、派生）→ クリーン
+        - connection def / part def / part usage / attribute def / action def /
+          port def / **allocation usage** で型付け → いずれもエラー
+        - 存在しない名前 → `Couldn't resolve reference to Type 'X'.` と
+          種別エラーの**2件**が出る
+
+        つまり「definition であり、かつその種別であること」が条件で、usage では
+        だめ。7種の誤った型を実測したので、判定は「解決できた種別が
+        `expected_node_type` でなければ不正」とする。
+
+        存在しない名前に対しては**種別エラーを出さない**（参照実装は2件出すが、
+        こちらは既存の存在判定が1件出すので足りる）。また型が同一ファイル内で
+        解決できない場合は判定しない（他ファイル由来・import由来は種別が
+        分からないため。検出漏れは許容し、偽陽性は出さない）。
+        """
+        if not type_name:
+            return False
+        node = self._resolve_type_node(type_name)
+        if node is None:
+            return False
+        return node.get("type") != expected_node_type
+
     def _end_reference_is_missing(self, reference_subsetting: Dict) -> bool:
         """`connect` のエンド参照が「存在しない」と**断定できる**場合だけTrueを返す。
 
@@ -945,7 +987,17 @@ class DefinitionUsageRulesMixin:
                 f"[8.2.2.14] Interface usage '{node.get('name', 'unknown')}' が存在しないインターフェース '{type_name}' を参照しています",
                 node
             ))
-        
+        # 存在はするが interface definition ではない形（`interface i : CD ...`で
+        # CDがconnection def等）。判定条件は_type_is_wrong_kind参照。
+        elif self._type_is_wrong_kind(type_name, "interface_def"):
+            self.issues.append(LintIssue(
+                SEVERITY_ERROR,
+                f"[8.2.2.14] Interface usage '{node.get('name', 'unknown')}' は "
+                f"interface definition で型付けしなければなりません"
+                f"（'{type_name}' は interface definition ではありません）",
+                node
+            ))
+
         # InterfacePartのチェック（エンドの判定条件は_end_reference_is_missing参照）
         interface_part = node.get("interface_part")
         if interface_part:
@@ -1012,7 +1064,17 @@ class DefinitionUsageRulesMixin:
                 f"[8.2.2.15] Allocation usage '{node.get('name', 'unknown')}' が存在しないアロケーション '{type_name}' を参照しています",
                 node
             ))
-        
+        # 存在はするが allocation definition ではない形（`allocation x : BC1 ...`で
+        # BC1がconnection def等）。判定条件は_type_is_wrong_kind参照。
+        elif self._type_is_wrong_kind(type_name, "allocation_def"):
+            self.issues.append(LintIssue(
+                SEVERITY_ERROR,
+                f"[8.2.2.15] Allocation usage '{node.get('name', 'unknown')}' は "
+                f"allocation definition で型付けしなければなりません"
+                f"（'{type_name}' は allocation definition ではありません）",
+                node
+            ))
+
         # ConnectorPartのチェック
         connector_part = node.get("connector_part")
         if connector_part:
