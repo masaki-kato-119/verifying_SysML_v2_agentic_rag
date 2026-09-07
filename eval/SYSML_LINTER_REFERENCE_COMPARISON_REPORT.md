@@ -177,6 +177,36 @@ blackboard プラン `sysml_checker_false_positives` の `fix_allocation_type_ki
 偽陽性を潰す価値はある。循環継承の6件は同じ内容が「型システム」プレフィックス付きと
 無しで**二重報告**されているように見えるので、まずそこを確認するとよい。
 
+### 【2026-09-07 追記・訂正】`_check_part_instance` の不一致は connection def の未登録では説明できなかった
+
+上の「次の的」を書いた直後、`connection_def` が `_collect_symbols` のどの
+シンボル表にも登録されていないことが判明した（`fix_allocation_type_kind_check`
+で `connection def BC1` に種別エラーを出そうとして、その前の存在判定で
+落ちることから発見）。`part x : CD;`（CDはconnection def）を参照実装は
+クリーンと判定するのに対し、こちらは「存在しない型 'CD'」と報告していた。
+
+**これが `_check_part_instance` の不一致4件の原因ではないかと考えたが、外れた。**
+修正（`dfaaf00`）後の内訳は 8一致/4不一致 → **7一致/4不一致**（confidence
+0.667 → 0.636）で、消えたのは**一致していた側**だった。該当は
+`sysml-v2-lsp/examples/multiplicity.sysml` で、`connection def Axle` を
+`part frontAxle : Axle[1]` として使っている。**不一致4件は1件も減っていない。**
+
+したがって `_check_part_instance` の偽陽性の原因は依然として未特定である。
+着手する際は、4件それぞれの型参照が何であるかを個別に確認すること。
+
+なお同ファイルが `both_error → reference_only_error` へ移って「悪化」と
+報告されたが、これも§v3-4と同じ偶然の一致だった。参照実装がこのファイルに
+出す29件は全て `String`/`Real`/`Integer`/`Boolean` の解決失敗（v1 §4.3 に
+記録済みの参照実装側の環境要因）と「attribute definition で型付けが必要」で、
+`Axle` とは無関係である。**偶然の一致はこれで4例目**になった。
+
+`connection_def` 登録の副産物として、`connection def CD2 :> CD;`（endを基底から
+継承する形）を `_check_connection_structure_advanced` が「コネクターエンドが0個」
+として落とすことも実測で確認した（参照実装はクリーン。`connection def CD;`
+すなわちendが本当に0個の形は参照実装も
+`Must have at least two related elements` を返すので、そちらの検出は正しい）。
+継承したendを数えていないのが原因と見られるが、別原因なので別途対応する。
+
 ## v3-6. 実装への反映
 
 - `LintIssue.to_dict()` に `confidence` を追加した（`d82a14d`）。値だけでなく
