@@ -284,13 +284,22 @@ def test_lint_sysml_abstract_connection_def_may_have_no_ends():
     「コネクターエンドが0個しかありません」とエラーにしていた。
 
     非抽象で0個の場合は引き続きエラーになること（偽陰性ガード）も固定する。
+
+    2026-09-07: この検査を持っていた`_check_connection_structure_advanced`側の
+    枝は削除し、同じ事実を検査する`_check_at_least_two_related_elements`に
+    一本化した（継承でendを得る形を誤検出していたうえ、両者が二重に報告して
+    いたため。詳細はconnection_and_annotation_rules.pyの当該箇所のコメント）。
+    このテストの意図（abstractは許容・非抽象で0個は検出）はそのままで、
+    確認するメッセージが一本化後のものに変わっている。
     """
     abstract_def = "package P { abstract connection def C { doc /* base */ } }"
     assert lint_sysml(parse_sysml(abstract_def, strict=True)) == []
 
     concrete = "package P { connection def D { doc /* concrete */ } }"
-    messages = [i.message for i in lint_sysml(parse_sysml(concrete, strict=True))]
-    assert [m for m in messages if "コネクターエンド" in m], messages
+    issues = lint_sysml(parse_sysml(concrete, strict=True))
+    assert [i for i in issues if i.rule == "_check_at_least_two_related_elements"], [
+        (i.rule, i.message) for i in issues
+    ]
 
 
 def test_lint_sysml_qualified_reference_rooted_at_wildcard_import():

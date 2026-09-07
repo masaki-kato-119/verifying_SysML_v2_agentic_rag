@@ -126,17 +126,29 @@ class ConnectionAndAnnotationRulesMixin:
         # Nary Connector (3つ以上のエンド)
         elif len(connector_ends) > 2:
             self._check_nary_connector_structure(connection, connector_ends)
-        # 不正な構造
-        # `abstract connection def Connection :> LinkObject, Part { doc ... }`
-        # （Connections.sysml等、公式標準ライブラリ）のように、抽象基底定義は
-        # endを一切宣言せず、具体的な子定義（`BinaryConnection`等）側で
-        # 宣言するのが正当な形であるため、isAbstractな定義はここで除外する。
-        elif len(connector_ends) < 2 and not connection.get("isAbstract"):
-            self.issues.append(LintIssue(
-                SEVERITY_ERROR,
-                f"[8.2.2.13] Connection '{connection_name}' にコネクターエンドが {len(connector_ends)} 個しかありません（2個以上必要）",
-                connection
-            ))
+        # 「endが2個未満」の検査はここから削除した（2026-09-07）。
+        #
+        # 同じ事実を`_check_at_least_two_related_elements`（このファイル）が
+        # 検査しており、そちらの方が厳密に優れている:
+        #
+        # - 端点の数え方が`_count_related_elements`で一般化されている
+        #   （`connection_end_member`の子だけでなく firstEnd/thenEnd/
+        #   from_end/to_end/ends/interface_part も数える）。こちらは
+        #   `connection_end_member`しか数えていなかった。
+        # - `inheritance`/`type_name`/`redefines`を持つノードには触らない
+        #   ガードがある。こちらは`isAbstract`しか除外していなかったため、
+        #   `connection def CD2 :> CD;`（endを基底から継承する形）を
+        #   「end 0個」として落としていた。参照実装はこれをクリーンと判定する
+        #   （2026-09-07実測。一方`connection def CD;`のようにendが本当に
+        #   0個の形は参照実装も`Must have at least two related elements`を
+        #   返すので、そちらの検出は`_check_at_least_two_related_elements`が
+        #   引き続き担う）。
+        # - connection_def以外（connection_usage/interface_def/interface_usage）も
+        #   対象にしている。こちらは`self.connections`しか見ていない。
+        #
+        # 加えて両者が発火すると、参照実装が1件しか返さない事実を**二重に
+        # 報告**していた。劣っている側を落とすことで偽陽性と二重報告の両方が
+        # 解消する。
     def _check_binary_connector_structure(self, connection: Dict, connector_ends: List[str]) -> None:
         """
         Binary Connector の構造チェック

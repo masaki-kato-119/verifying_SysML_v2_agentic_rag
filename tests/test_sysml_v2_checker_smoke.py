@@ -347,3 +347,48 @@ def test_interface_typed_by_non_interface_definition_is_flagged():
     issues = [i for i in lint_sysml(parse_sysml(src)) if i.rule == "_check_interface_usage"]
     assert len(issues) == 1
     assert "interface definition" in issues[0].message
+
+
+def test_connection_def_inheriting_its_ends_is_not_flagged():
+    """endを基底から継承する connection def を「end 0個」と誤検出しない。
+
+    2026-09-07以前は `_check_connection_structure_advanced` が
+    `connection_end_member` の子だけを数え、`isAbstract` しか除外していなかった
+    ため、`connection def CD2 :> CD;` を落としていた。参照実装はこれを
+    クリーンと判定する（実測）。
+
+    endが本当に0個の形（`connection def CD;`）は参照実装も
+    `Must have at least two related elements` を返すので、検出は
+    `_check_at_least_two_related_elements` が引き続き担う。
+    """
+    from sysml_v2_checker_advanced.parser import lint_sysml, parse_sysml
+
+    inherited = """
+    package P {
+        part def B;
+        connection def CD { end : B[1]; end : B[1]; }
+        connection def CD2 :> CD;
+    }
+    """
+    assert lint_sysml(parse_sysml(inherited)) == []
+
+    genuinely_empty = "package P { connection def CD; }"
+    issues = lint_sysml(parse_sysml(genuinely_empty))
+    assert len(issues) == 1, [i.message for i in issues]
+    assert issues[0].rule == "_check_at_least_two_related_elements"
+
+
+def test_empty_connection_def_is_reported_once_not_twice():
+    """同じ事実を2つのルールが二重報告しない（参照実装も1件しか返さない）。
+
+    `_check_connection_structure_advanced` と
+    `_check_at_least_two_related_elements` が同じ「endが2個未満」を検査して
+    いたため、`connection def CD;` に対して2件出ていた（2026-09-07に劣っている
+    側を削除）。
+    """
+    from sysml_v2_checker_advanced.parser import lint_sysml, parse_sysml
+
+    issues = lint_sysml(parse_sysml("package P { connection def CD; }"))
+    rules = [i.rule for i in issues]
+    assert rules.count("_check_at_least_two_related_elements") == 1
+    assert "_check_connection_structure_advanced" not in rules
