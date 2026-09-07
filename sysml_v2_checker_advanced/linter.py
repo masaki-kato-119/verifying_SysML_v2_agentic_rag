@@ -324,6 +324,21 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
 
         elif node_type == "connection_def":
             self.connections.append(node)
+            # connection definitionも型参照の解決対象として登録する
+            # （2026-09-07）。これが無いと`connection def CD { ... } part x : CD;`
+            # のように**同一ファイル内で定義済み**のconnection型への参照が
+            # `_find_type_in_symbols`で解決できず、「存在しない型」と誤検出される
+            # （`enum_def`を上のwhitelistへ入れた理由と同じ。参照実装は
+            # `part x : CD;`をクリーンと判定することを実測済み）。
+            #
+            # 上のwhitelist（`elif node_type in [...]`）に`connection_def`を
+            # 足す形では**いけない**。この分岐が到達不能になって
+            # `self.connections`が空になり、connection系のルールが全部黙る。
+            # interface_def/allocation_defと同様、self.typesには入れずに
+            # self.symbolsのみへ登録する。
+            name = node.get("name")
+            if name:
+                self.symbols[full_name] = node
 
         elif node_type == "transition":
             self.transitions.append(node)
