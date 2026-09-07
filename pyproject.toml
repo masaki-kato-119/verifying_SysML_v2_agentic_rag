@@ -71,6 +71,10 @@ packages = [
 
 [tool.setuptools.package-data]
 viewer = ["frontend/*"]
+# ルール別 confidence の実測テーブル。LintIssue.to_dict() が実行時に読むため、
+# インストール後も同梱されている必要がある（scripts/build_rule_confidence_table.py
+# が生成する）。
+sysml_v2_checker_advanced = ["rule_confidence.json"]
 
 [tool.ruff]
 target-version = "py310"

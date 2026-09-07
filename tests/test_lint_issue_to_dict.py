@@ -21,7 +21,9 @@ def test_to_dict_without_index_returns_none_fields():
     assert issues
 
     result = issues[0].to_dict()
-    assert set(result.keys()) == {"severity", "message", "rule", "element_id", "source_range"}
+    assert set(result.keys()) == {
+        "severity", "message", "rule", "element_id", "source_range", "confidence",
+    }
     assert result["element_id"] is None
     assert result["source_range"] is None
 
@@ -62,6 +64,63 @@ def test_rule_is_captured_from_the_actual_check_method_via_real_lint():
     issues = lint_sysml(ast)
     assert issues
     assert issues[0].to_dict()["rule"] == "_check_attribute_def"
+
+
+def test_rule_skips_local_helper_functions_inside_a_check_method():
+    """2026-09-07: `_check_*` の内側に定義した再帰走査のローカル関数（`walk`）
+    から LintIssue を作っても、ruleは `walk` ではなく外側の `_check_*` になる。
+
+    730件コーパスのルール別集計で、実際に2つのルールが `walk` へ潰れているのを
+    検出した。ruleは confidence テーブルのキーであり Viewer の Finding の
+    同一性判定にも使われるため、名前が一意でないと成立しない。
+    """
+    # どちらも `walk` というローカル関数の中で LintIssue を構築するルール。
+    verify_placement = "package P { requirement def R { verify r; } }"
+    ast = parse_sysml_with_semantic_model(verify_placement)[0]
+    rules = {issue.to_dict()["rule"] for issue in lint_sysml(ast)}
+    assert "_check_verify_requirement_placement" in rules
+    assert "walk" not in rules
+
+    package_redefine = "package P { part wheel; part wheel1 redefines wheel; }"
+    ast = parse_sysml_with_semantic_model(package_redefine)[0]
+    rules = {issue.to_dict()["rule"] for issue in lint_sysml(ast)}
+    assert "_check_package_level_feature_redefinition" in rules
+    assert "walk" not in rules
+
+
+def test_confidence_comes_with_its_basis_and_caveat_not_a_bare_number():
+    """2026-09-07、Viewer Phase C C1: confidenceは実測テーブルから引く。
+
+    値だけを返さないのが要点。`value` は「参照実装も同じファイルを不正と
+    判定した割合」であって「同じ箇所を同じ理由で指摘した割合」ではないため、
+    呼び出し側が数値だけを切り出して提示できないよう basis/caveat/内訳を
+    必ず添えて返す。
+    """
+    text = "package P { import NoSuchPackage::NoSuchThing; }"
+    ast = parse_sysml_with_semantic_model(text)[0]
+    issues = [i for i in lint_sysml(ast) if i.rule == "_check_import"]
+    assert issues, "このテストは_check_importが発火する前提"
+
+    confidence = issues[0].to_dict()["confidence"]
+    assert set(confidence) == {
+        "value", "sole_agree", "sole_disagree", "basis", "caveat", "measured_at",
+    }
+    assert 0.0 <= confidence["value"] <= 1.0
+    assert confidence["sole_agree"] + confidence["sole_disagree"] >= 3
+    assert confidence["basis"] and confidence["caveat"]
+
+
+def test_confidence_is_none_for_rules_without_measurement():
+    """測っていないルールは推定で埋めず None のままにする。
+
+    「未測定」と「測ったが低い」を混同させないための約束であり、
+    表示側（viewer/frontend/app.js）はこの区別を出し分ける。
+    """
+    from sysml_v2_checker_advanced.lint_issue import LintIssue
+
+    issue = LintIssue(severity="warning", message="計測対象外のルール")
+    assert issue.to_dict()["rule"] == "test_confidence_is_none_for_rules_without_measurement"
+    assert issue.to_dict()["confidence"] is None
 
 
 def test_issue_with_no_node_returns_none_fields_even_with_index():

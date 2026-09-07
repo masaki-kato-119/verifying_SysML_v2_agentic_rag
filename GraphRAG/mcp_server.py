@@ -1846,11 +1846,16 @@ def _summarize_ast(ast: Dict[str, Any]) -> Dict[str, Any]:
 def _format_lint_issue(issue, element_index: Optional[Dict[int, Dict]] = None) -> Dict[str, Any]:
     """リンター問題を辞書形式にフォーマット
 
-    現行の LintIssue（sysml_v2_checker_advanced/lint_issue.py）は
-    severity/message/node/line しか持たず、rule/suggestion は存在しない
-    （存在しない属性への直接アクセスは issue が1件でもあると AttributeError
-    となり、以前は validate_sysml_model 全体が汎用エラーを返す原因に
-    なっていた。getattr の既定値取得に統一して解消済み）。
+    `rule` は 2026-09-03 に LintIssue 側へ実装され、実際のチェックメソッド名を
+    返すようになった。`suggestion` は**まだ LintIssue に存在しない**ため常に
+    None を返す（修正候補の提示は Viewer Phase C の c4 で扱う。存在しない属性
+    への直接アクセスは issue が1件でもあると AttributeError となり、以前は
+    validate_sysml_model 全体が汎用エラーを返す原因になっていた。getattr の
+    既定値取得に統一して解消済み）。
+
+    `confidence` は 2026-09-07 に追加。730件コーパスの参照実装比較から得た
+    ルール別の一致率で、測っていないルールでは None になる。値の意味と
+    但し書きは `LintIssue.confidence()` の docstring を参照。
 
     `location` は `issue.to_dict(element_index)["source_range"]` から得る。
     `element_index` は `semantic_model.build_element_index()` で構築した、
@@ -1858,12 +1863,13 @@ def _format_lint_issue(issue, element_index: Optional[Dict[int, Dict]] = None) -
     解決できない（省略時・突合失敗時は None のまま。2026-09-03、P3-4。
     SysMLv2_SemanticModel_拡張仕様書.md 9,13章）。
     """
-    location = issue.to_dict(element_index).get("source_range")
+    as_dict = issue.to_dict(element_index)
     return {
         "severity": issue.severity,
         "rule": getattr(issue, "rule", None),
         "message": issue.message,
-        "location": location,
+        "location": as_dict.get("source_range"),
+        "confidence": as_dict.get("confidence"),
         "suggestion": getattr(issue, "suggestion", None),
     }
 

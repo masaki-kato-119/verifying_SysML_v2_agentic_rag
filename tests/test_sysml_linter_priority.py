@@ -14,7 +14,11 @@ def test_lint_issue_to_dict():
     ここでは「このテスト関数自身の名前」になる（テストコードから直接
     `LintIssue(...)`を呼んでいるため）。実際のlint実行時は`_check_*`等の
     チェックメソッド名になる（tests/test_sysml_semantic_model_edges.py等の
-    実lint経由のテストで確認）。"""
+    実lint経由のテストで確認）。
+
+    2026-09-07、Viewer Phase C C1で追加: "confidence"はルール別の実測テーブル
+    （sysml_v2_checker_advanced/rule_confidence.json）から引く。テーブルに
+    載っていないルール（ここではテスト関数名）ではNoneになる。"""
     issue = LintIssue(severity="warning", message="msg")
     d = issue.to_dict()
     assert d == {
@@ -23,6 +27,7 @@ def test_lint_issue_to_dict():
         "rule": "test_lint_issue_to_dict",
         "element_id": None,
         "source_range": None,
+        "confidence": None,
     }
 
 

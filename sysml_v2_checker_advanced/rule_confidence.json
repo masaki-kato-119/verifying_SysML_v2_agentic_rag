@@ -1,0 +1,55 @@
+{
+ "generated_at": "2026-09-07",
+ "generated_from": {
+  "script": "scripts/recheck_local_only.py --rule-stats",
+  "commit": "29c5260511425c509f5bb299aa5846b01d17f2f9",
+  "corpus": "eval/sysml_samples",
+  "corpus_files": 730,
+  "reference": "OMG SysML v2 Pilot Implementation jar 0.61.0"
+ },
+ "min_samples": 3,
+ "basis": "reference_agreement_upper_bound",
+ "caveat": "「そのルールだけが error を出したファイル」のうち、参照実装も同じファイルを不正と判定した割合。参照実装が同じ箇所を同じ理由で指摘したことまでは保証しないため、一致率の上限であって真の精度ではない。",
+ "rules": {
+  "_check_accessible_feature_paths": {
+   "value": 1.0,
+   "sole_agree": 3,
+   "sole_disagree": 0
+  },
+  "_check_allocation_usage": {
+   "value": 0.143,
+   "sole_agree": 1,
+   "sole_disagree": 6
+  },
+  "_check_import": {
+   "value": 0.879,
+   "sole_agree": 102,
+   "sole_disagree": 14
+  },
+  "_check_individual_definition": {
+   "value": 0.143,
+   "sole_agree": 1,
+   "sole_disagree": 6
+  },
+  "_check_interface_usage": {
+   "value": 0.2,
+   "sole_agree": 2,
+   "sole_disagree": 8
+  },
+  "_check_part_instance": {
+   "value": 0.667,
+   "sole_agree": 8,
+   "sole_disagree": 4
+  },
+  "_check_requirement_subject": {
+   "value": 1.0,
+   "sole_agree": 6,
+   "sole_disagree": 0
+  },
+  "_check_transition": {
+   "value": 0.25,
+   "sole_agree": 1,
+   "sole_disagree": 3
+  }
+ }
+}

@@ -96,7 +96,11 @@ async def test_validate_sysml_model_does_not_crash_on_lint_issues(graph_client):
     )
     assert all_details
     for detail in all_details:
-        assert set(detail) == {"severity", "rule", "message", "location", "suggestion"}
+        # 2026-09-07、Viewer Phase C c1: confidence を追加（実測テーブルに
+        # 載っていないルールでは None）。
+        assert set(detail) == {
+            "severity", "rule", "message", "location", "confidence", "suggestion",
+        }
 
     # 2026-09-03、P3-4: locationはSemantic Model連携により実際のsource_rangeを
     # 返すようになった（以前は常にNoneだった応急処置状態から本対応済み）。
