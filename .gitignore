@@ -23,6 +23,7 @@ eval/sysml_results_baseline_*/
 eval/results/
 eval/rule_agreement.json
 eval/recheck_*.json
+eval/low_confidence_rules.json
 
 # --- Python ---
 __pycache__/
