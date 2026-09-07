@@ -240,6 +240,31 @@ html, body {
   font-style: italic;
 }
 
+/* Findingの影響範囲（Phase C c3）。モデル事実（Graph IRのエッジを辿った結果）
+   なので、提案側の破線ではなく実線寄りの見た目にする。 */
+.finding-impact {
+  font-size: 11px;
+  margin: 4px 0 4px 16px;
+}
+
+.finding-impact-title {
+  color: #ffd43b;
+}
+
+.finding-impact-empty {
+  color: #6c757d;
+  font-style: italic;
+}
+
+.finding-impact-row {
+  color: #ced4da;
+  cursor: pointer;
+}
+
+.finding-impact-row:hover {
+  background: rgba(255, 212, 59, 0.12);
+}
+
 .finding-status-control {
   padding-left: 16px;
   margin-bottom: 4px;

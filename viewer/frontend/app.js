@@ -454,6 +454,8 @@ function renderInspector(node) {
       container.appendChild(renderFindingConfidence(finding));
       const suggestionRow = renderFindingSuggestion(finding);
       if (suggestionRow) container.appendChild(suggestionRow);
+      const impactRow = renderFindingImpact(finding);
+      if (impactRow) container.appendChild(impactRow);
 
       // Group1 b3(I3-1): このFindingの対象要素が持つ参照（reference_text/
       // resolution_status）をsemantic_model.edgesから引いて併記する。
@@ -680,6 +682,64 @@ function renderFindingConfidence(finding) {
   return row;
 }
 
+// Findingの影響範囲（Phase C c3）。
+//
+// 起点はFindingそのもの。ただしFindingのelement_idは要素内の参照（無名ノード）
+// を指すことがあり、その種のidはGraph IRに存在しない（graph_ir.pyの
+// `_is_graph_node_type`が式・参照等の構造補助ノードを描画対象から外している）。
+// 影響範囲の起点には、その参照を所有する名前付き要素を使う。無名ノードの
+// stable_idは`<所有者のid>/<型>#<連番>`という形（antlr_transformer.py）なので、
+// 最初の`/`より前を取れば所有者になる。
+function impactOriginId(finding) {
+  const elementId = finding.element_id;
+  if (!elementId) return null;
+  const separator = elementId.indexOf("/");
+  return separator === -1 ? elementId : elementId.slice(0, separator);
+}
+
+function renderFindingImpact(finding) {
+  if (!latestModel) return null;
+  const originId = impactOriginId(finding);
+  if (!originId) return null;
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "finding-impact";
+
+  const impacted = findImpactedElements(originId, IMPACT_DEPTH);
+  if (impacted.length === 0) {
+    // 「辿れる先が無い」ことも判断材料なので、黙って何も出さない選択はしない。
+    const empty = document.createElement("div");
+    empty.className = "finding-impact-empty";
+    empty.textContent = `　影響範囲: ${IMPACT_DEPTH}次までに辿れる要素はありません`;
+    wrapper.appendChild(empty);
+    return wrapper;
+  }
+
+  const heading = document.createElement("div");
+  heading.className = "finding-impact-title";
+  heading.textContent = `　影響範囲: ${impacted.length}件（${IMPACT_DEPTH}次まで）`;
+  // 向きの意味を読み手が確認できるようにする。無向で扱っている種別が
+  // 混ざっていることを隠さない。
+  heading.title =
+    "この指摘の対象が変わったときに影響を受けうる要素。エッジ種別ごとに" +
+    "伝播の向きを決めている（型付け・継承・satisfy/verifyは参照先から" +
+    "参照元へ、transition/succession/flowは流れの向きへ、connectionは" +
+    "上下が決まらないため無向）。";
+  wrapper.appendChild(heading);
+
+  const byId = new Map(latestModel.graph_ir.nodes.map((n) => [n.id, n]));
+  for (const item of impacted) {
+    const node = byId.get(item.id);
+    const label = node ? `${node.label} (${node.type})` : item.id;
+    const row = document.createElement("div");
+    row.className = "finding-impact-row";
+    row.textContent = `　　${item.distance}次: ${label} [${item.kinds.join(", ")}]`;
+    row.addEventListener("click", () => selectElement(item.id));
+    wrapper.appendChild(row);
+  }
+  return wrapper;
+}
+
 // Findingの修正候補（Phase C c4）。構想書§14の成功条件「対象・根拠・影響範囲・
 // 修正候補を同一画面で判断できる」の最後の1つ。
 //
@@ -793,40 +853,86 @@ function revealInEditor(node) {
   isProgrammaticEditorUpdate = false;
 }
 
-// 選択要素からGraph IRのエッジ（specialization/feature_typing/connection等、
-// 向きを問わない）をBFSで辿り、IMPACT_DEPTH次までの関連要素idを集める
-// （Group1 b2）。数千要素規模までは毎回の隣接表構築で十分という判断
-// （8.3節のText→Diagram同期の線形探索と同じ考え方）。
+// Graph IRのエッジをBFSで辿り、IMPACT_DEPTH次までの影響先を集める
+// （Group1 b2、Phase C c3で有向化）。数千要素規模までは毎回の隣接表構築で
+// 十分という判断（8.3節のText→Diagram同期の線形探索と同じ考え方）。
+//
+// 深さはバックエンドの`_VERIFICATION_VIEW_DEPTH`（viewer/graph_ir.py）と
+// **意図的に別の定数**にしてある。検証ビューの深さは「図にどれだけ文脈を
+// 描くか」の話、こちらは「変更が何を壊しうるか」の話で、揃える理由がない。
+// 以前は「b2と同じ値」というコメントで結び付けていたが、片方を動かすと
+// もう片方の絞り込みが黙って変わるため、独立させて両方に注記した。
 const IMPACT_DEPTH = 2;
 
-function findImpactedElementIds(elementId, depth) {
-  if (!latestModel) return new Set();
+// 影響が伝播する向きはエッジ種別ごとに違う（Phase C c3）。
+// `semantic_model.py`の`_make_edge`は from=宣言している側・to=参照先 で
+// エッジを作るので、種別によってどちら向きに辿るべきかが変わる。
+const IMPACT_DIRECTION = {
+  // 宣言はその参照先に依存する。`x : T`のTが変われば x が影響を受けるので、
+  // 影響はエッジを**逆に**辿る。
+  specialization: "reverse",
+  subsetting: "reverse",
+  redefinition: "reverse",
+  feature_typing: "reverse",
+  // `satisfy R by X` / `verify R by X` の`by`側（=X）が変われば、その
+  // 充足・検証の主張が影響を受ける。これも宣言→参照先なので逆向き。
+  satisfy: "reverse",
+  verify: "reverse",
+  // 振る舞いの流れは from=source なので、エッジの向きがそのまま影響の向き。
+  transition: "forward",
+  succession: "forward",
+  flow: "forward",
+  // コネクタはどちらが上流と言えない（`c connect a to b`のエッジは
+  // c→a と c→b で、a と b の間に上下は無い）。無向のまま扱う。
+  connection: "both",
+};
+
+// 未知の種別（将来エッジ種別が増えたとき）は無向として扱う。取りこぼすより
+// 広く見せる方が、影響範囲の用途では安全側。
+const IMPACT_DIRECTION_DEFAULT = "both";
+
+function buildImpactAdjacency() {
   const adjacency = new Map();
-  const link = (a, b) => {
-    if (!adjacency.has(a)) adjacency.set(a, new Set());
-    adjacency.get(a).add(b);
+  const link = (from, to, kind) => {
+    if (!adjacency.has(from)) adjacency.set(from, new Map());
+    const targets = adjacency.get(from);
+    if (!targets.has(to)) targets.set(to, new Set());
+    targets.get(to).add(kind);
   };
   for (const edge of latestModel.graph_ir.edges) {
-    link(edge.from, edge.to);
-    link(edge.to, edge.from);
+    const direction = IMPACT_DIRECTION[edge.kind] || IMPACT_DIRECTION_DEFAULT;
+    if (direction === "forward" || direction === "both") link(edge.from, edge.to, edge.kind);
+    if (direction === "reverse" || direction === "both") link(edge.to, edge.from, edge.kind);
   }
+  return adjacency;
+}
 
+// 影響先を`{id, distance, kinds}`の配列で返す（近い順）。距離と経路の種別を
+// 持たせているのは、Inspectorが「何次で、何を通じて影響するのか」まで
+// 見せられるようにするため（ハイライトだけでは読めない）。
+function findImpactedElements(elementId, depth) {
+  if (!latestModel) return [];
+  const adjacency = buildImpactAdjacency();
+  const impacted = [];
   const visited = new Set([elementId]);
   let frontier = [elementId];
-  for (let i = 0; i < depth && frontier.length > 0; i++) {
+  for (let distance = 1; distance <= depth && frontier.length > 0; distance++) {
     const next = [];
     for (const id of frontier) {
-      for (const neighbor of adjacency.get(id) || []) {
-        if (!visited.has(neighbor)) {
-          visited.add(neighbor);
-          next.push(neighbor);
-        }
+      for (const [neighbor, kinds] of adjacency.get(id) || []) {
+        if (visited.has(neighbor)) continue;
+        visited.add(neighbor);
+        next.push(neighbor);
+        impacted.push({ id: neighbor, distance, kinds: [...kinds] });
       }
     }
     frontier = next;
   }
-  visited.delete(elementId);
-  return visited;
+  return impacted;
+}
+
+function findImpactedElementIds(elementId, depth) {
+  return new Set(findImpactedElements(elementId, depth).map((item) => item.id));
 }
 
 // Explorer・Diagram・Text双方からの選択を一箇所に集約する。

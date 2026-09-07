@@ -8,7 +8,7 @@ semantic_model（sysml_v2_checker_advanced.semantic_model.build_semantic_model()
 一切手を入れない（実装仕様書3.4節、構想書§12原則3「View is a projection」）。
 """
 
-from typing import Dict, List
+from typing import Dict, List, Set
 
 # 実装時に判明した設計変更（当初案からの訂正）:
 # 実装仕様書3.2節の当初案は「constants.pyのELEMENT_REFERENCE_ONLY_USAGE_TYPES
@@ -70,9 +70,18 @@ _STATE_MACHINE_EDGE_KINDS = {"transition"}
 _ACTIVITY_NODE_TYPES = {"action_def", "action_usage"}
 _ACTIVITY_EDGE_KINDS = {"succession", "flow"}
 
-# Group2 b8(V2): 検証ビュー。Findingが付いた要素を起点に、b2(I2影響範囲ハイライト,
-# viewer/frontend/app.jsのfindImpactedElementIds)と同じBFS・既定2次までの
-# ロジックを構造ビュー候補ノード集合上で再利用する。
+# Group2 b8(V2): 検証ビュー。Findingが付いた要素を起点に、構造ビュー候補ノード
+# 集合上をBFSで既定2次まで辿る。
+#
+# フロントエンドの`IMPACT_DEPTH`（viewer/frontend/app.js）とは**意図的に別の
+# 定数**にしてある（2026-09-07、Phase C c3）。当初は「b2と同じ値」として
+# 結び付けていたが、こちらは「図にどれだけ文脈を描くか」、あちらは「変更が
+# 何を壊しうるか」の話で、揃える理由がない。片方を動かすともう片方の
+# 絞り込みが黙って変わるのを避けるため、独立させて両方に注記した。
+#
+# 併せて、こちらは**無向のまま**にしてある。検証ビューの目的は指摘の周辺を
+# 図として見せることなので、影響の伝播方向（c3でフロントエンドに入れた
+# `IMPACT_DIRECTION`）で絞ると、指摘を読むための文脈が欠ける。
 _VERIFICATION_VIEW_DEPTH = 2
 
 
@@ -136,11 +145,40 @@ def _select_requirement_traceability_view(semantic_model: Dict, finding_element_
     return node_ids, selected_edges
 
 
+def _owning_graph_node_ids(finding_element_ids, candidate_ids: Set[str]) -> Set[str]:
+    """Findingのelement_idを、描画対象になっている所有要素のidへ寄せる。
+
+    Findingは要素そのものではなく**その中の参照**（無名ノード）に付くことが
+    ある。無名ノードは式・参照等の構造補助ノードとして`_is_graph_node_type`が
+    描画対象から外すため、そのidは`candidate_ids`に入っていない。素朴に
+    積集合を取ると、そういうFindingは起点として丸ごと落ちる。
+
+    無名ノードのstable_idは`<所有者のid>/<型>#<連番>`という形
+    （antlr_transformer.py）なので、末尾の`/...`を1段ずつ削れば所有者へ辿れる。
+    2026-09-07にPhase C c3で追加。それまで検証ビューは、参照ノードに指摘が付く
+    ルール（accessible feature path、import解決など）では起点を得られなかった。
+    """
+    seeds: Set[str] = set()
+    for element_id in finding_element_ids or ():
+        current = element_id
+        while current:
+            if current in candidate_ids:
+                seeds.add(current)
+                break
+            separator = current.rfind("/")
+            if separator == -1:
+                break
+            current = current[:separator]
+    return seeds
+
+
 def _select_verification_view(semantic_model: Dict, finding_element_ids):
     """Findingが付いた要素（の交差点）を起点に、resolvedエッジ上をBFSで
-    既定2次まで辿った関連要素だけに絞る（viewer/frontend/app.jsの
-    findImpactedElementIds・IMPACT_DEPTHと同じロジックをバックエンド側で
-    再利用したもの）。"""
+    既定2次まで辿った関連要素だけに絞る。
+
+    起点は`_owning_graph_node_ids`で「描画対象の所有要素」へ寄せる。深さと
+    向きの扱いはフロントエンドの影響範囲とは独立（`_VERIFICATION_VIEW_DEPTH`
+    のコメント参照）。"""
     nodes_in = semantic_model["nodes"]
     candidate_ids = {
         stable_id for stable_id, entry in nodes_in.items() if _is_graph_node_type(entry)
@@ -154,7 +192,7 @@ def _select_verification_view(semantic_model: Dict, finding_element_ids):
         adjacency.setdefault(edge["from_id"], []).append(edge["to_id"])
         adjacency.setdefault(edge["to_id"], []).append(edge["from_id"])
 
-    seeds = (finding_element_ids or set()) & candidate_ids
+    seeds = _owning_graph_node_ids(finding_element_ids, candidate_ids)
     visited = set(seeds)
     frontier = set(seeds)
     for _ in range(_VERIFICATION_VIEW_DEPTH):

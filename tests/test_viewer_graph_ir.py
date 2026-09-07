@@ -403,3 +403,26 @@ def test_activity_view_includes_plain_flow_kind_edges():
     gir = build_graph_ir(model, view_type=VIEW_TYPE_ACTIVITY)
     kinds = {e["kind"] for e in gir["edges"]}
     assert kinds == {"flow"}
+
+
+def test_verification_view_seeds_from_the_owning_element_of_a_reference_finding():
+    """Findingが要素内の参照（無名ノード）に付いていても検証ビューの起点になる。
+
+    無名ノードは`_is_graph_node_type`が描画対象から外すため、素朴に積集合を
+    取ると起点として丸ごと落ちる。2026-09-07(Phase C c3)まで、参照ノードに
+    指摘が付くルール（accessible feature path、import解決など）では検証ビューが
+    空になっていた。
+    """
+    from viewer.graph_ir import _owning_graph_node_ids
+
+    candidates = {"$root", "$root::A", "$root::A::g"}
+
+    # 参照ノードのidは`<所有者のid>/<型>#<連番>`。所有者へ寄せる。
+    assert _owning_graph_node_ids({"$root::A::g/name_ref#0"}, candidates) == {"$root::A::g"}
+    # 入れ子になっていても辿れる。
+    assert _owning_graph_node_ids({"$root::A::g/expr#0/name_ref#1"}, candidates) == {"$root::A::g"}
+    # 描画対象そのものを指すidはそのまま。
+    assert _owning_graph_node_ids({"$root::A"}, candidates) == {"$root::A"}
+    # 所有者まで辿っても描画対象に無いものは起点にしない（作らない）。
+    assert _owning_graph_node_ids({"$root::Missing/name_ref#0"}, candidates) == set()
+    assert _owning_graph_node_ids(None, candidates) == set()
