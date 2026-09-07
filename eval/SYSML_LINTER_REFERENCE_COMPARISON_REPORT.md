@@ -3,15 +3,197 @@
 対象: `sysml_v2_checker_advanced/`（ANTLR4ベース、`sysml_v2_checker_advanced/antlr/SysMLMin.g4`という「最小」文法）
 比較対象: OMG公式 SysML v2 Pilot Implementation（`sysml-v2-pilot-implementation` 由来の Jupyter kernel jar 0.61.0 経由）
 
-このファイルは2つの測定を並記している。
+このファイルは3つの測定を並記している。**新しい順**。
 
-- **v2（2026-09-04）** — 下記「v2」節。8/28のレポートで挙げた問題を修正した後の再測定。
-- **v1（2026-08-28）** — 「v1」以降の節（旧レポート本文をそのまま残してある）。修正前のベースライン。
-  v2の差分表はこれを基準に取っている。
+- **v3（2026-09-07）** — 下記「v3」節。ルール別の一致率を初めて実測し、それを根拠に
+  confidence が低い4ルールの偽陽性を潰した後の再測定。
+- **v2（2026-09-04）** — 「v2」節。8/28のレポートで挙げた問題を修正した後の再測定。
+  v3から見ると途中のスナップショットだが、当時の判断根拠として残してある。
+- **v1（2026-08-28）** — 「v1」以降の節（旧レポート本文をそのまま残してある）。修正前の
+  ベースライン。v2の差分表はこれを基準に取っている。
+
+---
+
+# v3（2026-09-07）: ルール別一致率の実測と、それに基づく偽陽性の解消
+
+測定日: 2026-09-07
+ローカル側の再実行: `scripts/recheck_local_only.py --rule-stats eval/rule_agreement.json`
+参照実装の判定: v2のフル実行時のものを固定基準として再利用（jarとサンプルが固定なら
+参照実装の判定は決定的なので、ローカル側の変更に対する再測定では動かす必要がない）。
+
+## v3-0. この測定で何が新しいか
+
+v1・v2は agreement をファイル単位でしか見ていなかった。v3では初めて
+**ルール別の一致率**を出した。あるルールだけが error を出したファイルに絞れば、
+そのファイルの agreement はそのルールの判定そのものになる。これで
+「どのルールが偽陽性を出しているのか」が関数名の単位で分かる。
+
+この数値には明示すべき限界がある。`both_error` は「参照実装もそのファイルを不正と
+見た」までしか言っておらず、**同じ箇所を同じ理由で指摘したことは保証しない**。
+したがって一致率は**上限**であって真の精度ではない。実際、後述のとおり
+「一致」していた3ファイルはいずれも別の理由で不正だっただけだった。
+
+算出方法は `scripts/recheck_local_only.py` の `build_rule_agreement`、
+同梱テーブルの生成は `scripts/build_rule_confidence_table.py` を参照。
+テーブルは `sysml_v2_checker_advanced/rule_confidence.json` として配布され、
+`LintIssue.to_dict()` の `confidence` フィールドから読める。
+
+## v3-1. agreement の変化（730件）
+
+| agreement | v1 (8/28) | v2 (9/04) | **v3 (9/07)** | v2→v3 |
+|---|---:|---:|---:|---:|
+| both_clean | 253 (34.7%) | 433 (59.3%) | **458 (62.7%)** | +25 |
+| both_error | 215 (29.5%) | 186 (25.5%) | 196 (26.8%) | +10 |
+| local_only_error（偽陽性疑い） | 231 (31.6%) | 52 (7.1%) | **27 (3.7%)** | **−25** |
+| reference_only_error（偽陰性疑い） | 26 (3.6%) | 59 (8.1%) | 49 (6.7%) | −10 |
+| reference_crash（無関係） | 5 (0.7%) | 0 | 0 | — |
+
+`local_only_error` は v1比で **231 → 27（−88%）**。
+
+カテゴリ別（v3）:
+
+| category | n | both_clean | both_error | local_only | reference_only |
+|---|---:|---:|---:|---:|---:|
+| official_examples | 322 | 247 (76.7%) | 57 (17.7%) | 16 (5.0%) | 2 (0.6%) |
+| tooling_fixtures | 192 | 116 (60.4%) | 47 (24.5%) | 7 (3.6%) | 22 (11.5%) |
+| xpect_test_cases | 126 | 80 (63.5%) | 25 (19.8%) | 3 (2.4%) | 18 (14.3%) |
+| curated_models | 36 | 7 (19.4%) | 24 (66.7%) | 1 (2.8%) | 4 (11.1%) |
+| industry | 28 | 3 (10.7%) | 25 (89.3%) | 0 | 0 |
+| educational | 25 | 5 (20.0%) | 17 (68.0%) | 0 | 3 (12.0%) |
+| textbook | 1 | 0 | 1 (100%) | 0 | 0 |
+
+パース成功率（同じ730件）: **707/730 = 96.8%**。
+**official_examples は 322/322 = 100%**、industry も 28/28 = 100%。
+失敗23件の内訳はv2-4の分類（意図的な不正フィクスチャ・KerML固有構文・
+非標準サンプル）から変わっていない。
+
+## v3-2. ルール別一致率（初回測定と、修正後）
+
+初回測定（2026-09-07、修正前）で confidence が算出できたのは発火30ルール中9ルール。
+そのうち **0.25以下が4ルール**あり、これが `local_only_error` の主因だった。
+
+| ルール | 修正前 conf | 単独発火(一致/不一致) | 発火 | 修正後 |
+|---|---:|---:|---:|---|
+| `_check_interface_usage` | **0.200** | 2/8 | 31 | 発火0（コーパス内で1件も出なくなった） |
+| `_check_individual_definition` | **0.143** | 1/6 | 12 | **ルール削除** |
+| `_check_allocation_usage` | **0.143** | 1/6 | 12 | 発火1（別の欠陥。v3-4） |
+| `_check_transition` | **0.250** | 1/3 | 4 | 発火1（一致） |
+| `_check_part_instance` | 0.667 | 8/4 | 12 | 0.667（未着手） |
+| `_check_import` | 0.879 | 102/14 | 146 | 0.886（他ルールが黙り分母が増加） |
+| `_check_accessible_feature_paths` | 1.000 | 3/0 | 5 | 1.000 |
+| `_check_requirement_subject` | 1.000 | 6/0 | 10 | 1.000 |
+| `__parse_error__`（擬似） | 1.000 | 23/0 | 23 | 1.000 |
+
+修正後に算出可能なルールは **9 → 4**（擬似ルールを除く）に減った。
+**これは精度が下がったのではなく、4ルールが発火しなくなって単独発火が閾値
+（3件）を下回ったため**である。同梱テーブルからも該当エントリが消えている。
+
+## v3-3. 4ルールの根本原因（3つは同じ根だった）
+
+`_check_interface_usage` / `_check_allocation_usage` / `_check_transition` は、
+症状も実装箇所も別だが**同一の構造的原因**を持っていた。
+
+**シンボル表が入れ子を保持していない。** 参照は package 直下に平坦登録される
+（`Interface Example::fuelTankPort` は `Interface Example::tankAssy` の隣）。
+一方これらのルールは `sym_name.endswith(f"::{name}")` という末尾一致で引く。
+したがって **多セグメントの参照は原理的に一致しない**:
+
+- `tankAssy.fuelTankPort`（interface の connect エンド）
+- `l.component` / `p.assembly.element`（allocate のエンド）
+- `S2.S3`（transition の source/target）
+
+なお当初「ドット区切りだから `::` 前提の照合に合わない」と考えたが**これは誤り**で、
+パーサーは `.` を `::` へ正規化している。合わないのは区切り文字ではなく入れ子構造で、
+`fuelTankPort` を持つのは `tankAssy` 自身ではなくその型 `FuelTankAssembly` である。
+解決には型解決が必要になる。
+
+参照実装への問い合わせで、いずれも**解決できる多セグメント参照はクリーン、
+解決できないものはエラー**（`Couldn't resolve reference to Feature 'X'.`）と確定した
+（canaryを前後に挟んで実施）。制約自体は実在し、単純名の判定は正しい。そこで
+**多セグメントの形だけを判定対象外**にした（検出漏れは許容、偽陽性は出さない。
+他の意味ルールと同じ方針）。
+
+`_check_transition` にはもう1つ別の原因があった。`then done;` の `done` は
+標準ライブラリ側の**暗黙の状態**で、ローカル宣言が無いためどの登録にも現れない。
+参照実装は `done` と `start` を宣言なしで受理する（実測）。実測できたこの2つだけを
+暗黙名として登録した。
+
+`_check_individual_definition` だけは別種で、**制約そのものが存在しなかった**。
+「individual definition は空の多重度を持つ必要がある」として多重度が**無いとき**に
+発火していたが、参照実装は `individual def X[];` `individual def X[1];` を
+いずれも `no viable alternative at input '['` で拒否する。**定義に多重度を書くこと
+自体が文法上できない**ので、多重度が無いのが唯一の合法な状態だった。緩和ではなく
+ルールごと削除した。
+
+決め手はいずれも Pilot Implementation 自身の**valid**フィクスチャである。
+`validation/valid/InterfaceUsage.sysml` と `validation/valid/IndividualUsage.sysml` は
+`// XPECT noErrors` を宣言しており、`simpletests/AllocationTest.sysml` と
+`simpletests/StateTest.sysml` も同様に無エラーが期待値である。
+
+## v3-4. 「一致」も偽物だった（confidence の限界の実例）
+
+修正の結果、3ファイルが `both_error → reference_only_error` へ移った。
+`recheck_local_only.py` は `both_error` を「一致」に数えるため、これを
+**「悪化」と報告し exit 1 を返す**。しかし参照実装が何を指摘していたかを
+確かめると、いずれも**別の理由で不正なファイルに、こちらの偽陽性がたまたま
+重なっていただけ**だった。
+
+| ファイル | 参照実装が実際に出しているエラー | こちらの指摘と同じか |
+|---|---|---|
+| `validation/invalid/InterfaceUsage_Invalid.sysml` | `An interface definition end must be a port.` ×2、`An interface must be typed by interface definitions.` ×2 | 違う（エンドの存在を問うものは1件も無い） |
+| `validation/invalid/IndividualUsage_Invalid.sysml` | `At most one individual definition is allowed.`、`An individual must be typed by one individual definition.` | 違う（多重度と無関係） |
+| `sysml-v2-lsp/examples/bike.sysml` | L248 `Couldn't resolve reference to Feature 'WeightRequirement'.`（`verify WeightRequirement;`） | 違う（interfaceと無関係） |
+
+**この3ルールの実質 confidence は 0.200 や 0.143 ですらなく 0 だった可能性が高い。**
+`both_error` を一致に数える限りこの取り違えは起きるので、**このプランの回帰判定では
+`local_only_error` の減少幅を主指標にすること**。
+
+同じ検証の副産物として、`_check_allocation_usage` の type_name 側に別の欠陥を
+見つけた。`connection def BC1` を型に指定した allocation を「存在しない
+アロケーション 'BC1' を参照しています」と報告するが、`BC1` は**実在する**。
+問題は不存在ではなく**種別の不一致**で、参照実装は
+`An allocation must be typed by allocation definitions.` を3箇所（`:P` `:p` `:BC1`）に
+出すのに対し、こちらは `:BC1` の1件だけを、しかも誤った理由で報告している。
+blackboard プラン `sysml_checker_false_positives` の `fix_allocation_type_kind_check`
+として起票済み。interface 側にも同形の枝があるので同じ問題を抱えている可能性が高い。
+
+## v3-5. 残った `local_only_error` 27件の性質
+
+**27件すべてパースに成功している**（パースエラー0件）。v2時点では52件中1件が
+パースエラーだったので、残る偽陽性疑いは完全に意味検証側の話になった。
+
+症状（正規化後、延べ）:
+
+| 症状 | 件数 | 該当ルール（confidence） |
+|---|---:|---|
+| `Import <X> が存在しないパッケージ <X> を参照` | 12 | `_check_import`（0.886） |
+| `Part instance <X> が存在しない型 <X> を参照` | 4 | `_check_part_instance`（0.667） |
+| 循環継承（`A -> A` / `A -> C` / `C -> A`） | 6 | `_check_inheritance_consistency` ほか |
+| 互換性のない型カテゴリの特殊化（`connection` → `part`） | 4 | 型システム側 |
+| 多重度の範囲が不正 | 1 | — |
+
+次の的は `_check_part_instance`（0.667、単独発火12件中4件が不一致）である。
+`_check_import` は 0.886 と高いが発火146ファイルと最多なので、残り12件の
+偽陽性を潰す価値はある。循環継承の6件は同じ内容が「型システム」プレフィックス付きと
+無しで**二重報告**されているように見えるので、まずそこを確認するとよい。
+
+## v3-6. 実装への反映
+
+- `LintIssue.to_dict()` に `confidence` を追加した（`d82a14d`）。値だけでなく
+  `basis`・`caveat`・単独発火の内訳を必ず一緒に返す。測っていないルールは `null` で、
+  推定値では埋めない。
+- 供給源は本レポートの実測のみ。GraphRAG側にも confidence があるが、
+  `semantic_path_finder.py` の 0.9/0.6/0.3 のベタ書きなど**測定に基づかない手置きの
+  定数**なので流用していない。
+- ルール別集計を可能にするため `LintIssue.rule` の帰属も直した（`d82a14d`）。
+  `_check_*` 内のローカル関数から作った指摘が `walk` になり、2ルールが同名に
+  潰れていた。
 
 ---
 
 # v2（2026-09-04）: 修正後の再測定
+
+**注: v2の数値は2026-09-04時点のスナップショットである。現在値はv3節を見ること。**
 
 測定日: 2026-09-04
 ハーネス: `scripts/run_reference_comparison_eval.py --timeout 120 --workers 1 --canary-interval 25`

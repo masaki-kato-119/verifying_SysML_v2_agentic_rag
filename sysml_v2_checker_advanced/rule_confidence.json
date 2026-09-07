@@ -2,7 +2,7 @@
  "generated_at": "2026-09-07",
  "generated_from": {
   "script": "scripts/recheck_local_only.py --rule-stats",
-  "commit": "29c5260511425c509f5bb299aa5846b01d17f2f9",
+  "commit": "630f4b8b03df3999136c460458d932f2dc675f67",
   "corpus": "eval/sysml_samples",
   "corpus_files": 730,
   "reference": "OMG SysML v2 Pilot Implementation jar 0.61.0"
@@ -16,25 +16,10 @@
    "sole_agree": 3,
    "sole_disagree": 0
   },
-  "_check_allocation_usage": {
-   "value": 0.143,
-   "sole_agree": 1,
-   "sole_disagree": 6
-  },
   "_check_import": {
-   "value": 0.879,
-   "sole_agree": 102,
-   "sole_disagree": 14
-  },
-  "_check_individual_definition": {
-   "value": 0.143,
-   "sole_agree": 1,
-   "sole_disagree": 6
-  },
-  "_check_interface_usage": {
-   "value": 0.2,
-   "sole_agree": 2,
-   "sole_disagree": 8
+   "value": 0.886,
+   "sole_agree": 117,
+   "sole_disagree": 15
   },
   "_check_part_instance": {
    "value": 0.667,
@@ -45,11 +30,6 @@
    "value": 1.0,
    "sole_agree": 6,
    "sole_disagree": 0
-  },
-  "_check_transition": {
-   "value": 0.25,
-   "sole_agree": 1,
-   "sole_disagree": 3
   }
  }
 }
