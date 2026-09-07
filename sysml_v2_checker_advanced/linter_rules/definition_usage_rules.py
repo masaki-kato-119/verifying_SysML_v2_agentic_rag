@@ -873,6 +873,52 @@ class DefinitionUsageRulesMixin:
                                 f"[8.2.2.14] Interface '{name}' の要素が存在しない型 '{type_name}' を参照しています",
                                 child
                             ))
+    def _end_reference_is_missing(self, reference_subsetting: Dict) -> bool:
+        """`connect` のエンド参照が「存在しない」と**断定できる**場合だけTrueを返す。
+
+        断定できるのは単一セグメントの名前のときだけである。所有者付きのパス
+        （`tankAssy.fuelTankPort`。パーサーは`.`を`::`へ正規化するのでASTでは
+        `tankAssy::fuelTankPort`）は、所有者の**型**をたどらないと解決できない
+        ―― `fuelTankPort`を持っているのは`tankAssy`自身ではなく、その型である
+        `part def FuelTankAssembly`。ところがシンボル表は入れ子を保持せず
+        package直下に平坦に登録する（`Interface Example::fuelTankPort`）ため、
+        多セグメントのパスはどの登録名とも一致しない。つまり従来の実装は
+        **所有者付きのエンドを一律にエラーにしていた**。
+
+        2026-09-07の実測（730件コーパスのルール別一致率）で、このルールの
+        confidenceは0.200（単独発火10ファイル中8件が参照実装と不一致）と
+        local_only_errorの最大要因だった。決め手はxpectの**valid**フィクスチャ
+        `validation/valid/InterfaceUsage.sysml`で、`// XPECT noErrors`と宣言
+        されているのに`tankAssy.fuelTankPort`と`eng.engineFuelPort`の両エンドを
+        落としていた。
+
+        参照実装（jar 0.61.0）へ問い合わせて確定した境界（2026-09-07、canaryを
+        前後に挟んで実施）:
+
+        - `connect supplierPort ::> tankAssy.fuelTankPort to ...`（解決できる
+          所有者付きパス）→ **クリーン**
+        - `tankAssy.noSuchPort`（所有者は実在、フィーチャが無い）→ エラー
+          `Couldn't resolve reference to Feature 'noSuchPort'.`
+        - `noSuchPart.fuelTankPort`（所有者が無い）→ エラー2件
+        - `noSuchThing`（単純名で存在しない）→ エラー
+        - `connect tankAssy.fuelTankPort to ...`（`::>`を使わない短い形）も同じ
+
+        つまり制約自体は実在し、単純名の判定は正しい。所有者付きパスの解決には
+        型解決が要るので、**その形は判定対象外にする**（検出漏れは許容し、
+        偽陽性は出さない。他の意味ルールと同じ方針）。
+        """
+        reference = reference_subsetting.get("referenced_feature", "")
+        if not reference:
+            return False
+        # 所有者付きのパスは型解決が必要なので判定しない。
+        if "::" in reference:
+            return False
+        # importで持ち込まれた名前・中身の見えない名前空間由来の可能性がある
+        # 参照も判定しない（単一ファイルlintでは不在を証明できない）。
+        if self._is_unverifiable_reference(reference):
+            return False
+        return not self._find_element_in_symbols(reference)
+
     def _check_interface_usage(self, node: Dict, namespace: str) -> None:
         """
         インターフェース使用のチェック (8.2.2.14)
@@ -892,7 +938,7 @@ class DefinitionUsageRulesMixin:
                 node
             ))
         
-        # InterfacePartのチェック
+        # InterfacePartのチェック（エンドの判定条件は_end_reference_is_missing参照）
         interface_part = node.get("interface_part")
         if interface_part:
             if interface_part.get("type") == "binary_interface_part":
@@ -902,13 +948,13 @@ class DefinitionUsageRulesMixin:
                     # エンドの参照チェック
                     from_ref = from_end.get("reference_subsetting")
                     to_ref = to_end.get("reference_subsetting")
-                    if from_ref and not self._find_element_in_symbols(from_ref.get("referenced_feature", "")):
+                    if from_ref and self._end_reference_is_missing(from_ref):
                         self.issues.append(LintIssue(
                             SEVERITY_ERROR,
                             f"[8.2.2.14] Interface usage '{node.get('name', 'unknown')}' の from エンドが存在しない要素を参照しています",
                             from_end
                         ))
-                    if to_ref and not self._find_element_in_symbols(to_ref.get("referenced_feature", "")):
+                    if to_ref and self._end_reference_is_missing(to_ref):
                         self.issues.append(LintIssue(
                             SEVERITY_ERROR,
                             f"[8.2.2.14] Interface usage '{node.get('name', 'unknown')}' の to エンドが存在しない要素を参照しています",

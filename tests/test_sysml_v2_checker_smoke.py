@@ -99,3 +99,69 @@ def test_parse_sysml_sample_file():
     out = parse_sysml(text, strict=True)
     assert isinstance(out, dict)
     assert "type" in out
+
+
+def test_interface_end_owner_qualified_path_is_not_flagged():
+    """`connect` の所有者付きエンドパスを「存在しない」と誤検出しない。
+
+    2026-09-07、ルール別一致率の実測で `_check_interface_usage` の confidence が
+    0.200 と最下位群にあり、local_only_error の最大要因だった。原因は、
+    `tankAssy.fuelTankPort`（パーサーは `.` を `::` へ正規化する）のような
+    所有者付きパスを、入れ子を保持しない平坦なシンボル表で引こうとして必ず
+    失敗していたこと。`fuelTankPort` を持つのは `tankAssy` 自身ではなく
+    その型の `FuelTankAssembly` なので、解決には型解決が要る。
+
+    参照実装は解決できるこの形をクリーンと判定する（2026-09-07に実測）。
+    xpect の valid フィクスチャ validation/valid/InterfaceUsage.sysml と同じ形。
+    """
+    from sysml_v2_checker_advanced.parser import lint_sysml, parse_sysml
+
+    src = """
+    package P {
+        port def FuelOutPort;
+        port def FuelInPort;
+        part def FuelTankAssembly { port fuelTankPort : FuelOutPort; }
+        part def Engine { port engineFuelPort : FuelInPort; }
+        interface def FuelInterface {
+            end supplierPort : FuelOutPort;
+            end consumerPort : FuelInPort;
+        }
+        part vehicle {
+            part tankAssy : FuelTankAssembly;
+            part eng : Engine;
+            interface FuelInterface connect
+                supplierPort ::> tankAssy.fuelTankPort to
+                consumerPort ::> eng.engineFuelPort;
+        }
+    }
+    """
+    issues = lint_sysml(parse_sysml(src))
+    assert [i.message for i in issues if i.rule == "_check_interface_usage"] == []
+
+
+def test_interface_end_simple_name_that_does_not_exist_is_still_flagged():
+    """単純名なら型解決なしで不在を断定できるので、検出は維持する。
+
+    参照実装も `Couldn't resolve reference to Feature 'noSuchThing'.` を返す
+    （2026-09-07に実測）。所有者付きパスを見送ったぶん検出漏れは増えるが、
+    ここまで捨てると制約そのものが無くなってしまう。
+    """
+    from sysml_v2_checker_advanced.parser import lint_sysml, parse_sysml
+
+    src = """
+    package P {
+        port def FuelOutPort;
+        port def FuelInPort;
+        interface def FuelInterface {
+            end supplierPort : FuelOutPort;
+            end consumerPort : FuelInPort;
+        }
+        part vehicle {
+            interface FuelInterface connect
+                supplierPort ::> noSuchThing to
+                consumerPort ::> alsoNoSuchThing;
+        }
+    }
+    """
+    issues = [i for i in lint_sysml(parse_sysml(src)) if i.rule == "_check_interface_usage"]
+    assert len(issues) == 2
