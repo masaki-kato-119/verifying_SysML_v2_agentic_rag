@@ -21,9 +21,14 @@
     python scripts/recheck_local_only.py                    # 全件、表を表示
     python scripts/recheck_local_only.py --json out.json    # 機械可読でも書き出す
     python scripts/recheck_local_only.py --list-regressions # 悪化したファイルを全件表示
+    python scripts/recheck_local_only.py --rule-stats eval/rule_agreement.json
 
 出力は「保存済みの agreement」と「今のコードでの agreement」の突き合わせで、
 `scripts/compare_reference_eval_runs.py` の遷移表と同じ読み方ができる。
+
+`--rule-stats` はルール別の参照実装一致率を書き出す（Viewer Phase C の C0。
+`LintIssue` に載せる confidence の唯一の供給源。算出方法と、その数値が何を
+言っていないかは `build_rule_agreement` の docstring を読むこと）。
 
 ## 注意
 
@@ -56,6 +61,10 @@ _RULE_ID_RE = re.compile(r"\[[0-9.]+\]")
 # 一致しているとみなす agreement（compare_reference_eval_runs.py と同じ定義）。
 _AGREEING = {"both_clean", "both_error"}
 
+# パースエラーはlintルールではなく文法側の失敗なので、ルール別集計では
+# この擬似ルール名にまとめる（`LintIssue.rule`はNoneのため区別が必要）。
+PARSE_ERROR_RULE = "__parse_error__"
+
 
 def run_local(text: str) -> dict:
     """`run_reference_comparison_eval.py` の run_local_check と同じ正規化を行う。
@@ -74,7 +83,8 @@ def run_local(text: str) -> dict:
     if isinstance(ast, dict) and ast.get("type") == "error":
         message = ast.get("message", "parse error")
         return {"parsed": False, "crashed": False, "crash_message": None,
-                "diagnostics": [{"severity": "error", "message": seg} for seg in message.split("; ")]}
+                "diagnostics": [{"severity": "error", "message": seg, "rule": PARSE_ERROR_RULE}
+                                for seg in message.split("; ")]}
 
     try:
         issues = lint_sysml(ast)
@@ -88,6 +98,7 @@ def run_local(text: str) -> dict:
         diagnostics.append({
             "severity": str(as_dict.get("severity", "")).lower(),
             "message": str(as_dict.get("message", "")),
+            "rule": as_dict.get("rule"),
         })
     return {"parsed": True, "crashed": False, "crash_message": None, "diagnostics": diagnostics}
 
@@ -115,6 +126,50 @@ def normalize(message: str, width: int = 70) -> str:
     return _NUMBER_RE.sub("<N>", _QUOTED_RE.sub("<X>", _RULE_ID_RE.sub("", message))).strip()[:width]
 
 
+
+def build_rule_agreement(
+    fired: dict[str, Counter],
+    sole: dict[str, Counter],
+    min_samples: int,
+) -> dict[str, dict]:
+    """ルールごとの「参照実装との一致率」を求める（Viewer Phase C の C0）。
+
+    ## なぜ「そのルールだけが発火したファイル」に絞るのか
+
+    agreement はファイル単位の判定なので、1ファイルで複数ルールが発火していると
+    どのルールが一致に効いたのか分解できない。**そのルールだけが error を出した
+    ファイル**に絞れば、そのファイルの agreement はそのルールの判定そのものになる:
+
+    - `both_error`  … 参照実装もそのファイルを不正と判定した（＝そのルールは妥当）
+    - `local_only_error` … 参照実装はクリーンと判定した（＝そのルールが偽陽性）
+
+    `both_clean` はそのルールが error を出していれば起こり得ない（起きたら分類の
+    バグなので分母に入れない）。
+
+    ## この数値の限界（confidence を提示する側が明示すべきこと）
+
+    `both_error` は「参照実装もそのファイルを不正と見た」までしか言っておらず、
+    **同じ箇所を同じ理由で指摘したことまでは保証しない**。したがってこの比は
+    一致率の上限であって、真の精度ではない。分母が `min_samples` に満たない
+    ルールは `None` を返し、値を作らない（測っていないものに数字を付けない）。
+    """
+    result: dict[str, dict] = {}
+    for rule in sorted(set(fired) | set(sole)):
+        sole_counts = sole.get(rule, Counter())
+        agree = sole_counts.get("both_error", 0)
+        disagree = sole_counts.get("local_only_error", 0)
+        decided = agree + disagree
+        result[rule] = {
+            "fired_in_files": sum(fired.get(rule, Counter()).values()),
+            "sole_rule_files": sum(sole_counts.values()),
+            "sole_agree": agree,
+            "sole_disagree": disagree,
+            "confidence": round(agree / decided, 3) if decided >= min_samples else None,
+            "agreement_breakdown": dict(fired.get(rule, Counter())),
+        }
+    return result
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--results-dir", type=Path, default=RESULTS_DIR,
@@ -122,6 +177,10 @@ def main() -> int:
     parser.add_argument("--list-regressions", action="store_true", help="悪化したファイルを全件表示する")
     parser.add_argument("--top", type=int, default=12, help="頻出クラスタの表示件数")
     parser.add_argument("--json", type=Path, help="集計をJSONでも書き出す")
+    parser.add_argument("--rule-stats", type=Path,
+                        help="ルール別の参照実装一致率をJSONで書き出す（Viewer Phase C の confidence の供給源）")
+    parser.add_argument("--min-rule-samples", type=int, default=3,
+                        help="confidenceを算出する最小サンプル数。これ未満のルールはnullのままにする（既定3）")
     args = parser.parse_args()
 
     files = sorted(args.results_dir.glob("*.json"))
@@ -135,6 +194,10 @@ def main() -> int:
     by_category: dict[str, Counter] = {}
     regressions: list[dict] = []
     local_only_messages: Counter[str] = Counter()
+    # ルール別集計（Viewer Phase C C0）。fired=そのルールが発火した全ファイル、
+    # sole=そのルールだけがerrorを出したファイル。
+    rule_fired: dict[str, Counter] = {}
+    rule_sole: dict[str, Counter] = {}
     parse_failures: list[str] = []
     missing = 0
 
@@ -155,6 +218,15 @@ def main() -> int:
         after[agreement] += 1
         transitions[(recorded, agreement)] += 1
         by_category.setdefault(sample.get("category", "?"), Counter())[agreement] += 1
+
+        error_rules = {
+            d.get("rule") for d in local["diagnostics"] if d.get("severity") == "error"
+        }
+        error_rules.discard(None)
+        for rule in error_rules:
+            rule_fired.setdefault(rule, Counter())[agreement] += 1
+        if len(error_rules) == 1:
+            rule_sole.setdefault(next(iter(error_rules)), Counter())[agreement] += 1
 
         if agreement == "local_only_error":
             for diagnostic in local["diagnostics"]:
@@ -215,6 +287,27 @@ def main() -> int:
         print(f"  [{item['category']}] {item['path']}")
         print(f"      {item['before']} -> {item['after']}: {(item['local_first_error'] or '')[:100]}")
 
+    rule_agreement = build_rule_agreement(rule_fired, rule_sole, args.min_rule_samples)
+    measured = {k: v for k, v in rule_agreement.items() if v["confidence"] is not None}
+    print()
+    print(f"## ルール別の参照実装一致率: 発火{len(rule_agreement)}ルール中、"
+          f"{len(measured)}ルールが算出可能（単独発火{args.min_rule_samples}件以上）")
+    for rule, stats in sorted(measured.items(), key=lambda kv: kv[1]["confidence"]):
+        print(f"  {stats['confidence']:.3f}  {rule:52s} "
+              f"単独{stats['sole_agree']}一致/{stats['sole_disagree']}不一致 "
+              f"(発火{stats['fired_in_files']}件)")
+
+    if args.rule_stats:
+        args.rule_stats.write_text(json.dumps({
+            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "results_dir": str(args.results_dir),
+            "total_files": total,
+            "min_rule_samples": args.min_rule_samples,
+            "rules": rule_agreement,
+        }, ensure_ascii=False, indent=1), encoding="utf-8")
+        print()
+        print(f"# ルール別一致率を書き出した: {args.rule_stats}")
+
     if args.json:
         args.json.write_text(json.dumps({
             "total": total,
@@ -225,6 +318,7 @@ def main() -> int:
             "local_only_parse_failures": parse_failures,
             "local_only_messages": dict(local_only_messages),
             "regressions": regressions,
+            "rule_agreement": rule_agreement,
         }, ensure_ascii=False, indent=1), encoding="utf-8")
         print(f"\n# JSONを書き出した: {args.json}")
 

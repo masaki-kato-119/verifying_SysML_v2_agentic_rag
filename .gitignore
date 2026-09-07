@@ -14,10 +14,15 @@ eval/sysml_reference/__pycache__/
 # - sysml_samples/  : 221MB, third-party OSS models catalogued in manifest.json.
 # - sysml_results/  : per-sample local-vs-reference comparison output (7.4MB).
 # - results/        : golden-set / conformance eval run results (3.8MB).
+# - rule_agreement.json / recheck_*.json : recheck_local_only.py の集計出力。
+#   ルール別の一致率はここから確認したうえで、レビュー済みスナップショットだけを
+#   sysml_v2_checker_advanced 配下へ取り込む（Viewer Phase C の C0/C1）。
 eval/sysml_samples/
 eval/sysml_results/
 eval/sysml_results_baseline_*/
 eval/results/
+eval/rule_agreement.json
+eval/recheck_*.json
 
 # --- Python ---
 __pycache__/
