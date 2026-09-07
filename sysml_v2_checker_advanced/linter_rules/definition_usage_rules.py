@@ -906,6 +906,14 @@ class DefinitionUsageRulesMixin:
         つまり制約自体は実在し、単純名の判定は正しい。所有者付きパスの解決には
         型解決が要るので、**その形は判定対象外にする**（検出漏れは許容し、
         偽陽性は出さない。他の意味ルールと同じ方針）。
+
+        `allocate`（`_check_allocation_usage`）のエンドも同じ形・同じ原因な
+        ので、この判定を共有する。allocation側でも別途参照実装へ問い合わせて
+        同じ境界であることを確かめた（2026-09-07）:
+        `allocate l.component to p.assembly.element;`（AST上は
+        `l::component` と `p::assembly::element`）はクリーン、
+        `l.noSuchPart` と単純名の `noSuchThing` はエラー。決め手は
+        `simpletests/AllocationTest.sysml`（`// XPECT noErrors`）。
         """
         reference = reference_subsetting.get("referenced_feature", "")
         if not reference:
@@ -1016,13 +1024,13 @@ class DefinitionUsageRulesMixin:
                     # エンドの参照チェック
                     from_ref = from_end.get("reference_subsetting")
                     to_ref = to_end.get("reference_subsetting")
-                    if from_ref and not self._find_element_in_symbols(from_ref.get("referenced_feature", "")):
+                    if from_ref and self._end_reference_is_missing(from_ref):
                         self.issues.append(LintIssue(
                             SEVERITY_ERROR,
                             f"[8.2.2.15] Allocation usage '{node.get('name', 'unknown')}' の from エンドが存在しない要素を参照しています",
                             from_end
                         ))
-                    if to_ref and not self._find_element_in_symbols(to_ref.get("referenced_feature", "")):
+                    if to_ref and self._end_reference_is_missing(to_ref):
                         self.issues.append(LintIssue(
                             SEVERITY_ERROR,
                             f"[8.2.2.15] Allocation usage '{node.get('name', 'unknown')}' の to エンドが存在しない要素を参照しています",

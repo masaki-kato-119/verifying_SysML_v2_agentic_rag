@@ -165,3 +165,56 @@ def test_interface_end_simple_name_that_does_not_exist_is_still_flagged():
     """
     issues = [i for i in lint_sysml(parse_sysml(src)) if i.rule == "_check_interface_usage"]
     assert len(issues) == 2
+
+
+def test_allocation_end_owner_qualified_path_is_not_flagged():
+    """`allocate` の所有者付きエンドパスを「存在しない」と誤検出しない。
+
+    interface 側（test_interface_end_owner_qualified_path_is_not_flagged）と
+    同じ原因で、判定も `_end_reference_is_missing` を共有している。allocation
+    についても別途参照実装へ問い合わせ、同じ境界であることを実測した
+    （2026-09-07。`allocate l.component to p.assembly.element;` はクリーン、
+    `l.noSuchPart` と単純名の `noSuchThing` はエラー）。
+
+    xpect の simpletests/AllocationTest.sysml（`// XPECT noErrors`）と同じ形。
+    """
+    from sysml_v2_checker_advanced.parser import lint_sysml, parse_sysml
+
+    src = """
+    package P {
+        part def Logical { part component; }
+        part def Physical { part assembly { part element; } }
+        part l : Logical { part :>> component; }
+        part p : Physical { part :>> assembly { part :>> element; } }
+        allocation def Logical_to_Physical {
+            end logical : Logical;
+            end physical : Physical;
+        }
+        allocate l.component to p.assembly.element;
+    }
+    """
+    issues = lint_sysml(parse_sysml(src))
+    assert [i.message for i in issues if i.rule == "_check_allocation_usage"] == []
+
+
+def test_allocation_end_simple_name_that_does_not_exist_is_still_flagged():
+    """単純名の不在は型解決なしで断定できるので検出を維持する。
+
+    参照実装も `Couldn't resolve reference to Feature 'noSuchThing'.` を
+    2件返す（2026-09-07に実測）。
+    """
+    from sysml_v2_checker_advanced.parser import lint_sysml, parse_sysml
+
+    src = """
+    package P {
+        part def Logical;
+        part def Physical;
+        allocation def Logical_to_Physical {
+            end logical : Logical;
+            end physical : Physical;
+        }
+        allocation a1 : Logical_to_Physical allocate noSuchThing to alsoNoSuchThing;
+    }
+    """
+    issues = [i for i in lint_sysml(parse_sysml(src)) if i.rule == "_check_allocation_usage"]
+    assert len(issues) == 2
