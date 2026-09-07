@@ -96,8 +96,9 @@ async def test_validate_sysml_model_does_not_crash_on_lint_issues(graph_client):
     )
     assert all_details
     for detail in all_details:
-        # 2026-09-07、Viewer Phase C c1: confidence を追加（実測テーブルに
-        # 載っていないルールでは None）。
+        # 2026-09-07、Viewer Phase C c1/c4: confidence（実測テーブルに載って
+        # いないルールでは None）と suggestion（書き換え方が一意に決まる
+        # ルールだけが持つ）を追加。
         assert set(detail) == {
             "severity", "rule", "message", "location", "confidence", "suggestion",
         }

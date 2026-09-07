@@ -209,6 +209,37 @@ html, body {
   font-style: italic;
 }
 
+/* Findingの修正候補（Phase C c4）。まだ適用されていない「案」であることが
+   分かるよう、関連概念カード（b16）と同じ破線＝推定・提案側の見た目に寄せる。
+   confidenceの実測値（実線の左罫線）とは別カテゴリであることを示す。 */
+.finding-suggestion {
+  font-size: 11px;
+  margin: 4px 0 4px 16px;
+  padding: 4px 8px;
+  border: 1px dashed #7048e8;
+  border-radius: 3px;
+  background: rgba(112, 72, 232, 0.08);
+}
+
+.finding-suggestion-title {
+  color: #b197fc;
+  font-weight: bold;
+}
+
+.finding-suggestion-detail {
+  color: #adb5bd;
+}
+
+.finding-suggestion-edit {
+  font-family: "Consolas", "Menlo", monospace;
+  color: #e9ecef;
+}
+
+.finding-suggestion-caveat {
+  color: #868e96;
+  font-style: italic;
+}
+
 .finding-status-control {
   padding-left: 16px;
   margin-bottom: 4px;

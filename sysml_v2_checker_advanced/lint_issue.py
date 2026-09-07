@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from .fix_candidates import FixCandidate
+
 
 # ルール別 confidence の実測テーブル。`scripts/recheck_local_only.py --rule-stats`
 # が 730 件コーパスの参照実装比較から生成したものを、レビューしたうえでここへ
@@ -89,11 +91,14 @@ class LintIssue:
             経由で source_range を使うこと）
         rule: この指摘を生成したチェックメソッド名（`__post_init__`が
             呼び出し元フレームから自動取得する。詳細は`__post_init__`参照）
+        suggestion: 修正候補（オプション。書き換え方が一意に決まるルールだけが
+            渡す。詳細は`fix_candidates.py`のモジュールdocstring参照）
     """
     severity: str
     message: str
     node: Optional[Dict] = None
     line: Optional[int] = None
+    suggestion: Optional[FixCandidate] = None
     rule: Optional[str] = field(default=None, init=False)
 
     def __post_init__(self) -> None:
@@ -135,7 +140,7 @@ class LintIssue:
 
         Returns:
             重大度・メッセージ・ルール識別子・element_id・source_range・
-            confidenceを含む辞書
+            confidence・suggestionを含む辞書
         """
         entry = (
             element_index.get(id(self.node))
@@ -149,6 +154,7 @@ class LintIssue:
             "element_id": entry.get("element_id") if entry else None,
             "source_range": entry.get("source_range") if entry else None,
             "confidence": self.confidence(),
+            "suggestion": self.suggestion.to_dict() if self.suggestion else None,
         }
 
     def confidence(self) -> Optional[Dict[str, Any]]:

@@ -10,6 +10,7 @@ from ..constants import (
     SEVERITY_ERROR,
     SEVERITY_WARNING,
 )
+from ..fix_candidates import use_dot_for_nesting
 from ..lint_issue import LintIssue
 
 # subject位置制約(8.2.2.21)で「パラメータ相当」として数える子要素の型。
@@ -437,7 +438,11 @@ class DefinitionUsageRulesMixin:
                     self.issues.append(LintIssue(
                         SEVERITY_ERROR,
                         "Must be an accessible feature (use dot notation for nesting)",
-                        candidate
+                        candidate,
+                        # 修正候補（Phase C c4）。書き換え方はメッセージ自身が
+                        # 指示しているとおり一意だが、**どの`::`境界**を不正と
+                        # 判断したかはこのループしか知らないので、位置を渡す。
+                        suggestion=use_dot_for_nesting(segments, index),
                     ))
                     break
 

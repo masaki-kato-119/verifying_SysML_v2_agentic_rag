@@ -28,6 +28,7 @@ def test_lint_issue_to_dict():
         "element_id": None,
         "source_range": None,
         "confidence": None,
+        "suggestion": None,
     }
 
 

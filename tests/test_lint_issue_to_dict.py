@@ -23,6 +23,7 @@ def test_to_dict_without_index_returns_none_fields():
     result = issues[0].to_dict()
     assert set(result.keys()) == {
         "severity", "message", "rule", "element_id", "source_range", "confidence",
+        "suggestion",
     }
     assert result["element_id"] is None
     assert result["source_range"] is None

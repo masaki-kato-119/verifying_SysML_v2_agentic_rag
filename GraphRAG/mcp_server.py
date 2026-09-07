@@ -1846,12 +1846,12 @@ def _summarize_ast(ast: Dict[str, Any]) -> Dict[str, Any]:
 def _format_lint_issue(issue, element_index: Optional[Dict[int, Dict]] = None) -> Dict[str, Any]:
     """リンター問題を辞書形式にフォーマット
 
-    `rule` は 2026-09-03 に LintIssue 側へ実装され、実際のチェックメソッド名を
-    返すようになった。`suggestion` は**まだ LintIssue に存在しない**ため常に
-    None を返す（修正候補の提示は Viewer Phase C の c4 で扱う。存在しない属性
-    への直接アクセスは issue が1件でもあると AttributeError となり、以前は
-    validate_sysml_model 全体が汎用エラーを返す原因になっていた。getattr の
-    既定値取得に統一して解消済み）。
+    `rule` は 2026-09-03 に、`suggestion`（修正候補）は 2026-09-07 に
+    LintIssue 側へ実装された。`suggestion` は書き換え方が一意に決まるルール
+    だけが持つ任意項目なので、多くの指摘では None のままになる（詳細は
+    sysml_v2_checker_advanced/fix_candidates.py）。いずれも `to_dict()` が
+    辞書化したものを渡す。FixCandidate のインスタンスをそのまま返すと
+    MCP 応答の JSON 化に失敗する。
 
     `confidence` は 2026-09-07 に追加。730件コーパスの参照実装比較から得た
     ルール別の一致率で、測っていないルールでは None になる。値の意味と
@@ -1870,7 +1870,7 @@ def _format_lint_issue(issue, element_index: Optional[Dict[int, Dict]] = None) -
         "message": issue.message,
         "location": as_dict.get("source_range"),
         "confidence": as_dict.get("confidence"),
-        "suggestion": getattr(issue, "suggestion", None),
+        "suggestion": as_dict.get("suggestion"),
     }
 
 

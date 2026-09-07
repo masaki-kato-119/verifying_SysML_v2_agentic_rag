@@ -427,7 +427,17 @@ function renderInspector(node) {
 
   renderRelatedEdges(node, container);
 
-  const relatedFindings = latestFindings.filter((f) => f.element_id === node.id);
+  // Findingのelement_idは、要素そのものではなく**その中の参照**（無名ノード）を
+  // 指すことがある。無名ノードのstable_idは`<親のid>/<型>#<連番>`という形
+  // （antlr_transformer.py）なので、選択要素配下の無名ノードに付いたFindingも
+  // ここで拾う。名前付きの子は`::`で繋がるため、この前方一致に混ざらない。
+  //
+  // これを拾わないと、指摘が参照ノードに付くルール（accessible feature path、
+  // import解決など）は、Explorerでどの要素を選んでもInspectorに現れない
+  // （2026-09-07、c4の修正候補が表示されないことから発見）。
+  const relatedFindings = latestFindings.filter(
+    (f) => f.element_id === node.id || (f.element_id || "").startsWith(`${node.id}/`)
+  );
   if (relatedFindings.length > 0) {
     const heading = document.createElement("div");
     heading.innerHTML = "<strong>Findings:</strong>";
@@ -442,6 +452,8 @@ function renderInspector(node) {
       container.appendChild(row);
 
       container.appendChild(renderFindingConfidence(finding));
+      const suggestionRow = renderFindingSuggestion(finding);
+      if (suggestionRow) container.appendChild(suggestionRow);
 
       // Group1 b3(I3-1): このFindingの対象要素が持つ参照（reference_text/
       // resolution_status）をsemantic_model.edgesから引いて併記する。
@@ -666,6 +678,50 @@ function renderFindingConfidence(finding) {
     `（このルールだけが指摘した${decided}件中${confidence.sole_agree}件で参照実装と一致）`;
   row.title = `${confidence.caveat}\n算出日: ${confidence.measured_at} / 基準: ${confidence.basis}`;
   return row;
+}
+
+// Findingの修正候補（Phase C c4）。構想書§14の成功条件「対象・根拠・影響範囲・
+// 修正候補を同一画面で判断できる」の最後の1つ。
+//
+// **提示のみで、適用ボタンは置かない。** 適用・再パース・再検証は構想書§11の
+// Phase Dの範囲であり、人が読んで判断する段階を飛ばさないため、ここでは
+// 「こう書き換える案がある」までを見せる。
+//
+// 候補を持たないFindingでは何も描かない（nullを返す）。「候補なし」の行を
+// 毎回出すと、候補が付いているFindingの方が埋もれる。
+function renderFindingSuggestion(finding) {
+  const suggestion = finding.suggestion;
+  if (!suggestion) return null;
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "finding-suggestion";
+
+  const title = document.createElement("div");
+  title.className = "finding-suggestion-title";
+  title.textContent = `　修正候補: ${suggestion.title}`;
+  // 但し書きはリンター側が候補と同じ辞書へ入れて返す。UI側の文言にせず
+  // そのまま出すことで、表示経路が増えても但し書きが落ちないようにする。
+  title.title = suggestion.caveat;
+  wrapper.appendChild(title);
+
+  const detail = document.createElement("div");
+  detail.className = "finding-suggestion-detail";
+  detail.textContent = `　　${suggestion.detail}`;
+  wrapper.appendChild(detail);
+
+  if (suggestion.edit) {
+    const edit = document.createElement("div");
+    edit.className = "finding-suggestion-edit";
+    edit.textContent = `　　${suggestion.edit.find} → ${suggestion.edit.replace}`;
+    wrapper.appendChild(edit);
+  }
+
+  const caveat = document.createElement("div");
+  caveat.className = "finding-suggestion-caveat";
+  caveat.textContent = `　　${suggestion.caveat}`;
+  wrapper.appendChild(caveat);
+
+  return wrapper;
 }
 
 // Findingの状態変更UI（Group1 b4, I4）+ レビュー履歴（Group1 b5, I5）。
