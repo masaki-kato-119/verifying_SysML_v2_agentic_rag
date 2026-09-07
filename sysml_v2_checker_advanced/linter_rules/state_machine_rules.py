@@ -20,6 +20,13 @@ from ..lint_issue import LintIssue
 # 返す（＝この制約の対象として観測できない）ため含めない。
 _PARALLEL_STATE_NODE_TYPES = ("state_def", "state_usage")
 
+# `transition ... then done;`の`done`と`first start`の`start`は、ローカルに
+# 宣言せずに使える標準ライブラリ側の暗黙の状態。参照実装は宣言が無くても
+# クリーンと判定する（2026-09-07に実測。canaryを前後に挟んで実施）。
+# 実測できた2つだけを挙げる（他にも暗黙名があるかもしれないが、推測で
+# 増やすと逆に検出漏れになるので、見つかった時点で足す）。
+_IMPLICIT_STATE_NAMES = frozenset({"start", "done"})
+
 class StateMachineRulesMixin:
     def _check_state_def(self, node: Dict, namespace: str) -> None:
         """
@@ -65,6 +72,49 @@ class StateMachineRulesMixin:
                      sym_name.split("::")[-1] == state_name)):
                     return True
         return False
+    def _transition_endpoint_is_missing(self, name: str) -> bool:
+        """transitionのsource/targetが「存在しない」と**断定できる**場合だけTrue。
+
+        2026-09-07の実測（730件コーパスのルール別一致率）で`_check_transition`の
+        confidenceは0.250（単独発火4ファイル中3件が参照実装と不一致）だった。
+        失敗形は2種あり、原因も別だった:
+
+        1. **修飾名**（`S2::S3`・`s1::s2`。ソースの`S2.S3`をパーサーが`::`へ
+           正規化したもの）。シンボル表は入れ子を保持せずpackage直下に平坦登録
+           する（`StateTest::S3`）ため、`::S2::S3`で終わる登録名は存在せず、
+           末尾セグメントのフォールバックも多セグメント文字列と比較になるので
+           必ず外れる。connectのエンド参照と同じ構造的な原因
+           （`_end_reference_is_missing`のdocstring参照）。
+        2. **`done`**（`accept Exit then done;`・`then done;`）。ローカル宣言では
+           なく標準ライブラリ側の暗黙の状態なので、どの登録にも現れない。
+
+        参照実装(jar 0.61.0)へ問い合わせて確定した境界（2026-09-07、canaryを
+        前後に挟んで実施）:
+
+        - `transition first a then done;` → クリーン。`first start` も同じ。
+        - `transition first a then noSuchState;` → エラー
+          `Couldn't resolve reference to Feature 'noSuchState'.`
+        - `then b.c`（入れ子だが解決できる） → クリーン
+        - `then b.noSuch` → エラー
+        - `first a.a2`（ソース側の入れ子） → クリーン
+
+        つまり制約自体は実在し、未宣言の単純名を落とすのは正しい。修飾名の解決
+        には入れ子・型の解決が要るので**その形は判定対象外**にする（検出漏れは
+        許容し、偽陽性は出さない）。
+        """
+        if not name:
+            return False
+        if name in _IMPLICIT_STATE_NAMES:
+            return False
+        # 修飾名は入れ子/型の解決が必要なので判定しない。
+        if "::" in name:
+            return False
+        # importで持ち込まれた名前・中身の見えない名前空間由来の可能性がある
+        # 参照も判定しない（単一ファイルlintでは不在を証明できない）。
+        if self._is_unverifiable_reference(name):
+            return False
+        return not self._find_state_in_symbols(name)
+
     def _check_transition(self, node: Dict, namespace: str) -> None:
         """
         遷移のチェック
@@ -78,14 +128,14 @@ class StateMachineRulesMixin:
         source = node.get("source")
         target = node.get("target")
         
-        if source and not self._find_state_in_symbols(source):
+        if self._transition_endpoint_is_missing(source):
             self.issues.append(LintIssue(
                 SEVERITY_ERROR,
                 f"Transition のソースステート '{source}' が存在しません",
                 node
             ))
         
-        if target and not self._find_state_in_symbols(target):
+        if self._transition_endpoint_is_missing(target):
             self.issues.append(LintIssue(
                 SEVERITY_ERROR,
                 f"Transition のターゲットステート '{target}' が存在しません",

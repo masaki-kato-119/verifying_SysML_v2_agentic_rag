@@ -2924,13 +2924,17 @@ stateDef
     : isAbstract='abstract'? 'state' 'def' simpleName inheritanceClause? isParallel='parallel'? ( '{' stateBodyElement* '}' | ';' )
     ;
 
-// nested `state def Sub;`はsymbolとして登録される。`_find_state_in_symbols`
-// はtype=="state_def"のものしか見つけられないため、transitionの
-// source/targetから参照するにはこれが必要。
-// bare形の`state Sub;`（usageであってdefではない）も持つが、
-// `_find_state_in_symbols`はusageを認識しないため、transitionの
-// source/targetからは参照できない（構文的完全性のための対応で、
-// transitionとの連携価値は無い点に注意）。
+// nested `state def Sub;`と bare形の`state Sub;`（usage）はどちらも
+// symbolとして登録され、transitionのsource/targetから参照できる
+// （`_find_state_in_symbols`が見る`TRANSITION_ENDPOINT_NODE_TYPES`には
+// state_def・state_usageの両方が入っている。以前このコメントは「usageは
+// 認識しない」と書いていたが、2026-09-07時点のコードとは合っていない）。
+//
+// ただし参照できるのは**単純名の場合だけ**である。`then S2.S3;`のような
+// 修飾名はパーサーが`S2::S3`へ正規化するが、シンボル表は入れ子を保持せず
+// package直下に平坦登録するため解決できない。この形は
+// `_transition_endpoint_is_missing`（state_machine_rules.py）が判定対象外に
+// している（型・入れ子の解決が入るまでは検出漏れを許容する）。
 stateBodyElement
     : entryActionMember
     | doActionMember

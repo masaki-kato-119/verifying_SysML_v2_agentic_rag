@@ -218,3 +218,60 @@ def test_allocation_end_simple_name_that_does_not_exist_is_still_flagged():
     """
     issues = [i for i in lint_sysml(parse_sysml(src)) if i.rule == "_check_allocation_usage"]
     assert len(issues) == 2
+
+
+def test_transition_qualified_endpoint_is_not_flagged():
+    """`then S2.S3;` のような修飾名の遷移先を「存在しない」と誤検出しない。
+
+    2026-09-07、ルール別一致率で `_check_transition` の confidence は 0.250。
+    ソースの `S2.S3` はパーサーが `S2::S3` へ正規化するが、シンボル表は
+    入れ子を保持せず package 直下に平坦登録する（`StateTest::S3`）ため
+    解決できず、公式サンプル StateTest.sysml の遷移を落としていた。
+
+    参照実装は解決できる修飾名をクリーンと判定する（2026-09-07に実測。
+    `then b.c` はクリーン、`then b.noSuch` はエラー）。
+    """
+    from sysml_v2_checker_advanced.parser import lint_sysml, parse_sysml
+
+    src = """
+    package P {
+        state def S {
+            state a;
+            state b { state c; }
+            transition first a then b.c;
+        }
+    }
+    """
+    issues = [i for i in lint_sysml(parse_sysml(src)) if i.rule == "_check_transition"]
+    assert issues == []
+
+
+def test_transition_implicit_done_state_is_not_flagged():
+    """`then done;` はローカル宣言が無くても正当（標準ライブラリ側の暗黙の状態）。
+
+    参照実装は `first start` も含めてクリーンと判定する（2026-09-07に実測）。
+    StateTest.sysml の `accept Exit then done;` と StopWatchStates.sysml の
+    `then done;` を落としていた原因。
+    """
+    from sysml_v2_checker_advanced.parser import lint_sysml, parse_sysml
+
+    for src in (
+        "package P { state def S { state a; transition first a then done; } }",
+        "package P { state def S { state a; transition first start then a; } }",
+    ):
+        issues = [i for i in lint_sysml(parse_sysml(src)) if i.rule == "_check_transition"]
+        assert issues == [], src
+
+
+def test_transition_undeclared_simple_name_is_still_flagged():
+    """未宣言の単純名は型解決なしで断定できるので検出を維持する。
+
+    参照実装も `Couldn't resolve reference to Feature 'noSuchState'.` を返す
+    （2026-09-07に実測）。
+    """
+    from sysml_v2_checker_advanced.parser import lint_sysml, parse_sysml
+
+    src = "package P { state def S { state a; transition first a then noSuchState; } }"
+    issues = [i for i in lint_sysml(parse_sysml(src)) if i.rule == "_check_transition"]
+    assert len(issues) == 1
+    assert "noSuchState" in issues[0].message
