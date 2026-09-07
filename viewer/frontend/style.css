@@ -190,6 +190,25 @@ html, body {
   padding-left: 16px;
 }
 
+/* Findingの確信度（Phase C c2）。モデル事実でもLLM推定でもない「計測値」で
+   あることが見て分かるよう、関連概念カード（破線枠）とも根拠行（プレーン）
+   とも違う左罫線＋等幅の見た目にする。 */
+.finding-confidence {
+  font-family: "Consolas", "Menlo", monospace;
+  font-size: 11px;
+  padding-left: 12px;
+  margin-left: 16px;
+  border-left: 2px solid #5c7cfa;
+  color: #adb5bd;
+}
+
+/* 未測定は「測ったが低い」と取り違えられないよう、色も罫線も落とす。 */
+.finding-confidence-unmeasured {
+  border-left-color: #495057;
+  color: #6c757d;
+  font-style: italic;
+}
+
 .finding-status-control {
   padding-left: 16px;
   margin-bottom: 4px;

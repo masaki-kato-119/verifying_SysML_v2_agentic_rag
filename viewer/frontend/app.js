@@ -441,6 +441,8 @@ function renderInspector(node) {
       row.textContent = `[${finding.severity}] ${rulePrefix}${finding.message}`;
       container.appendChild(row);
 
+      container.appendChild(renderFindingConfidence(finding));
+
       // Group1 b3(I3-1): このFindingの対象要素が持つ参照（reference_text/
       // resolution_status）をsemantic_model.edgesから引いて併記する。
       // Graph IRのedgesはresolved=trueのみ（3.3節の設計判断）のため、
@@ -629,6 +631,41 @@ function renderRelatedConceptsCard(data, container) {
   }
 
   container.appendChild(card);
+}
+
+// Findingの確信度（Phase C c2）。値は`LintIssue.confidence()`が返す実測値で、
+// 730件コーパスでの参照実装との一致率。
+//
+// 見た目をどちらに寄せるかの判断: confidenceは「実測に基づく統計」であり、
+// モデル事実（実線・source_range由来）でもLLM推定（b16の関連概念カード・
+// b17の説明文の破線枠）でもない第三のカテゴリである。どちらへ寄せても
+// 誤解を招くので、専用のクラスで「計測値」と分かる見た目にする。
+//
+// 数値だけを出さないのが要点。`value`は「参照実装も同じファイルを不正と
+// 判定した割合」であって「同じ箇所を同じ理由で指摘した割合」ではないため、
+// 件数を併記し、但し書きをtitle属性で必ず読めるようにする。
+function renderFindingConfidence(finding) {
+  const row = document.createElement("div");
+  row.className = "finding-confidence";
+  const confidence = finding.confidence;
+
+  if (!confidence) {
+    // 「未測定」と「測ったが低い」は別物なので、空欄にせず明示する。
+    row.classList.add("finding-confidence-unmeasured");
+    row.textContent = "　確信度: 未測定";
+    row.title =
+      "このルールは、参照実装との一致率を算出できる件数（そのルールだけが" +
+      "発火したファイルが3件以上）に達していないため確信度を出していません。" +
+      "推定値で埋めることはしません。";
+    return row;
+  }
+
+  const decided = confidence.sole_agree + confidence.sole_disagree;
+  row.textContent =
+    `　確信度: ${confidence.value.toFixed(3)}` +
+    `（このルールだけが指摘した${decided}件中${confidence.sole_agree}件で参照実装と一致）`;
+  row.title = `${confidence.caveat}\n算出日: ${confidence.measured_at} / 基準: ${confidence.basis}`;
+  return row;
 }
 
 // Findingの状態変更UI（Group1 b4, I4）+ レビュー履歴（Group1 b5, I5）。
