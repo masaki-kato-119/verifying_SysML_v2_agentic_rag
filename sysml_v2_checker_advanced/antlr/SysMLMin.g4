@@ -358,15 +358,20 @@ occurrenceUsage
       ( '{' partBodyElement* '}' | ';' )
     ;
 
-// IndividualDefinitionはEmptyMultiplicityMember（`[]`、上下限を持たない
-// 明示的な空の多重度）を持つことが多い。`_check_individual_definition`
-// （case_and_view_rules.py）はmultiplicityの存在とsize=Noneの両方を
-// 要求し、無ければLintIssueとして報告する仕様のため、文法側では必須に
-// せず省略可能にする（`individual def IO1;`のように`[]`を省略した公式
-// コーパス実例が存在するため。2026-08-28、参照実装比較レポートP0-3で
-// 発見。以前は必須にしていたため、このIndividualTest.sysml自体の1行目
-// でパース自体が失敗していた）。既存のmultiplicityBracketは上下限の
-// 記述を必須とするため再利用せず、空の`[]`をこの規則専用に直接書く。
+// IndividualDefinitionのEmptyMultiplicityMember（`[]`、上下限を持たない
+// 明示的な空の多重度）は省略可能にしてある。`individual def IO1;`のように
+// `[]`を省かった公式コーパス実例が存在し、必須にしていた頃は
+// IndividualTest.sysmlの1行目でパース自体が失敗していた（2026-08-28、
+// 参照実装比較レポートP0-3）。既存のmultiplicityBracketは上下限の記述を
+// 必須とするため再利用せず、空の`[]`をこの規則専用に直接書く。
+//
+// 2026-09-07に参照実装(jar 0.61.0)へ問い合わせて分かったこと: 参照実装は
+// `individual def X[];`も`individual def X[1];`も`no viable alternative at
+// input '['`で拒否する。**定義に多重度を書くこと自体ができない**。つまり
+// `emptyMult`を受理するこの規則は参照実装より緩く、省略形こそが唯一の
+// 正しい形である。当時ここが根拠として挙げていた
+// `_check_individual_definition`（「多重度が無ければLintIssue」）は、
+// まさにその唯一の正しい形を落としていたため削除した。
 individualDef
     : isAbstract='abstract'? 'individual' 'def' simpleName inheritanceClause? (emptyMult='[' ']')? ( '{' partBodyElement* '}' | ';' )
     ;

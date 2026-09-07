@@ -3712,9 +3712,13 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
     def visitIndividualDef(self, ctx: SysMLMinParser.IndividualDefContext) -> Dict:
         # `[]`（EmptyMultiplicityMember）は省略されることがある（`individual
         # def IO1;`、IndividualTest.sysml。2026-08-28、参照実装比較レポート
-        # P0-3で発見）。省略時は"multiplicity": Noneとし、
-        # `_check_individual_definition`（case_and_view_rules.py）が
-        # 既存の「空の多重度が必要」というLintIssueとして報告する。
+        # P0-3で発見）。省略時は"multiplicity": Noneとする。
+        #
+        # 2026-09-07: 省略を「空の多重度が必要」というLintIssueとして報告して
+        # いた`_check_individual_definition`は削除した。参照実装は
+        # `individual def X[];`も`individual def X[1];`も構文エラーにするので、
+        # 多重度が無いのが唯一の合法な状態である（つまりこの文法はむしろ
+        # 参照実装より緩い。`emptyMult`を受理するのは公式コーパス互換のため）。
         children = [self.visit(el) for el in ctx.partBodyElement()]
         multiplicity = {"size": None, "is_ordered": False, "is_unique": True} if ctx.emptyMult is not None else None
         return {

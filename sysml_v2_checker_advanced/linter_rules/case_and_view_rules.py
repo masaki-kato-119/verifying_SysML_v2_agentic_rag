@@ -52,19 +52,21 @@ class CaseAndViewRulesMixin:
         Occurrence 関連の高度ルールチェック (8.2.2.9)
 
         - OccurrenceDefinitionPrefix の isIndividual チェック
-        - IndividualDefinition の EmptyMultiplicityMember 検証
         - EventOccurrenceUsage の構造チェック
 
         OccurrenceUsage自体の固有チェックは無い（_check_occurrence_usageの
         docstring参照。PortionKind検証は構造的に到達不能なため削除済み）。
+
+        IndividualDefinition の EmptyMultiplicityMember 検証は2026-09-07に
+        削除した（そのような制約は参照実装に存在せず、`individual def` に
+        多重度を書くこと自体が構文エラーになる。詳細はこのファイルの
+        コミット履歴と、下の `individual_def` 分岐が消えている理由）。
         """
         for sym_name, sym_node in self.symbols.items():
             node_type = sym_node.get("type")
             
             if node_type == "occurrence_def":
                 self._check_occurrence_definition(sym_node, sym_name)
-            elif node_type == "individual_def":
-                self._check_individual_definition(sym_node, sym_name)
             elif node_type == "occurrence_usage":
                 self._check_occurrence_usage(sym_node, sym_name)
             elif node_type == "event_occurrence_usage":
@@ -81,16 +83,34 @@ class CaseAndViewRulesMixin:
                     f"[8.2.2.9] Individual occurrence '{node.get('name', node_name)}' は空の多重度である必要があります",
                     node
                 ))
-    def _check_individual_definition(self, node: Dict, node_name: str) -> None:
-        """IndividualDefinition の EmptyMultiplicityMember 検証"""
-        # Individual は常に EmptyMultiplicity を持つ必要がある
-        multiplicity = node.get("multiplicity")
-        if not multiplicity or multiplicity.get("size") is not None:
-            self.issues.append(LintIssue(
-                SEVERITY_ERROR,
-                f"[8.2.2.9] Individual definition '{node.get('name', node_name)}' は空の多重度を持つ必要があります",
-                node
-            ))
+    # `_check_individual_definition` は2026-09-07に削除した。
+    #
+    # 「Individual definition は空の多重度を持つ必要がある」という制約を課し、
+    # `not multiplicity` すなわち**多重度が書かれていないとき**に発火していた。
+    # 730件コーパスのルール別一致率でconfidence 0.143（そのルールだけがerrorを
+    # 出した7ファイル中6件で参照実装と不一致）と最下位群にあり、xpectの
+    # **valid**フィクスチャ validation/valid/IndividualUsage.sysml
+    # （`// XPECT noErrors`）の `individual def Vehicle_1 :> Vehicle { ... }` と
+    # `individual def Wheel_1 :> Wheel;` を落としていた。
+    #
+    # 参照実装(jar 0.61.0)へ問い合わせて確定（2026-09-07、canaryを前後に挟んで実施）:
+    #
+    #   individual def V_1 :> V;        -> クリーン
+    #   individual def V_1;             -> クリーン
+    #   individual def V_1[] :> V;      -> 構文エラー no viable alternative at input '['
+    #   individual def V_1[1] :> V;     -> 同上
+    #   individual def V_1 :> V [];     -> 同上
+    #   individual v1[2] : V_1;         -> クリーン（usage側は多重度を書ける）
+    #
+    # つまり**定義に多重度を書くこと自体が文法上できない**ため、この制約は
+    # 参照実装に存在しない。「多重度が無い」は唯一の合法な状態であり、それを
+    # 無条件にエラーにしていた。緩和ではなくルールごと削除するのが正しい。
+    #
+    # なお同ファイルの `_check_occurrence_definition` にも isIndividual 時の
+    # 多重度チェックが残っているが、そちらは「多重度が有り、かつ size が
+    # None でない」ときだけ発火する。上記のとおり参照実装は定義への多重度を
+    # 構文段階で拒否するので、その条件は正当な入力では成立し得ず、730件でも
+    # 一度も発火していない。害が無いため今回は触っていない。
     def _check_occurrence_usage(self, node: Dict, node_name: str) -> None:
         """
         OccurrenceUsage の構造チェック

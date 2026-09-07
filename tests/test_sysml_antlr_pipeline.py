@@ -4531,13 +4531,15 @@ def test_antlr_occurrence_usage_direction_name_omitted_and_value():
 
 
 def test_antlr_individual_def_empty_multiplicity_brackets_optional():
-    """IndividualDefinitionはEmptyMultiplicityMember(`[]`)を持つことが多いが、
-    必須ではない（2026-08-28、参照実装比較レポートP0-3で発見:
-    `individual def IO1;`のように`[]`を省略した公式コーパス実例が存在し、
-    以前は必須にしていたため単なる構文エラーになっていた）。`[]`を省略した
-    場合は"multiplicity": Noneとなり、`_check_individual_definition`
-    （case_and_view_rules.py）が既存の「空の多重度が必要」という
-    LintIssueとして報告する（構文エラーではなく意味検証エラーになる）。"""
+    """IndividualDefinitionのEmptyMultiplicityMember(`[]`)は必須ではない
+    （2026-08-28、参照実装比較レポートP0-3で発見: `individual def IO1;`の
+    ように`[]`を省略した公式コーパス実例が存在し、以前は必須にしていたため
+    単なる構文エラーになっていた）。`[]`を省略した場合は"multiplicity": None
+    となる。
+
+    2026-09-07: 省略を意味検証エラーとして報告していた
+    `_check_individual_definition`は削除した。参照実装は`individual def X[];`
+    自体を構文エラーにするので、省略形が唯一の正しい形である。"""
     ast = parse_sysml_antlr("individual def A[];")
     assert ast["children"][0] == {
         "type": "individual_def",
@@ -4558,8 +4560,11 @@ def test_antlr_individual_def_empty_multiplicity_brackets_optional():
         "inheritance": None,
         "children": [],
     }
+    # 省略形は参照実装がクリーンと判定する唯一の正しい形なので、lintも
+    # 何も言わない（2026-09-07に`_check_individual_definition`を削除するまでは
+    # 「空の多重度が必要」というerrorをここで出していた）。
     issues = lint_ast(bare_ast)
-    assert any("空の多重度" in i.message for i in issues if i.severity == "error")
+    assert not any("空の多重度" in i.message for i in issues)
 
 
 def test_antlr_individual_usage_bare_and_typed():
