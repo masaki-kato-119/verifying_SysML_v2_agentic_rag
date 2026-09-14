@@ -392,3 +392,66 @@ def test_empty_connection_def_is_reported_once_not_twice():
     rules = [i.rule for i in issues]
     assert rules.count("_check_at_least_two_related_elements") == 1
     assert "_check_connection_structure_advanced" not in rules
+
+
+def test_import_of_nested_usage_path_is_not_flagged():
+    """入れ子のusageを辿るimportを「存在しない」と誤検出しない。
+
+    `public import vehicle1_c1::interior::seatBelt;`（13b-Safety and Security
+    Features Element Group.sysml）の形。シンボル表は package 直下に平坦登録する
+    ため多セグメントのパスは引けない（connectのエンド参照と同じ構造的原因）。
+
+    参照実装は正当な入れ子パスをクリーンと判定する（2026-09-14に実測）。
+    """
+    from sysml_v2_checker_advanced.parser import lint_sysml, parse_sysml
+
+    base = "package Q { part v1 { part interior { part alarm; part seatBelt; } } package U { %s } }"
+    assert lint_sysml(parse_sysml(base % "public import v1::interior::seatBelt;")) == []
+    assert lint_sysml(parse_sysml(base % "public import v1::interior::*;")) == []
+
+
+def test_import_with_a_missing_segment_is_still_flagged():
+    """セグメントのどれかが存在しなければ検出は維持する。
+
+    参照実装も葉・中間・根のいずれが欠けてもエラーにする（2026-09-14に実測）。
+    所有関係までは見ないので `b::x`（xはaの下）は取りこぼすが、それは
+    「検出漏れは許容、偽陽性は出さない」方針による意図的なもの。
+    """
+    from sysml_v2_checker_advanced.parser import lint_sysml, parse_sysml
+
+    base = "package Q { part v1 { part interior { part alarm; part seatBelt; } } package U { %s } }"
+    for stmt in (
+        "public import v1::interior::noSuchLeaf;",
+        "public import v1::noSuchMid::seatBelt;",
+        "public import noSuchRoot::interior::seatBelt;",
+    ):
+        assert len(lint_sysml(parse_sysml(base % stmt))) == 1, stmt
+
+
+def test_import_does_not_validate_itself_through_opaque_import_names():
+    """importが自分自身を正当化しないこと（循環の回帰ガード）。
+
+    `lint()` は `self.types.update(self.opaque_import_names)`（linter.py:163）で
+    **import由来の名前そのもの**を `self.types` へ混ぜる。
+    `_import_target_is_type_name` がそれを除外しないと、
+    `import v1::interior::noSuchLeaf;` の `noSuchLeaf` が「型として存在する」と
+    判定され、import が自分自身を正当化してしまう（2026-09-14に実際に踏んだ）。
+
+    `_find_element_in_symbols` に緩和を入れてはならない理由（linter.py:649-655、
+    golden set の sysml-broken-04）と同じ循環で、入口が違うだけ。
+    """
+    from sysml_v2_checker_advanced.linter import SysMLAdvancedLinter
+    from sysml_v2_checker_advanced.parser import parse_sysml
+
+    src = (
+        "package Q { part v1 { part interior { part seatBelt; } } "
+        "package U { public import v1::interior::noSuchLeaf; } }"
+    )
+    linter = SysMLAdvancedLinter()
+    issues = linter.lint(parse_sysml(src))
+
+    # import由来の名前は self.types に入っている（この前提が崩れたらテストの意味も変わる）
+    assert "noSuchLeaf" in linter.types
+    # それでも「型として存在する」とは見なさない
+    assert linter._import_target_is_type_name("noSuchLeaf") is False
+    assert len(issues) == 1

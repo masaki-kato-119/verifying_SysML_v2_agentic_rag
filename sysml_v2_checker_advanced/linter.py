@@ -750,6 +750,7 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
                 and segments[0] not in STANDARD_LIBRARY_PACKAGES
                 and segments[-1] not in STANDARD_LIBRARY_PACKAGES
                 and not self._find_element_in_symbols(package_name)
+                and not self._import_path_segments_resolve(package_name)
             ):
                 self.issues.append(LintIssue(
                     SEVERITY_ERROR,
@@ -764,6 +765,7 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
                 top_level not in STANDARD_LIBRARY_PACKAGES
                 and not self._find_element_in_symbols(import_name)
                 and not self._import_target_is_type_name(import_name)
+                and not self._import_path_segments_resolve(import_name)
             ):
                 self.issues.append(LintIssue(
                     SEVERITY_ERROR,
@@ -771,6 +773,45 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
                     node
                 ))
     
+    def _import_path_segments_resolve(self, path: str) -> bool:
+        """多セグメントのimportパスについて、各セグメントが個別に解決できるか。
+
+        `public import vehicle1_c1::interior::seatBelt;`（13b-Safety and Security
+        Features Element Group.sysml）のように、**入れ子のusageを辿るimport**は
+        平坦なシンボル表では引けない。`_collect_symbols`はpackage以外では
+        namespaceを引き継がずに再帰するため、`interior`も`seatBelt`も
+        `<package>::seatBelt`のように**package直下**へ登録される。したがって
+        `::vehicle1_c1::interior::seatBelt`で終わる登録名は存在せず、末尾
+        セグメントのフォールバックも多セグメント文字列との比較になるので必ず外れる
+        （connectのエンド参照と同じ構造的な原因。
+        `_end_reference_is_missing`のdocstring参照）。
+
+        そこで**各セグメントが単独で解決できるか**だけを見る。多セグメントを
+        丸ごと判定対象外にするより検出を残せる。
+
+        参照実装(jar 0.61.0)で実測した境界（2026-09-14、canaryを前後に挟む）:
+
+        - `v1::interior::seatBelt` / `v1::interior::*`（正当な入れ子）→ クリーン
+        - 葉が無い（`v1::interior::noSuchLeaf`）→ エラー
+        - 中間が無い（`v1::noSuchMid::seatBelt`）→ エラー
+        - 根が無い（`noSuchRoot::interior::seatBelt`）→ エラー
+        - **`b::x`（`x`は`a`の下にあり`b`の下には無い）→ エラー**
+
+        最後の形だけはこの方式で取りこぼす（`b`も`x`も単独では解決できるため）。
+        所有関係まで見るには入れ子を保持したシンボル表が要るので、**検出漏れを
+        許容して偽陽性を出さない**側に倒している（他の意味ルールと同じ方針）。
+        """
+        if not path:
+            return False
+        segments = [seg for seg in path.split("::") if seg]
+        if len(segments) < 2:
+            # 単一セグメントは既存の判定で足りる（ここで通すと素通りになる）。
+            return False
+        return all(
+            self._find_element_in_symbols(seg) or self._import_target_is_type_name(seg)
+            for seg in segments
+        )
+
     def _import_target_is_type_name(self, import_name: str) -> bool:
         """importの対象が`self.types`側にだけ登録されている名前かどうか。
 
@@ -790,13 +831,24 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         照合は`_find_element_in_symbols`と同じ末尾一致方式（`self.types`には
         修飾名と短縮名の両方が入っているが、`Definitions::Car`のような中間の
         修飾形はどちらとも一致しないため）。
+
+        **`self.opaque_import_names`は必ず除外する。** `self.types`には
+        `lint()`が`self.types.update(self.opaque_import_names)`（linter.py:163）で
+        **import由来の名前そのもの**を混ぜ込んでいる。除外しないと
+        `import v1::interior::noSuchLeaf;`の`noSuchLeaf`が「型として存在する」と
+        判定され、**importが自分自身を正当化する**（2026-09-14、この関数を入れた
+        直後に実際に踏んだ）。`_find_element_in_symbols`に緩和を入れてはならない
+        理由（linter.py:649-655のコメント、golden setのsysml-broken-04が守って
+        いる回帰）と同じ循環であり、入口が違うだけである。
         """
         if not import_name:
             return False
-        if import_name in self.types:
+        # import由来で持ち込まれた名前は「ローカルに宣言された型」ではないので使わない。
+        declared_types = self.types - self.opaque_import_names
+        if import_name in declared_types:
             return True
         return any(
-            type_name.endswith(f"::{import_name}") for type_name in self.types
+            type_name.endswith(f"::{import_name}") for type_name in declared_types
         )
 
     def _check_expose(self, node: Dict, namespace: str) -> None:
