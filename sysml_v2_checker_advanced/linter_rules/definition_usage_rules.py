@@ -10,7 +10,11 @@ from ..constants import (
     SEVERITY_ERROR,
     SEVERITY_WARNING,
 )
-from ..fix_candidates import use_dot_for_nesting
+from ..fix_candidates import (
+    subset_instead_of_redefine,
+    use_definition_of_expected_kind,
+    use_dot_for_nesting,
+)
 from ..lint_issue import LintIssue
 
 # subject位置制約(8.2.2.21)で「パラメータ相当」として数える子要素の型。
@@ -835,7 +839,10 @@ class DefinitionUsageRulesMixin:
                                 SEVERITY_ERROR,
                                 f"[8.2.2.6] package直下のfeature '{target}' は "
                                 f"redefineできません（'{child.get('name')}' から）",
-                                child
+                                child,
+                                suggestion=subset_instead_of_redefine(
+                                    target, child.get("name") or "この feature"
+                                ),
                             ))
             for child in node.get("children", []):
                 if isinstance(child, dict):
@@ -926,6 +933,60 @@ class DefinitionUsageRulesMixin:
             return False
         return node.get("type") != expected_node_type
 
+    def _sole_definition_name_in_namespace(
+        self, expected_node_type: str, namespace: str
+    ):
+        """`expected_node_type` の定義がファイル内にちょうど1つだけあり、かつ
+        それが `namespace` 直下にあるとき、その名前を返す（そうでなければNone）。
+
+        種別違いの型付け（`_type_is_wrong_kind`）に修正候補を付けるために使う。
+        2つ以上あるときに返さないのは、どれを指したかったのかが決まらないため
+        （fix_candidates.py の方針: 書き換え方が一意に決まるときだけ候補を出す）。
+
+        名前空間を揃えるのは、候補が**裸の名前**への置き換えだからである。
+        別packageの定義名をそのまま書いても解決しない。シンボル表のキーは
+        `_collect_symbols` がpackageチェーンで組み立てた完全修飾名で、
+        `namespace` はこのusageを囲むpackage名（`_check_package_children`）。
+        入れ子package配下では両者の組み立て方が違って一致しないが、その場合は
+        候補を出さないだけで済む（検出漏れは許容、誤りは出さない）。
+        """
+        found = [
+            node
+            for node in self.symbols.values()
+            if isinstance(node, dict) and node.get("type") == expected_node_type
+        ]
+        if len(found) != 1:
+            return None
+        name = found[0].get("name")
+        if not name:
+            return None
+        expected_key = f"{namespace}::{name}" if namespace else name
+        if self.symbols.get(expected_key) is not found[0]:
+            return None
+        return name
+
+    def _retype_candidate(
+        self,
+        node: Dict,
+        type_name: str,
+        expected_node_type: str,
+        definition_kind_label: str,
+        namespace: str,
+    ):
+        """種別違いの型付けに対する修正候補（作れなければNone）。
+
+        interface と allocation で完全に同じ形なので共有する。文言の組み立ては
+        `fix_candidates.use_definition_of_expected_kind` 側にある。
+        """
+        definition_name = self._sole_definition_name_in_namespace(
+            expected_node_type, namespace
+        )
+        if not definition_name:
+            return None
+        return use_definition_of_expected_kind(
+            node.get("name"), type_name, definition_name, definition_kind_label
+        )
+
     def _end_reference_is_missing(self, reference_subsetting: Dict) -> bool:
         """`connect` のエンド参照が「存在しない」と**断定できる**場合だけTrueを返す。
 
@@ -1006,7 +1067,10 @@ class DefinitionUsageRulesMixin:
                 f"[8.2.2.14] Interface usage '{node.get('name', 'unknown')}' は "
                 f"interface definition で型付けしなければなりません"
                 f"（'{type_name}' は interface definition ではありません）",
-                node
+                node,
+                suggestion=self._retype_candidate(
+                    node, type_name, "interface_def", "interface definition", namespace
+                ),
             ))
 
         # InterfacePartのチェック（エンドの判定条件は_end_reference_is_missing参照）
@@ -1083,7 +1147,10 @@ class DefinitionUsageRulesMixin:
                 f"[8.2.2.15] Allocation usage '{node.get('name', 'unknown')}' は "
                 f"allocation definition で型付けしなければなりません"
                 f"（'{type_name}' は allocation definition ではありません）",
-                node
+                node,
+                suggestion=self._retype_candidate(
+                    node, type_name, "allocation_def", "allocation definition", namespace
+                ),
             ))
 
         # ConnectorPartのチェック

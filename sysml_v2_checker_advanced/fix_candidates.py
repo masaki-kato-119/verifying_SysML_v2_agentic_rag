@@ -121,3 +121,104 @@ def use_dot_for_nesting(
         find=before,
         replace=after,
     )
+
+
+# usage の型節より**前**に現れうる語。`edit` の契約は「source_range の中に
+# 現れる最初の `find` を置き換える」なので、型名がこれらの語の一部にも
+# 現れると、型ではなく前置きの側を書き換えてしまう。
+# 文法上、型節の前に来るのは `abstract?` とその usage のキーワード、そして
+# usage 自身の名前だけである（antlr/SysMLMin.g4 の interfaceUsage /
+# allocationUsage）。
+_USAGE_DECLARATION_PREFIX_WORDS = ("abstract", "interface", "allocation")
+
+
+def _type_name_is_unambiguous_in_declaration(
+    type_name: str, usage_name: Optional[str]
+) -> bool:
+    """型名が宣言の前置き側に現れず、`find` が型節に当たると言えるならTrue。
+
+    例えば `interface e : e2 connect ...` で型名が `e` だと、`find="e"` は
+    キーワード `interface` の中の `e` に先に当たる。こうなる形では候補を
+    作らない（適用してテキストが壊れるくらいなら候補を出さない方が良い）。
+    """
+    if not type_name:
+        return False
+    if usage_name and type_name in usage_name:
+        return False
+    return not any(type_name in word for word in _USAGE_DECLARATION_PREFIX_WORDS)
+
+
+def use_definition_of_expected_kind(
+    usage_name: Optional[str],
+    wrong_type_name: str,
+    definition_name: str,
+    definition_kind_label: str,
+) -> Optional[FixCandidate]:
+    """種別違いの型付けに対する候補: 型名を正しい種別の定義へ差し替える。
+
+    interface usage は interface definition で、allocation usage は
+    allocation definition で型付けしなければならない（境界は
+    `_type_is_wrong_kind` のdocstringに実測込みで書いてある）。ルールは
+    「この型は種別が違う」までしか言えないが、**そのファイルに正しい種別の
+    定義がちょうど1つしか無いなら**、書き換え先は一意に決まる。
+
+    2つ以上あるときは呼び出し側が候補を作らない（どれを指したかったのかは
+    こちらには分からない。もっともらしいだけの候補は出さない方針）。
+
+    Args:
+        usage_name: usage の名前（無名なら None）。`find` の一意性判定に使う。
+        wrong_type_name: 現に書かれている型名。
+        definition_name: 差し替え先の定義名。
+        definition_kind_label: 説明文に入れる種別名（"interface definition" 等）。
+
+    Returns:
+        候補。書き換えにならない・`find` が一意に当たらない場合はNone。
+    """
+    if not wrong_type_name or not definition_name:
+        return None
+    if wrong_type_name == definition_name:
+        return None
+    if not _type_name_is_unambiguous_in_declaration(wrong_type_name, usage_name):
+        return None
+    return FixCandidate(
+        title=f"型を `{definition_name}` に変える",
+        detail=(
+            f"`{wrong_type_name}` は {definition_kind_label} ではないので、"
+            f"ここでの型付けには使えない。このファイルにある "
+            f"{definition_kind_label} は `{definition_name}` の1つだけなので、"
+            f"それを指していたと考えられる。"
+        ),
+        find=wrong_type_name,
+        replace=definition_name,
+    )
+
+
+def subset_instead_of_redefine(target_name: str, feature_name: str) -> FixCandidate:
+    """package直下featureのredefineに対する候補（**助言のみ、書き換え案は持たない**）。
+
+    参照実装への問い合わせ（2026-09-05、`_check_package_level_feature_redefinition`
+    のdocstring参照）で `subsets` / `:>` はクリーンだと実測しているので、
+    「`redefines` をやめて `subsets` にする」が直し方としては分かっている。
+    それでも `find`/`replace` を付けないのは2つの理由による。
+
+    1. **意味が変わる。** redefinition は基底のフィーチャを置き換えるが、
+       subsetting は部分集合として別に足すだけで、両者は別の設計判断である。
+       ワンクリックで当てられる形にすると、リンターが設計を決めたことになる
+       （構想書§12-5 Human authority）。
+    2. **書き換え対象の文字列を復元できない。** ASTは `:>>` と `redefines` を
+       どちらも `kind="redefines"` へ正規化しており（antlr_transformer.py の
+       `_redefine_dict`）、元のソースがどちらで書かれていたかを持っていない。
+       当てずっぽうの `find` は適用時に外れる。
+
+    候補としては「何をすればよいか」だけを出し、書き換えは人が行う。
+    """
+    return FixCandidate(
+        title=f"`{target_name}` を redefine せず subset にする",
+        detail=(
+            f"package直下の `{target_name}` は redefine できない。"
+            f"`{feature_name}` が `{target_name}` の一種だと言いたいのであれば、"
+            f"`redefines`（`:>>`）を `subsets`（`:>`）に変えると通る。"
+            f"ただし redefinition と subsetting は意味が違う（前者は置き換え、"
+            f"後者は部分集合）ので、どちらの意図かを確かめてから直すこと。"
+        ),
+    )

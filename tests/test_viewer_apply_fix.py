@@ -88,3 +88,39 @@ def test_applying_the_real_candidate_clears_the_finding():
         text, finding["source_range"], finding["suggestion"]["edit"]
     )
     assert lint_sysml(parse_sysml_with_semantic_model(new_text)[0]) == []
+
+
+def test_applying_the_retype_candidate_clears_the_wrong_kind_finding():
+    """d2 で増やした候補（種別違いの型付け）も、当てると指摘が消える。
+
+    `find` が型名という短い文字列なので、`source_range` 内の先頭が宣言側の
+    語に当たらないことまで含めて実経路で確かめる。
+    """
+    from sysml_v2_checker_advanced.antlr_transformer import parse_sysml_with_semantic_model
+    from sysml_v2_checker_advanced.parser import lint_sysml
+    from sysml_v2_checker_advanced.semantic_model import build_element_index
+
+    text = (
+        "package P { port def PO; port def PI; part def Q;"
+        " interface def GoodIF { end a : PO; end b : PI; }"
+        " part p { port a : PO; port b : PI; interface i : Q connect a to b; } }"
+    )
+    ast, model = parse_sysml_with_semantic_model(text)
+    element_index = build_element_index(model["nodes"])
+    findings = [
+        i.to_dict(element_index)
+        for i in lint_sysml(ast)
+        if i.rule == "_check_interface_usage"
+    ]
+    assert len(findings) == 1
+
+    new_text = apply_fix_candidate(
+        text, findings[0]["source_range"], findings[0]["suggestion"]["edit"]
+    )
+    assert "interface i : GoodIF connect a to b;" in new_text
+    after = [
+        i
+        for i in lint_sysml(parse_sysml_with_semantic_model(new_text)[0])
+        if i.rule == "_check_interface_usage"
+    ]
+    assert after == []
