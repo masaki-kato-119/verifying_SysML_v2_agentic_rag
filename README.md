@@ -346,6 +346,23 @@ python scripts/analyze_backend_usage.py
 
 ## 開発
 
+### Viewer フロントエンドの検証方針
+
+`viewer/frontend/app.js` に JS のテスト基盤は**入れていない**（P2-G の判断、
+2026-09-14）。Viewer は「ローカル開発ツール」という位置づけで、c5（レビュー状態の
+サーバー側永続化）を見送ったのと同じ基準。Node のツールチェーン一式を
+Python リポジトリへ持ち込み、1,198行のクラシックスクリプトに export 境界を切る
+リファクタリングまで行う価値は、現時点では見合わない。
+
+代わりに**ロジックをバックエンドへ寄せて Python 側でテストする**方針を採った。
+影響範囲の走査（エッジ種別ごとの伝播方向・BFS）は `viewer/impact.py` にあり、
+`tests/test_viewer_impact.py` が方向づけの表ごと固定している。app.js 側は
+`/api/model` が返す `impact` を描画するだけ。
+
+したがって app.js に新しい**ロジック**を足す場合は、まずバックエンドへ置けないかを
+検討すること。DOM の描画そのものはブラウザで確認する（`preview_start` →
+`javascript_tool` で `textContent` を拾う方式）。
+
 ### pre-commit フック（任意だが推奨）
 
 `ruff` と `pytest` をコミット前に自動実行する。**クローンごとに1回**有効化する:

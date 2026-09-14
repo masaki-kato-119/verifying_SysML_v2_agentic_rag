@@ -705,19 +705,19 @@ function renderFindingImpact(finding) {
   const wrapper = document.createElement("div");
   wrapper.className = "finding-impact";
 
-  const impacted = findImpactedElements(originId, IMPACT_DEPTH);
+  const impacted = impactedFor(originId);
   if (impacted.length === 0) {
     // 「辿れる先が無い」ことも判断材料なので、黙って何も出さない選択はしない。
     const empty = document.createElement("div");
     empty.className = "finding-impact-empty";
-    empty.textContent = `　影響範囲: ${IMPACT_DEPTH}次までに辿れる要素はありません`;
+    empty.textContent = "　影響範囲: 辿れる要素はありません";
     wrapper.appendChild(empty);
     return wrapper;
   }
 
   const heading = document.createElement("div");
   heading.className = "finding-impact-title";
-  heading.textContent = `　影響範囲: ${impacted.length}件（${IMPACT_DEPTH}次まで）`;
+  heading.textContent = `　影響範囲: ${impacted.length}件`;
   // 向きの意味を読み手が確認できるようにする。無向で扱っている種別が
   // 混ざっていることを隠さない。
   heading.title =
@@ -853,86 +853,23 @@ function revealInEditor(node) {
   isProgrammaticEditorUpdate = false;
 }
 
-// Graph IRのエッジをBFSで辿り、IMPACT_DEPTH次までの影響先を集める
-// （Group1 b2、Phase C c3で有向化）。数千要素規模までは毎回の隣接表構築で
-// 十分という判断（8.3節のText→Diagram同期の線形探索と同じ考え方）。
+// 影響範囲の走査は2026-09-14にバックエンド（viewer/impact.py）へ移した。
+// 伝播方向・深さ・BFSはすべて向こうが持ち、`/api/model`が要素idごとの影響先を
+// `impact`として返す。ここは描画だけを行う。
 //
-// 深さはバックエンドの`_VERIFICATION_VIEW_DEPTH`（viewer/graph_ir.py）と
-// **意図的に別の定数**にしてある。検証ビューの深さは「図にどれだけ文脈を
-// 描くか」の話、こちらは「変更が何を壊しうるか」の話で、揃える理由がない。
-// 以前は「b2と同じ値」というコメントで結び付けていたが、片方を動かすと
-// もう片方の絞り込みが黙って変わるため、独立させて両方に注記した。
-const IMPACT_DEPTH = 2;
+// 移した理由: 走査の意味論（エッジ種別ごとの伝播方向）はこのプロジェクトで最も
+// 回帰が分かりにくい部分なのに、JS側には自動テストが無くブラウザのDOM確認でしか
+// 触れていなかった。Python側なら既存のpytestでそのまま固定できる。加えて、
+// ここの走査はFinding一覧とSVGハイライトの2箇所から呼ばれており、片方だけ
+// 移すと二重実装になるため両方をまとめて移した。
 
-// 影響が伝播する向きはエッジ種別ごとに違う（Phase C c3）。
-// `semantic_model.py`の`_make_edge`は from=宣言している側・to=参照先 で
-// エッジを作るので、種別によってどちら向きに辿るべきかが変わる。
-const IMPACT_DIRECTION = {
-  // 宣言はその参照先に依存する。`x : T`のTが変われば x が影響を受けるので、
-  // 影響はエッジを**逆に**辿る。
-  specialization: "reverse",
-  subsetting: "reverse",
-  redefinition: "reverse",
-  feature_typing: "reverse",
-  // `satisfy R by X` / `verify R by X` の`by`側（=X）が変われば、その
-  // 充足・検証の主張が影響を受ける。これも宣言→参照先なので逆向き。
-  satisfy: "reverse",
-  verify: "reverse",
-  // 振る舞いの流れは from=source なので、エッジの向きがそのまま影響の向き。
-  transition: "forward",
-  succession: "forward",
-  flow: "forward",
-  // コネクタはどちらが上流と言えない（`c connect a to b`のエッジは
-  // c→a と c→b で、a と b の間に上下は無い）。無向のまま扱う。
-  connection: "both",
-};
-
-// 未知の種別（将来エッジ種別が増えたとき）は無向として扱う。取りこぼすより
-// 広く見せる方が、影響範囲の用途では安全側。
-const IMPACT_DIRECTION_DEFAULT = "both";
-
-function buildImpactAdjacency() {
-  const adjacency = new Map();
-  const link = (from, to, kind) => {
-    if (!adjacency.has(from)) adjacency.set(from, new Map());
-    const targets = adjacency.get(from);
-    if (!targets.has(to)) targets.set(to, new Set());
-    targets.get(to).add(kind);
-  };
-  for (const edge of latestModel.graph_ir.edges) {
-    const direction = IMPACT_DIRECTION[edge.kind] || IMPACT_DIRECTION_DEFAULT;
-    if (direction === "forward" || direction === "both") link(edge.from, edge.to, edge.kind);
-    if (direction === "reverse" || direction === "both") link(edge.to, edge.from, edge.kind);
-  }
-  return adjacency;
+function impactedFor(elementId) {
+  if (!latestModel || !latestModel.impact) return [];
+  return latestModel.impact[elementId] || [];
 }
 
-// 影響先を`{id, distance, kinds}`の配列で返す（近い順）。距離と経路の種別を
-// 持たせているのは、Inspectorが「何次で、何を通じて影響するのか」まで
-// 見せられるようにするため（ハイライトだけでは読めない）。
-function findImpactedElements(elementId, depth) {
-  if (!latestModel) return [];
-  const adjacency = buildImpactAdjacency();
-  const impacted = [];
-  const visited = new Set([elementId]);
-  let frontier = [elementId];
-  for (let distance = 1; distance <= depth && frontier.length > 0; distance++) {
-    const next = [];
-    for (const id of frontier) {
-      for (const [neighbor, kinds] of adjacency.get(id) || []) {
-        if (visited.has(neighbor)) continue;
-        visited.add(neighbor);
-        next.push(neighbor);
-        impacted.push({ id: neighbor, distance, kinds: [...kinds] });
-      }
-    }
-    frontier = next;
-  }
-  return impacted;
-}
-
-function findImpactedElementIds(elementId, depth) {
-  return new Set(findImpactedElements(elementId, depth).map((item) => item.id));
+function findImpactedElementIds(elementId) {
+  return new Set(impactedFor(elementId).map((item) => item.id));
 }
 
 // Explorer・Diagram・Text双方からの選択を一箇所に集約する。
@@ -950,7 +887,7 @@ function selectElement(elementId, { fromEditor = false } = {}) {
   const diagramEl = document.querySelector(`.sysml-node[data-element-id="${CSS.escape(elementId)}"]`);
   if (diagramEl) diagramEl.classList.add("selected");
 
-  for (const impactedId of findImpactedElementIds(elementId, IMPACT_DEPTH)) {
+  for (const impactedId of findImpactedElementIds(elementId)) {
     const el = document.querySelector(`.sysml-node[data-element-id="${CSS.escape(impactedId)}"]`);
     if (el) el.classList.add("impacted");
   }

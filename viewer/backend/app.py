@@ -31,6 +31,7 @@ from viewer.graph_ir import (
     VIEW_TYPE_STRUCTURE,
     build_graph_ir,
 )
+from viewer.impact import build_impact_map
 from viewer.svg_renderer import render_svg
 from viewer.view_ir import build_flow_view_ir, build_view_ir
 
@@ -63,6 +64,9 @@ class ModelResponse(BaseModel):
     view_ir: Optional[Dict[str, Any]] = None
     svg: Optional[str] = None
     findings: Optional[List[Dict[str, Any]]] = None
+    # 要素id -> 影響先リスト（viewer/impact.py）。2026-09-14にフロントエンドの
+    # 走査をここへ移した（走査の意味論をpytestで固定するため。詳細は同モジュール）。
+    impact: Optional[Dict[str, List[Dict[str, Any]]]] = None
     view_type_error: Optional[str] = None
 
 
@@ -117,6 +121,7 @@ def get_model(request: ModelRequest) -> ModelResponse:
         view_ir=view_ir,
         svg=svg,
         findings=findings,
+        impact=build_impact_map(graph_ir),
     )
 
 
