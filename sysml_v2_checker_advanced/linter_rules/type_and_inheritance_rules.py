@@ -33,8 +33,21 @@ class TypeAndInheritanceRulesMixin:
                     
                     while current_base:
                         if current_base in visited:
+                            # errorではなくwarning（2026-09-14）。
+                            # **参照実装(jar 0.61.0)は循環継承をエラーにしない**
+                            # （実測: `part def A :> A;` も間接循環も診断0件）。
+                            # 公式フィクスチャ
+                            # validation/valid/Redefinition_OwningType_Cyclic_Gen.sysml
+                            # は `part def A :> C;` と `part def C :> A, B;` の
+                            # 循環を含みながら `// XPECT noErrors` を宣言している。
+                            # errorのままだと偽陽性になるが、自己特殊化などは
+                            # モデリング上の誤りである可能性が高いので、位置情報
+                            # （source_range）付きの警告としては残す価値がある。
+                            # 同じ検査がtype_system.validate_type_system側にもあり
+                            # 同文の2件が出ていたが、あちらはnodeを持たず
+                            # source_rangeが付かないため削除した。
                             self.issues.append(LintIssue(
-                                SEVERITY_ERROR,
+                                SEVERITY_WARNING,
                                 f"循環継承が検出されました: {current_name} -> {current_base}",
                                 sym_node
                             ))

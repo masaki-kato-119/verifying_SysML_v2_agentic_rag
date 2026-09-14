@@ -532,3 +532,36 @@ def test_standard_library_wildcard_does_not_excuse_other_bogus_imports():
 
     # golden set の sysml-broken-04 相当
     assert len(lint_sysml(parse_sysml("import NoSuchPackage::*;"))) == 1
+
+
+def test_circular_specialization_is_a_warning_not_an_error():
+    """循環継承は error ではなく warning（参照実装が受理するため）。
+
+    2026-09-14に実測: `part def A :> A;` も `A :> B; B :> C; C :> A;` も
+    参照実装(jar 0.61.0)は診断0件。公式フィクスチャ
+    validation/valid/Redefinition_OwningType_Cyclic_Gen.sysml は
+    `part def A :> C;` と `part def C :> A, B;` の循環を含みながら
+    `// XPECT noErrors` を宣言している。
+
+    同じ検査が type_system.validate_type_system にもあり同文の2件が出ていたが、
+    あちらは node を持たず source_range が付かないため削除した（二重報告の解消）。
+    """
+    from sysml_v2_checker_advanced.parser import lint_sysml, parse_sysml
+
+    issues = lint_sysml(parse_sysml("package P { part def A :> A; }"))
+    assert [i.severity for i in issues] == ["warning"]
+    assert "循環継承" in issues[0].message
+
+
+def test_incompatible_type_category_specialization_is_not_reported():
+    """型カテゴリの非互換は報告しない（参照実装にこの制約が無い）。
+
+    2026-09-14に実測: `connection def Child :> Person;`（Personはpart def）に
+    対して参照実装が返すのは `Must have at least two related elements` で、
+    カテゴリの非互換ではない。
+    """
+    from sysml_v2_checker_advanced.parser import lint_sysml, parse_sysml
+
+    src = "package P { part def Person; connection def Child :> Person { end a; end b; } }"
+    messages = [i.message for i in lint_sysml(parse_sysml(src))]
+    assert not [m for m in messages if "互換性のない型カテゴリ" in m], messages

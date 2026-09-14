@@ -564,12 +564,27 @@ class TypeSystemFoundation:
         """
         issues = []
 
+        # 循環継承と型カテゴリ互換性のチェックは2026-09-14に削除した。
+        #
+        # (1) 循環継承: **参照実装(jar 0.61.0)はエラーにしない**（実測。
+        #     `part def A :> A;` も `A :> B; B :> C; C :> A;` も診断0件）。
+        #     決め手は公式フィクスチャ
+        #     `validation/valid/Redefinition_OwningType_Cyclic_Gen.sysml` で、
+        #     `part def A :> C;` と `part def C :> A, B;` という循環を含みながら
+        #     `// XPECT noErrors` を宣言している。なお同じ検査が
+        #     `_check_inheritance_consistency`（type_and_inheritance_rules.py）にも
+        #     あり**同文の2件が出ていた**。あちらはnodeを持つのでsource_rangeが
+        #     付く分すぐれており、そちらをwarningに落として残した。
+        #
+        # (2) 型カテゴリ互換性: 参照実装にこの制約は無い（実測。
+        #     `connection def Child :> Person;` に対して返るのは
+        #     `Must have at least two related elements` であって、カテゴリの
+        #     非互換ではない）。加えてここで作る指摘はnodeを持たないため
+        #     source_rangeが付かず、family.sysml では修飾名と非修飾名で
+        #     二重にも出ていた。
+        #
+        # どちらも730件コーパスの local_only_error に残っていた4ファイルの原因。
         for type_name, type_info in self.types.items():
-            # 循環継承チェック
-            for parent in type_info.specializations:
-                if self.has_circular_inheritance(type_name, parent):
-                    issues.append(f"循環継承が検出されました: {type_name} -> {parent}")
-
             # 存在しない親型チェック
             for parent in type_info.specializations:
                 if not self.get_type_info(parent):
@@ -577,12 +592,7 @@ class TypeSystemFoundation:
                         continue
                     issues.append(f"存在しない型を特殊化しています: {type_name} -> {parent}")
             
-            # 型カテゴリ互換性チェック
-            for parent in type_info.specializations:
-                parent_info = self.get_type_info(parent)
-                if parent_info and not self.are_compatible_categories(type_info.category, parent_info.category):
-                    issues.append(f"互換性のない型カテゴリの特殊化: {type_name}({type_info.category.value}) -> {parent}({parent_info.category.value})")
-        
+
         return issues
     def _calculate_inheritance_depth(self, type_name: str) -> int:
         """
