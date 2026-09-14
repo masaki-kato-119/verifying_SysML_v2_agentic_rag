@@ -763,6 +763,7 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
             if (
                 top_level not in STANDARD_LIBRARY_PACKAGES
                 and not self._find_element_in_symbols(import_name)
+                and not self._import_target_is_type_name(import_name)
             ):
                 self.issues.append(LintIssue(
                     SEVERITY_ERROR,
@@ -770,6 +771,34 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
                     node
                 ))
     
+    def _import_target_is_type_name(self, import_name: str) -> bool:
+        """importの対象が`self.types`側にだけ登録されている名前かどうか。
+
+        `self.types`にはtype_def/enum_def/item_def/attribute_defに加えて
+        **alias**（`alias Car for Vehicle;`）が入る。aliasは`self.symbols`にも
+        `self.element_refs`にも入らないため、`_find_element_in_symbols`では
+        引けず、`import Definitions::Car;`が「存在しない要素」と誤検出されていた
+        （2026-09-14。公式サンプル Import Tests/AliasImport.sysml、参照実装は
+        クリーンと実測）。
+
+        aliasを`self.element_refs`側へ登録する案は採らなかった。
+        `_resolve_type_node`（definition_usage_rules.py）が`self.element_refs`も
+        見るため、aliasノード（`type == "alias"`）が返るようになり、
+        `_type_is_wrong_kind`が「interface definitionではない」と**新しい偽陽性**を
+        出してしまう。importの存在判定だけを緩めるほうが影響範囲が小さい。
+
+        照合は`_find_element_in_symbols`と同じ末尾一致方式（`self.types`には
+        修飾名と短縮名の両方が入っているが、`Definitions::Car`のような中間の
+        修飾形はどちらとも一致しないため）。
+        """
+        if not import_name:
+            return False
+        if import_name in self.types:
+            return True
+        return any(
+            type_name.endswith(f"::{import_name}") for type_name in self.types
+        )
+
     def _check_expose(self, node: Dict, namespace: str) -> None:
         """
         エクスポーズの解決チェック
