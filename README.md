@@ -181,10 +181,29 @@ python openai_call_mcp.py
 python openai_call_mcp.py --system-prompt-file openai_strict.md
 ```
 
-Note: NLTK を使うツールを実行する場合は NLTK データを追加でダウンロードしてください:
+### NLTK データの配置（テストを通すのに必要）
+
+GraphRAG の英語形態素解析は NLTK のコーパスを使う。**venv 配下へ置くこと**:
+
 ```
-python -m nltk.downloader punkt
+python -m nltk.downloader -d .venv/nltk_data punkt punkt_tab averaged_perceptron_tagger averaged_perceptron_tagger_eng wordnet omw-1.4
 ```
+
+`wordnet` と `omw-1.4` は zip のままダウンロードされることがあるので、
+`.venv/nltk_data/corpora/` 配下に `wordnet.zip` しか無い場合は展開しておく。
+
+**既定の置き場所（`~/AppData/Roaming/nltk_data`）ではいけない。** nltk 3.10.3 が
+導入した `nltk/pathsec.py` の `validate_path` は、パスを `resolve()` してから
+許可リストと突き合わせる。Windows のパッケージアプリ配下でプロセスを動かすと
+`AppData\Roaming` が `AppData\Local\Packages\<app>\LocalCache\Roaming` へ
+転送されるため、解決後のパスが許可リストと一致せず
+`PermissionError: Security Violation ... Unauthorized path` になる。
+データもコードも正常なのにテストだけが落ちるので原因が分かりにくい
+（2026-09-14 に実際に12件が落ちた。`tests/test_graphrag_morphological_analyzer_en.py`
+7件と `tests/test_graphrag_pipeline.py` 5件）。
+
+`.venv/nltk_data` は nltk の既定探索パスに入っており、かつ転送の影響を受けない
+ので、ここに置けば環境によらず解決する。
 
 ---
 
