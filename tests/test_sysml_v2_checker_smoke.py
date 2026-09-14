@@ -498,3 +498,37 @@ def test_qualified_reference_through_a_package_without_imports_is_still_flagged(
     issues = lint_sysml(parse_sysml(src))
     assert len(issues) == 1
     assert "P2b::A" in issues[0].message
+
+
+def test_standard_library_enum_wildcard_import_is_not_flagged():
+    """標準ライブラリ内の enum def への `::*` import を誤検出しない。
+
+    `import RiskMetadata::*;` が `RiskLevelEnum`（同パッケージ内の enum def）を
+    スコープに入れるため、続けて `import RiskLevelEnum::*;` と書ける
+    （RiskMetadataExample.sysml 等）。参照実装も先行importがあればクリーンと
+    判定する（2026-09-14に実測）。
+    """
+    from sysml_v2_checker_advanced.parser import lint_sysml, parse_sysml
+
+    src = "package P { private import RiskMetadata::*; private import RiskLevelEnum::*; }"
+    assert lint_sysml(parse_sysml(src)) == []
+
+
+def test_standard_library_wildcard_does_not_excuse_other_bogus_imports():
+    """緩和は enum 名の名指しに限る（一律緩和にしない）ことの回帰ガード。
+
+    2026-09-14に一度「標準ライブラリからのワイルドカードimportがあれば続く
+    未解決importを一律で検証不能とする」緩和を試し、730件で本物の検出を43件
+    喪失したため撤回した（`_check_import` の発火が146→77ファイル）。
+    名指し方式ならこの穴は開かない。
+    """
+    from sysml_v2_checker_advanced.parser import lint_sysml, parse_sysml
+
+    # 標準ライブラリのワイルドカードimportがあっても、無関係な名前は検出する
+    src = "package P { private import RiskMetadata::*; private import NoSuchPackage::*; }"
+    issues = lint_sysml(parse_sysml(src))
+    assert len(issues) == 1
+    assert "NoSuchPackage" in issues[0].message
+
+    # golden set の sysml-broken-04 相当
+    assert len(lint_sysml(parse_sysml("import NoSuchPackage::*;"))) == 1

@@ -10,6 +10,7 @@ from .constants import (
     BUILTIN_TYPES,
     ELEMENT_REFERENCE_ONLY_USAGE_TYPES,
     SEVERITY_ERROR,
+    STANDARD_LIBRARY_ENUM_NAMES,
     STANDARD_LIBRARY_PACKAGES,
 )
 from .expression_type_inference import ExpressionTypeInference
@@ -758,6 +759,11 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
                 package_name
                 and segments[0] not in STANDARD_LIBRARY_PACKAGES
                 and segments[-1] not in STANDARD_LIBRARY_PACKAGES
+                # 標準ライブラリ内のenum defは、先行するワイルドカードimportで
+                # スコープに入りうる（`import RiskMetadata::*;`のあとの
+                # `import RiskLevelEnum::*;`）。名前を名指しで許容する。
+                # 詳細はSTANDARD_LIBRARY_ENUM_NAMESのコメント参照。
+                and segments[0] not in STANDARD_LIBRARY_ENUM_NAMES
                 and not self._find_element_in_symbols(package_name)
                 and not self._import_path_segments_resolve(package_name)
             ):

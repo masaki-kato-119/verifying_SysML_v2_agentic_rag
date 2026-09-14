@@ -153,6 +153,37 @@ STANDARD_LIBRARY_PACKAGES = {
     "VectorCalculations",
 }
 
+# 標準ライブラリのパッケージ**内に定義された enum def** の名前。
+# `import RiskMetadata::*;` のあとに `import RiskLevelEnum::*;` と書く形
+# （RiskMetadataExample.sysml等）では、先行するワイルドカードimportによって
+# enum名がスコープに入り、そこからさらに列挙リテラルをimportできる。
+# 単一ファイルlintでは標準ライブラリ本体を読まないため、この名前の実在を
+# 確認できず「存在しないパッケージ」と誤検出していた。
+#
+# jar 0.61.0 同梱の `sysml.library` 配下から `enum def X` 宣言を実測して
+# 全10個を列挙している（2026-09-14）。
+#
+# **パッケージ名の集合（STANDARD_LIBRARY_PACKAGES）と分けてある理由**:
+# 当初は「標準ライブラリからのワイルドカードimportがあれば、続く未解決の
+# ワイルドカードimportを一律で検証不能とする」という緩和を試したが、730件で
+# `both_error -> reference_only_error` が46件（本物の検出を43件喪失）、
+# `_check_import` の発火が146→77ファイルへ半減し、撤回した。コーパスの多くが
+# 標準ライブラリのワイルドカードimportを持つため、条件が粗すぎた。
+# **どの名前が正当かを名指しする**この方式なら、`import NoSuchPackage::*;` は
+# この集合に無いので引き続き検出される。
+STANDARD_LIBRARY_ENUM_NAMES = {
+    "LevelEnum",
+    "PortionKind",
+    "RequirementConstraintKind",
+    "RiskLevelEnum",
+    "StateSubactionKind",
+    "StatusKind",
+    "TransitionFeatureKind",
+    "TriggerKind",
+    "VerdictKind",
+    "VerificationMethodKind",
+}
+
 # リンターの重大度レベル
 SEVERITY_ERROR = "error"
 SEVERITY_WARNING = "warning"
