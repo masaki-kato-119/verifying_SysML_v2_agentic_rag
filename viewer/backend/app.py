@@ -25,7 +25,12 @@ from sysml_v2_checker_advanced.semantic_model import (
 from viewer.backend.explain import explain_element
 from viewer.backend.rag_client import get_rag_client
 from viewer.backend.related_concepts import search_related_concepts
-from viewer.graph_ir import VIEW_TYPE_ACTIVITY, VIEW_TYPE_STATE_MACHINE, VIEW_TYPE_STRUCTURE, build_graph_ir
+from viewer.graph_ir import (
+    VIEW_TYPE_ACTIVITY,
+    VIEW_TYPE_STATE_MACHINE,
+    VIEW_TYPE_STRUCTURE,
+    build_graph_ir,
+)
 from viewer.svg_renderer import render_svg
 from viewer.view_ir import build_flow_view_ir, build_view_ir
 

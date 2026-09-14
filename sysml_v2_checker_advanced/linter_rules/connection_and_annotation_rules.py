@@ -111,8 +111,6 @@ class ConnectionAndAnnotationRulesMixin:
         Args:
             connection: 接続ノード
         """
-        connection_name = connection.get("name", "unknown")
-
         # Binary vs Nary Connector の区別（connection_defのendメンバー = connection_end_member）
         connector_ends = []
         children = connection.get("children", [])

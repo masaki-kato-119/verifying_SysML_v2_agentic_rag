@@ -6,8 +6,8 @@ from pathlib import Path
 
 from sysml_v2_checker_advanced.semantic_model import build_semantic_model
 from viewer.graph_ir import build_graph_ir
-from viewer.view_ir import build_view_ir
 from viewer.svg_renderer import render_svg
+from viewer.view_ir import build_view_ir
 
 _FIXTURES_DIR = Path(__file__).parent / "fixtures" / "viewer"
 

@@ -1,0 +1,43 @@
+#!/bin/sh
+# ローカルの pre-commit フック（PROJECT_REVIEW_2026-09-04.md の P2-F）。
+#
+# 有効化（クローンごとに1回）:
+#     git config core.hooksPath scripts/hooks
+#
+# `.git/hooks` へ直接置かないのは、そこがリポジトリの追跡対象外でクローンに
+# 付いてこないため。core.hooksPath をリポジトリ内へ向けることで、フック本体を
+# 追跡・レビューできるようにしている。
+#
+# 逃がし方:
+#     git commit --no-verify        … フック全体を飛ばす
+#     PRECOMMIT_SKIP_TESTS=1 git commit … ruff だけ回す（試行錯誤中など）
+set -e
+
+# `python` は antlr4 を持たない別のインタプリタを指すことがあるため venv を明示する
+# （素の python で回すとフックが常に失敗する。2026-09-14 に実際に踏んだ）。
+PY=".venv/Scripts/python.exe"
+[ -x "$PY" ] || PY=".venv/bin/python"
+if [ ! -x "$PY" ]; then
+    echo "pre-commit: venv の python が見つかりません（$PY）。README のセットアップを参照。" >&2
+    exit 1
+fi
+
+# ruff は全体で 0 秒程度なので常に回す。
+echo "pre-commit: ruff check"
+"$PY" -m ruff check .
+
+if [ -n "$PRECOMMIT_SKIP_TESTS" ]; then
+    echo "pre-commit: PRECOMMIT_SKIP_TESTS のため pytest を省略"
+    exit 0
+fi
+
+# pytest は全件 175 秒かかる（2026-09-14 実測。統合テストを除いても 112 秒で、
+# 時間は 1,400 件超に分散しているため「速いサブセット」は作れない）。
+# そのぶん、**Python を触っていないコミットでは回さない**。レポートや
+# ドキュメントだけの変更が実際に多く、そこで3分待つ理由がない。
+if git diff --cached --name-only --diff-filter=ACMR | grep -q '\.py$'; then
+    echo "pre-commit: pytest（全件。数分かかる）"
+    "$PY" -m pytest -q
+else
+    echo "pre-commit: Python の変更が無いため pytest を省略"
+fi

@@ -17,7 +17,7 @@ b15の決定（MCPクライアント経由）はHybridRAG/GraphRAGの検索・�
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 # GraphRAG/graphrag/config.py の既定値と同じモデル名を踏襲する。ただし
 # b15の決定によりgraphrag内部モジュールはimportしない（値の重複は許容する
@@ -78,7 +78,9 @@ async def explain_element(
         return {"available": False, "error": "OPENAI_API_KEYが設定されていません"}
 
     try:
-        from openai import OpenAI  # 遅延import: このモジュール自体はopenai未インストールでもimportできるようにする
+        from openai import (
+            OpenAI,  # 遅延import: このモジュール自体はopenai未インストールでもimportできるようにする
+        )
 
         client = OpenAI(api_key=api_key)
         model = os.environ.get("VIEWER_LLM_MODEL", _DEFAULT_LLM_MODEL)

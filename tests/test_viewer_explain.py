@@ -7,10 +7,6 @@
 
 from __future__ import annotations
 
-import os
-
-import pytest
-
 from viewer.backend.explain import explain_element
 
 

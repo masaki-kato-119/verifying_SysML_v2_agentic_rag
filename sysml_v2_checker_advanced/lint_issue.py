@@ -11,7 +11,6 @@ from typing import Any, Dict, Optional
 
 from .fix_candidates import FixCandidate
 
-
 # ルール別 confidence の実測テーブル。`scripts/recheck_local_only.py --rule-stats`
 # が 730 件コーパスの参照実装比較から生成したものを、レビューしたうえでここへ
 # 取り込む（生成方法と数値の意味は同スクリプトの `build_rule_agreement` を参照）。

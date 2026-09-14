@@ -346,6 +346,45 @@ python scripts/analyze_backend_usage.py
 
 ## 開発
 
+### pre-commit フック（任意だが推奨）
+
+`ruff` と `pytest` をコミット前に自動実行する。**クローンごとに1回**有効化する:
+
+```
+git config core.hooksPath scripts/hooks
+```
+
+フック本体は `scripts/hooks/pre-commit`（リポジトリで追跡している）。
+`.git/hooks` へ直接置くとクローンに付いてこないため、`core.hooksPath` を
+リポジトリ内へ向ける方式にしてある。
+
+挙動:
+
+| 対象 | 実行 | 所要 |
+|---|---|---|
+| 常に | `ruff check .` | 0秒程度 |
+| Python を変更したコミットのみ | `pytest -q`（全件） | 約175秒 |
+
+Python を触らないコミット（レポート・ドキュメントのみ）では pytest を省略する。
+**「速いサブセット」は用意していない** — 2026-09-14 の実測で、統合テストを除いても
+112秒かかり、時間は1,400件超に分散していて短縮できる塊が無かった。恣意的に
+一部だけ回すと誤った安心を与えるため、全件か省略かの二択にしている。
+
+逃がし方:
+
+```
+git commit --no-verify              # フック全体を飛ばす
+PRECOMMIT_SKIP_TESTS=1 git commit   # ruff だけ回す
+```
+
+**730件コーパスの回帰チェック（`scripts/recheck_local_only.py`、約4分）は
+フックに入れていない。** 実行には `eval/sysml_samples/` と `eval/sysml_results/`
+が要るが、どちらも再生成可能な大容量データとして gitignore してあり、
+クローン直後には存在しないため。チェッカーの判定に関わる変更をしたときは
+手動で回すこと。
+
+
+
 ```
 python -m pip install -e ".[dev]"
 python -m pytest -q        # テスト

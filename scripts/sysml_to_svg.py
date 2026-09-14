@@ -18,8 +18,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sysml_v2_checker_advanced.semantic_model import build_semantic_model  # noqa: E402
 from viewer.graph_ir import build_graph_ir  # noqa: E402
-from viewer.view_ir import build_view_ir  # noqa: E402
 from viewer.svg_renderer import render_svg  # noqa: E402
+from viewer.view_ir import build_view_ir  # noqa: E402
 
 
 def sysml_text_to_svg(text: str) -> str:
