@@ -14,15 +14,43 @@
 - `../scripts/run_conformance_eval.py` — 公式SysML v2 Pilot Implementationの標準ライブラリとの
   静的コンフォーマンス評価（無料、LLM不使用。別途cloneが必要）。
 
-## `qa_golden_set.json` について（要レビュー）
+## `qa_golden_set.json` について（正解の性質と限界）
 
-**`"reviewed_by_domain_expert": false` — ドメインレビュー未実施。** `relevant_chunk_ids` /
-`expected_graph_path` / `expected_answer` は、実際に索引済みの
-`SysML_Language_Specification_v2.pdf`（HybridRAG: `HybridRAG/data/sqlite.db`、
-GraphRAG: `GraphRAG/data/graphs/SysML_Language_Specification_v2.pkl`）に対して
-`vector_search`/`hybrid_search`/`find_path` の実出力を人手で確認しながら下書きしたもので、
-SysML v2仕様に関するドメイン知識のあるレビューを経ていない。回帰判定の正解として
-そのまま信頼する前に確認すること。
+**`"reviewed_by_domain_expert": true` — 2026-08-24 にレビュー実施済み**（内容は同ファイルの
+`review_note` を参照）。全20問について `relevant_chunk_ids` / `expected_answer` /
+`expected_graph_path` / `expected_neighbors` を実データ（SQLiteのchunk本文、networkxでの
+グラフ再計算）と突き合わせて検証した記録がある。
+
+**2026-09-14 訂正**: この節は以前「`false` — ドメインレビュー未実施」と書いていたが、
+JSON側は初回コミット（2026-08-27）から一貫して `true` であり、記述が古かった。
+`PROJECT_REVIEW_2026-09-04.md` の P2-H も同じ誤りを引き写していたので併せて訂正した。
+
+ただし**正解の性質に由来する限界は残る**ので、数値をそのまま「精度」として扱わないこと。
+
+1. `relevant_chunk_ids` / `expected_graph_path` / `expected_answer` は、
+   `vector_search`/`hybrid_search`/`find_path` の実出力を人手で確認しながら
+   下書きしたという経緯がある（`review_note` 末尾の「限界」参照）。
+2. **正解ラベルが疎である。** 1問あたり1〜2チャンクしか正解にしていないが、同じ論点を
+   扱うチャンクは他にもある（例: qa-hybrid-01 の正解は `Port Definitions` の1146だが、
+   同じ節の1147や `PortDefinition` の842も内容的には該当する）。したがって
+   Recall/Precision は実際の有用性を**過小評価する方向**に出る。
+3. `chunk_index` は再インデックスのたびにズレる。2026-09-14 に実際にドリフトが見つかり
+   修復した（下記）。
+
+### `relevant_chunk_ids` のドリフト（2026-09-14 に修復済み）
+
+初回の計測で Hybrid の全10ケースが Recall/MRR ともに **0.000** になった。原因は検索側
+ではなく、`relevant_chunk_ids` が**古いチャンク分割時の値のまま**で現在の
+`HybridRAG/data/sqlite.db`（2026-08-27構築）と一致しなくなっていたこと。ズレ幅は
+index とともに増大しており（−16〜−35）、定数オフセットではない＝再チャンク化による
+ドリフトだった。
+
+`expected_answer` が引用している原文を `chunk_text` から逆引きして10ケース全てを復元した
+（**検索結果は一切参照していない**ので「システムが返したものを正解にする」循環は無い）。
+修復後の実測値は Hybrid で MRR=0.152 / Recall@10=0.400 / nDCG@10=0.197。
+
+**再インデックスしたらこのドリフトは再発する。** `chunk_index` を照合キーにしている限り
+避けられないので、`section_title` + 本文ハッシュのような安定キーへの変更を検討すること。
 
 グラフ系ケース（`qa-graph-*`）は特に注意が必要。GraphRAGの抽出グラフは102ノードと
 小規模で、一部の `is-a` 関係が意味的に粗い（例: `port` が `constraint` や `case` の
