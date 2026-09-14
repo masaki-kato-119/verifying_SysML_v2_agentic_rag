@@ -565,3 +565,28 @@ def test_incompatible_type_category_specialization_is_not_reported():
     src = "package P { part def Person; connection def Child :> Person { end a; end b; } }"
     messages = [i.message for i in lint_sysml(parse_sysml(src))]
     assert not [m for m in messages if "互換性のない型カテゴリ" in m], messages
+
+
+def test_connection_end_conjugated_port_type_is_resolved():
+    """`end port p2: ~P;`（共役ポート）を「存在しない型」と誤検出しない。
+
+    `~P` は `P` の入出力を反転させた ConjugatedPortDefinition で、`P` が
+    宣言されていれば暗黙に存在する。この正規化は `_conjugated_lookup_name` として
+    既に存在し他3箇所で使われていたが、`_check_connection_def` だけ漏れていた
+    （2026-09-14）。公式サンプル ConjugationTest.sysml は `// XPECT noErrors`。
+
+    参照実装は `~Q` を受理し、`~NoSuchPort` のみ
+    `Couldn't resolve reference to ConjugatedPortDefinition` を返す（実測）。
+    """
+    from sysml_v2_checker_advanced.parser import lint_sysml, parse_sysml
+
+    ok = "package P { port def Q; connection def A { end port p1: Q; end port p2: ~Q; } }"
+    assert [i for i in lint_sysml(parse_sysml(ok)) if i.severity == "error"] == []
+
+    missing = (
+        "package P { port def Q; connection def A { end port p1: Q; "
+        "end port p2: ~NoSuchPort; } }"
+    )
+    errors = [i for i in lint_sysml(parse_sysml(missing)) if i.severity == "error"]
+    assert len(errors) == 1
+    assert "~NoSuchPort" in errors[0].message

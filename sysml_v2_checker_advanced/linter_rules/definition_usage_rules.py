@@ -638,7 +638,18 @@ class DefinitionUsageRulesMixin:
         for child in node.get("children", []):
             if isinstance(child, dict) and child.get("type") == "connection_end_member":
                 type_name = child.get("type_name")
-                if type_name and not self._find_type_in_symbols(type_name):
+                # `~P`（共役ポート参照）は`~`を除いた型名で引く。この正規化は
+                # 既に`_conjugated_lookup_name`として存在し他3箇所で使われて
+                # いたが、ここだけ漏れていた（2026-09-14）。そのため
+                # `port def P;`があっても`end port p2: ~P;`を「存在しない型」と
+                # 誤検出していた（公式サンプル ConjugationTest.sysml は
+                # `// XPECT noErrors` を宣言している）。参照実装は`~P`を受理し、
+                # `~NoSuchPort`だけを
+                # `Couldn't resolve reference to ConjugatedPortDefinition`と
+                # するので、判定すべきは`~`を除いた基底の型名（2026-09-14実測）。
+                if type_name and not self._find_type_in_symbols(
+                    self._conjugated_lookup_name(type_name)
+                ):
                     self.issues.append(LintIssue(
                         SEVERITY_ERROR,
                         f"Connection '{name}' の end '{child.get('name')}' が存在しない型 '{type_name}' を参照しています",
