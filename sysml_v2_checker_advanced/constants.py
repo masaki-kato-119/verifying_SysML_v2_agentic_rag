@@ -26,7 +26,16 @@ BUILTIN_TYPES = {
 # 参照であり、「存在しないパッケージ/型」として誤検出してはならない。
 #
 # 公式リポジトリの`sysml.library`配下（`.sysml`と`.kerml`の両方）に実在する
-# `(standard) library package X`宣言を実測して、全93個を漏れなく列挙している。
+# `(standard) library package X`宣言を実測して列挙している。
+#
+# 2026-09-14に jar 0.61.0 同梱のライブラリと突き合わせ直した結果、この集合と
+# ライブラリの実体が1件ずつ食い違っていた:
+#   - `USCustomaryUnits` が漏れていた（→追加済み。7ファイルの偽陽性の原因）
+#   - 逆に `Transitions` はライブラリに存在しない（実在するのは
+#     `Kernel Semantic Library/TransitionPerformances.kerml`）。ただしコーパス
+#     730件に `import Transitions` は1件も無く、除去しても測定できる差が出ない。
+#     余分な名前が持つ risk は検出漏れ側（偽陽性ではない）なので、未測定の変更を
+#     混ぜないため今回は残してある。
 #
 # なお、この集合に載せた名前は「配下のメンバーの存在検証を省略する」効果を持つ
 # （例: `import ISQ::NonExistent;`は検出できなくなる）。これは既存の
@@ -135,6 +144,12 @@ STANDARD_LIBRARY_PACKAGES = {
     "TensorCalculations",
     "Time",
     "TradeStudies",
+    # `Domain Libraries/Quantities and Units/USCustomaryUnits.sysml` の
+    # `standard library package <USCU> USCustomaryUnits`。2026-09-14に追加。
+    # 兄弟（SI・ISQ・Quantities・MeasurementReferences）は最初から入っていたのに
+    # これだけ漏れており、`import USCustomaryUnits::*;` を「存在しないパッケージ」と
+    # 誤検出していた（730件コーパスで7ファイル。参照実装はクリーンと実測）。
+    "USCustomaryUnits",
     "VectorCalculations",
 }
 
