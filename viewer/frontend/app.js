@@ -781,7 +781,94 @@ function renderFindingSuggestion(finding) {
   caveat.textContent = `　　${suggestion.caveat}`;
   wrapper.appendChild(caveat);
 
+  // Phase D（構想書§11）: 候補を当てた結果を**確定前に**見せる。
+  // c4では意図的に適用ボタンを置かなかった。ここはその境界を越えるので、
+  // 「プレビュー」と「適用」を必ず2段に分ける。差分と再検証を見ないまま
+  // エディタを書き換えられる導線は作らない（§12-5 Human authority）。
+  if (suggestion.edit) {
+    wrapper.appendChild(renderFixPreviewControls(finding, suggestion));
+  }
+
   return wrapper;
+}
+
+// 候補のプレビュー→適用。プレビューはバックエンド（/api/apply-fix）が
+// 再パース・再検証まで済ませて返すので、ここは結果を見せるだけ。
+function renderFixPreviewControls(finding, suggestion) {
+  const box = document.createElement("div");
+  box.className = "fix-preview";
+
+  const previewButton = document.createElement("button");
+  previewButton.type = "button";
+  previewButton.className = "fix-preview-button";
+  previewButton.textContent = "適用した場合を確認";
+  const result = document.createElement("div");
+  result.className = "fix-preview-result";
+
+  previewButton.addEventListener("click", async () => {
+    previewButton.disabled = true;
+    result.textContent = "確認中...";
+    try {
+      const response = await fetch("/api/apply-fix", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: editor.getValue(),
+          source_range: finding.source_range,
+          edit: suggestion.edit,
+        }),
+      });
+      const data = await response.json();
+      renderFixPreviewResult(data, result, finding);
+    } catch (e) {
+      result.textContent = `確認に失敗しました: ${e}`;
+    } finally {
+      previewButton.disabled = false;
+    }
+  });
+
+  box.appendChild(previewButton);
+  box.appendChild(result);
+  return box;
+}
+
+function renderFixPreviewResult(data, container, finding) {
+  container.textContent = "";
+  if (!data.applied) {
+    container.textContent = `適用できません: ${data.error}`;
+    return;
+  }
+
+  const before = latestFindings.length;
+  const summary = document.createElement("div");
+  if (data.ast_error) {
+    // 適用するとパースできなくなる候補。**これも見せる**（確定前に分かる）。
+    summary.className = "fix-preview-broken";
+    summary.textContent = `この候補を当てるとパースできなくなります: ${data.ast_error}`;
+  } else {
+    const after = data.findings.length;
+    summary.className = "fix-preview-summary";
+    summary.textContent = `再検証: 指摘 ${before}件 → ${after}件`;
+    const stillThere = data.findings.some(
+      (f) => f.rule === finding.rule && f.message === finding.message
+    );
+    if (stillThere) {
+      summary.textContent += "（この指摘は残ります）";
+    }
+  }
+  container.appendChild(summary);
+
+  if (!data.ast_error) {
+    const applyButton = document.createElement("button");
+    applyButton.type = "button";
+    applyButton.className = "fix-apply-button";
+    applyButton.textContent = "エディタへ適用";
+    applyButton.addEventListener("click", () => {
+      editor.setValue(data.text);
+      container.textContent = "適用しました（Ctrl+Z で戻せます）";
+    });
+    container.appendChild(applyButton);
+  }
 }
 
 // Findingの状態変更UI（Group1 b4, I4）+ レビュー履歴（Group1 b5, I5）。

@@ -22,6 +22,7 @@ from sysml_v2_checker_advanced.semantic_model import (
     build_semantic_model,
     semantic_model_to_json_dict,
 )
+from viewer.apply_fix import FixApplicationError, apply_fix_candidate
 from viewer.backend.explain import explain_element
 from viewer.backend.rag_client import get_rag_client
 from viewer.backend.related_concepts import search_related_concepts
@@ -123,6 +124,50 @@ def get_model(request: ModelRequest) -> ModelResponse:
         findings=findings,
         impact=build_impact_map(graph_ir),
     )
+
+
+class ApplyFixRequest(BaseModel):
+    text: str
+    source_range: Dict[str, Any]
+    edit: Dict[str, Any]
+
+
+@app.post("/api/apply-fix")
+def post_apply_fix(request: ApplyFixRequest) -> Dict[str, Any]:
+    """修正候補を適用した**プレビュー**を返す（Phase D、構想書§11）。
+
+    確定はしない。新しいテキストと、それを再パース・再検証した結果の
+    Finding を返すだけで、エディタへ書き戻すかどうかは利用者が決める
+    （§12-5 Human authority）。UIはこの応答を使って「適用すると指摘が
+    どう変わるか」を確定前に見せる。
+
+    再パース・再検証は `/api/model` と同じ経路を通す（差分表示のために
+    別の実装を持つと、プレビューと本番で結果がずれる余地ができる）。
+    """
+    try:
+        new_text = apply_fix_candidate(request.text, request.source_range, request.edit)
+    except FixApplicationError as error:
+        return {"applied": False, "error": str(error)}
+
+    ast, semantic_model = build_semantic_model(new_text)
+    if ast.get("type") == "error":
+        # 候補を当てた結果パースできなくなった場合。**これも見せる**べき情報で、
+        # 「適用すると壊れる候補」を確定前に知らせる意味がある。
+        return {
+            "applied": True,
+            "text": new_text,
+            "ast_error": ast.get("message"),
+            "findings": None,
+        }
+
+    issues = lint_sysml(ast)
+    element_index = build_element_index(semantic_model["nodes"])
+    return {
+        "applied": True,
+        "text": new_text,
+        "ast_error": None,
+        "findings": [issue.to_dict(element_index) for issue in issues],
+    }
 
 
 @app.get("/api/related-concepts")

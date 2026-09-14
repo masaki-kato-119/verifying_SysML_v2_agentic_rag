@@ -406,3 +406,34 @@ html, body {
   font-size: 11px;
   opacity: 0.7;
 }
+
+/* Phase D: 修正候補のプレビューと適用。候補の枠の中に置き、
+   プレビューを見るまで適用ボタンが現れない構成にしている。 */
+.fix-preview {
+  margin-top: 4px;
+}
+
+.fix-preview-button,
+.fix-apply-button {
+  font-size: 11px;
+  padding: 2px 8px;
+  margin-right: 6px;
+  cursor: pointer;
+}
+
+.fix-preview-result {
+  font-size: 11px;
+  margin-top: 4px;
+  color: #ced4da;
+}
+
+.fix-preview-summary {
+  color: #8ce99a;
+  margin-bottom: 4px;
+}
+
+/* 適用するとパースできなくなる候補は、色でもはっきり分ける。 */
+.fix-preview-broken {
+  color: #ff6b6b;
+  margin-bottom: 4px;
+}
