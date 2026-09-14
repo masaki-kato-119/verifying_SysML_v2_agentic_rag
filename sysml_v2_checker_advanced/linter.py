@@ -598,6 +598,15 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
             # その配下のメンバーも同様に検証不能である。
             if self.has_opaque_wildcard_import and not self._find_element_in_symbols(root):
                 return True
+            # 修飾プレフィックスが「ワイルドカードimportを持つローカルpackage」の
+            # 場合、そのメンバーはimport経由で可視になっている可能性があり、
+            # 単一ファイルの平坦なシンボル表では検証できない。
+            # 例: `package P2a { public import P1::*; } ... part x : P2a::A;`
+            # （QualifiedNameImportTest.sysml。ファイル自身が "The following
+            # should not fail." と明記している）。CircularImport.sysml の
+            # `part y : P1::B;` も同じ形（P1が`public import P2::*`を持つ）。
+            if self._package_has_wildcard_import(type_name.rsplit("::", 1)[0]):
+                return True
             return False
         return self.has_opaque_wildcard_import
 
@@ -773,6 +782,44 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
                     node
                 ))
     
+    def _package_has_wildcard_import(self, package_name: str) -> bool:
+        """`package_name`が指すローカルpackageがワイルドカードimportを持つか。
+
+        持っている場合、そのpackageのメンバー集合はimport元にも依存するため、
+        単一ファイルの平坦なシンボル表では「`Pkg::X`のXが無い」と断定できない。
+
+        参照実装(jar 0.61.0)で実測した境界（2026-09-14、canaryを前後に挟む）:
+
+        - `package P2a { public import P1::*; } ... part x : P2a::A;`
+          （AはP1のメンバー）→ **クリーン**
+        - 同じ形で `part x : P2a::NoSuch;` → エラー
+        - **`package P2b { part def Z; } ... part x : P2b::A;`
+          （P2bはimportを持たない）→ エラー**
+        - `part x : P1::A;`（直接のメンバー）→ クリーン
+        - 相互に`import`し合うpackage間の参照 → クリーン
+
+        3番目があるので「修飾名なら一律に検証不能」とはしない。
+        **ワイルドカードimportを実際に持つpackageに限る**ことで、importを持たない
+        packageへの誤った修飾参照の検出は維持される。2番目（import経由の
+        packageに存在しないメンバーを指す形）だけは取りこぼすが、これは
+        「検出漏れは許容、偽陽性は出さない」方針による。
+        """
+        if not package_name:
+            return False
+        node = None
+        for pkg_name, pkg_node in self.packages.items():
+            if pkg_name == package_name or pkg_name.endswith(f"::{package_name}"):
+                node = pkg_node
+                break
+        if not isinstance(node, dict):
+            return False
+        return any(
+            isinstance(child, dict)
+            and child.get("type") == "import"
+            and child.get("wildcard")
+            for child in node.get("children") or []
+        )
+
     def _import_path_segments_resolve(self, path: str) -> bool:
         """多セグメントのimportパスについて、各セグメントが個別に解決できるか。
 

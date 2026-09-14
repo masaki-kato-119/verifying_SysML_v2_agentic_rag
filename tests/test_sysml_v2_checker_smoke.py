@@ -455,3 +455,46 @@ def test_import_does_not_validate_itself_through_opaque_import_names():
     # それでも「型として存在する」とは見なさない
     assert linter._import_target_is_type_name("noSuchLeaf") is False
     assert len(issues) == 1
+
+
+def test_qualified_reference_through_a_package_wildcard_import_is_not_flagged():
+    """ワイルドカードimportを持つpackage経由の修飾参照を誤検出しない。
+
+    `package P2a { public import P1::*; } ... part x : P2a::A;` の形。
+    AはP1のメンバーだがP2aのimportで可視になっている。公式サンプル
+    QualifiedNameImportTest.sysml 自身が "The following should not fail." と
+    書いており、CircularImport.sysml の `part y : P1::B;` も同じ形。
+
+    参照実装はどちらもクリーンと判定する（2026-09-14に実測）。
+    """
+    from sysml_v2_checker_advanced.parser import lint_sysml, parse_sysml
+
+    via_import = (
+        "package Q { package P1 { part def A; } "
+        "package P2 { package P2a { public import P1::*; } part x : P2a::A; } }"
+    )
+    assert lint_sysml(parse_sysml(via_import)) == []
+
+    circular = (
+        "package Q { package P1 { public import P2::*; part def A; } "
+        "package P2 { public import P1::*; part def B; } part y : P1::B; }"
+    )
+    assert lint_sysml(parse_sysml(circular)) == []
+
+
+def test_qualified_reference_through_a_package_without_imports_is_still_flagged():
+    """緩和はワイルドカードimportを持つpackageに限る。
+
+    importを持たないpackage経由の誤った修飾参照（`P2b::A` で A は P1 のもの）は
+    参照実装もエラーにするので、検出を維持する（2026-09-14に実測）。
+    これを区別しないと「修飾名なら一律に検証不能」になり、制約が失われる。
+    """
+    from sysml_v2_checker_advanced.parser import lint_sysml, parse_sysml
+
+    src = (
+        "package Q { package P1 { part def A; } "
+        "package P2 { package P2b { part def Z; } part x : P2b::A; } }"
+    )
+    issues = lint_sysml(parse_sysml(src))
+    assert len(issues) == 1
+    assert "P2b::A" in issues[0].message
