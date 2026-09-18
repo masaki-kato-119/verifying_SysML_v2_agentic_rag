@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from html import escape
 from pathlib import Path
 
 import pytest
@@ -286,6 +287,10 @@ def test_transition_edge_with_trigger_guard_effect_renders_label():
 
     assert 'class="sysml-edge-label"' in svg
     assert "TurnOn [powerLevel &gt; 0.0] / logStart" in svg
+    # ラベルは線と同じdata-edge-idを持つ。フィルタで線を隠すときに、
+    # ラベルだけ宙に浮いて残らないようにするため（app.jsのapplyEdgeFilters）。
+    edge_id = vir["edges"][0]["id"]
+    assert svg.count(f'data-edge-id="{escape(edge_id, quote=True)}"') == 2
 
 
 def test_transition_edge_without_label_renders_no_label_text():

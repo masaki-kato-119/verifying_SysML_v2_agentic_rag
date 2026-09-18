@@ -294,6 +294,46 @@ function applyNodeFilters() {
 
     el.classList.toggle("filtered-out", !(typeVisible && severityVisible));
   });
+
+  applyEdgeFilters();
+}
+
+// ノードを隠したら、そこへ繋がる線も隠す（2026-09-18）。
+//
+// b9のフィルタは`.sysml-node`の表示/非表示だけを切り替えていたため、端点の
+// 片方が消えた線が宙に浮いたまま残っていた（ユーザー報告）。行き先の無い矢印は
+// 「関連はあるが相手が描かれていない」のか「相手がフィルタで消えている」のかを
+// 区別できず、§1が未解決エッジを描かない理由（宙に浮いた矢印を避ける）と
+// 同じ問題を、フィルタ経由で作り出していた。
+//
+// **片端でも隠れていれば隠す。** 両端が隠れたときだけ消す案もあり得るが、
+// それでは片端だけ隠れた線が残り、症状が半分残る。
+//
+// 端点の対応付けはGraph IRのedges（`from`/`to`を持つ）から引く。SVGの<line>は
+// `data-edge-id`しか持たないので、idを文字列解析して端点を復元しようとしない
+// こと（idは`<from>-><kind>-><to>#<連番>`という形だが、要素名に`->`を含み得る）。
+function applyEdgeFilters() {
+  const container = document.getElementById("diagram-container");
+  if (!container) return;
+
+  const hiddenNodeIds = new Set(
+    [...container.querySelectorAll(".sysml-node.filtered-out")].map((el) =>
+      el.getAttribute("data-element-id")
+    )
+  );
+  const endpointsByEdgeId = new Map(
+    ((latestModel && latestModel.graph_ir && latestModel.graph_ir.edges) || []).map((e) => [
+      e.id,
+      [e.from, e.to],
+    ])
+  );
+
+  for (const el of container.querySelectorAll(".sysml-edge, .sysml-edge-label")) {
+    const endpoints = endpointsByEdgeId.get(el.getAttribute("data-edge-id"));
+    // Graph IRに無いエッジ（想定外）は触らない。消すより残す方が安全側。
+    const hidden = endpoints ? endpoints.some((id) => hiddenNodeIds.has(id)) : false;
+    el.classList.toggle("filtered-out", hidden);
+  }
 }
 
 // フィルタパネルを現在のGraph IRの型集合から再構築する（b9）。チェック状態は

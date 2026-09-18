@@ -213,8 +213,10 @@ def _render_edge(edge: Dict) -> str:
     if not label:
         return line
     mid_x, mid_y = (x1 + x2) / 2, (y1 + y2) / 2
+    # ラベルにも`data-edge-id`を持たせる。フィルタで線を隠すとき（app.jsの
+    # applyNodeFilters）に、線だけ消えてラベルが宙に浮いて残るのを防ぐため。
     label_text = (
-        f'<text class="sysml-edge-label" x="{mid_x}" y="{mid_y - 4}"'
+        f'<text class="sysml-edge-label" data-edge-id="{edge_id}" x="{mid_x}" y="{mid_y - 4}"'
         f' fill="{_EDGE_LABEL_COLOR}" font-size="{_EDGE_LABEL_FONT_SIZE}"'
         f' text-anchor="middle">{escape(label)}</text>'
     )

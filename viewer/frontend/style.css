@@ -185,6 +185,13 @@ html, body {
   display: none;
 }
 
+/* 端点が隠れた線とそのラベル（2026-09-18）。ノードだけ消して線を残すと、
+   行き先の無い矢印になる。 */
+.sysml-edge.filtered-out,
+.sysml-edge-label.filtered-out {
+  display: none;
+}
+
 /* 折りたたみ中のノード（Group2 b10, V4）。ダブルクリックでトグルする。 */
 .sysml-node.collapsed rect {
   stroke-dasharray: 4 2;
