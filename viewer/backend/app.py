@@ -106,10 +106,13 @@ def get_model(request: ModelRequest) -> ModelResponse:
         return ModelResponse(view_type_error=str(e))
     # 表現力強化Stage 3, Group B f4 / Group C g3: state_machine/activityは
     # 入れ子矩形（包含関係の表現）ではなく層状（フロー）レイアウトを使う。
-    # 折りたたみ・手動配置はこれらのビューではまだ対応しない
-    # （build_flow_view_irは対応する引数を持たない）。
+    # 手動配置は2026-09-18に対応した（それまでこの2ビューだけドラッグしても
+    # 位置を覚えなかった）。**pinned_positionsの座標の意味が両者で違う**――
+    # フロー側は入れ子を作らないので絶対座標、build_view_ir側は親を持つノードが
+    # 相対オフセット（各関数のdocstring参照）。折りたたみは未対応のまま
+    # （フラットな層配置では「子を畳む」の意味が構造ビューと同じにならない）。
     if request.view_type in (VIEW_TYPE_STATE_MACHINE, VIEW_TYPE_ACTIVITY):
-        view_ir = build_flow_view_ir(graph_ir)
+        view_ir = build_flow_view_ir(graph_ir, pinned_positions=request.pinned_positions)
     else:
         view_ir = build_view_ir(
             graph_ir, collapsed_ids=set(request.collapsed_ids), pinned_positions=request.pinned_positions

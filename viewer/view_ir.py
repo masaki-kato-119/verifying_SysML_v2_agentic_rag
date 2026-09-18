@@ -438,7 +438,7 @@ def _assign_layers(node_ids: List[str], edges: List[Dict]) -> Dict[str, int]:
     return layer
 
 
-def build_flow_view_ir(graph_ir: Dict) -> Dict:
+def build_flow_view_ir(graph_ir: Dict, pinned_positions=None) -> Dict:
     """Graph IRから層状（フロー）レイアウトのView IRを構築する
     （状態遷移図・アクティビティ図向け、表現力強化Stage 3）。
 
@@ -446,6 +446,22 @@ def build_flow_view_ir(graph_ir: Dict) -> Dict:
         graph_ir: build_view_irと同じ形。`view_type`は`"state_machine"`
             または`"activity"`を想定するが、この関数自体はどちらにも依存しない
             （ノードの集合とエッジのトポロジーだけを見る）。
+        pinned_positions: 手動配置を尊重するノードid→{"x","y"}の辞書
+            （2026-09-18追加。それまで状態遷移図・アクティビティ図だけが
+            ドラッグしても位置を覚えず、ユーザーから指摘された）。
+
+            **値は絶対座標である。** `build_view_ir`では親を持つノードの値を
+            親の内容領域からの相対オフセットとして解釈するが、フローレイアウトは
+            入れ子を作らない――`$root::S`もその子の`idle`も、同じ層配置の中に
+            並ぶ兄弟のノードとして扱われる――ため、相対化の基準になる「親の
+            内容領域」がそもそも存在しない。呼び出し側（フロントエンド）も
+            ビュー種別を見て絶対座標のまま送ること。
+
+            ピン留めは層配置を**計算した後に上書きする**。したがって
+            `build_view_ir`と同じく、ピン留めしても他のノードの位置は動かない。
+            エッジの端点は`positions`から引き直すので、ピン留めしたノードに
+            繋がる線は追従する。重なりの解消までは行わない（build_view_irと
+            同じ割り切り）。
 
     Returns:
         build_view_irと同じ形の辞書（"view_type","nodes","edges"）。
@@ -473,6 +489,13 @@ def build_flow_view_ir(graph_ir: Dict) -> Dict:
             positions[nid] = (x, y)
             x += width + _FLOW_NODE_GAP
         y += layer_height + _FLOW_LAYER_GAP
+
+    # 層配置を上書きする形でピン留めを当てる。この順序が「ピン留めしても
+    # 他のノードは動かない」を保証している（層のcursorは通常どおり進んだ後）。
+    for nid, position in (pinned_positions or {}).items():
+        if nid not in positions:
+            continue  # 別ビューや古いモデルに由来するidは黙って捨てる
+        positions[nid] = (position["x"], position["y"])
 
     nodes_out = [
         {

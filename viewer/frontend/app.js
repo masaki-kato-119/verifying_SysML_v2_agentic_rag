@@ -187,7 +187,19 @@ function startNodeDrag(startEvent, g, elementId) {
 const FLOW_PADDING = 8;
 const FLOW_LABEL_HEIGHT = 24;
 
+// 層状（フロー）レイアウトを使うビュー。入れ子矩形ではなく全ノードが同じ
+// 平面に並ぶので、手動配置の座標の扱いが構造ビューと違う（下記参照）。
+const FLOW_LAYOUT_VIEW_TYPES = new Set(["state_machine", "activity"]);
+
 function toPinnedPosition(elementId, absoluteX, absoluteY) {
+  // フローレイアウトのビューは入れ子を作らない。`$root::S`とその子の`idle`が
+  // 親子ではなく同じ層配置に並ぶ兄弟として描かれるため、相対化の基準になる
+  // 「親の内容領域」が存在しない。group_idを見て相対化すると、描画上どこにも
+  // 対応しない原点からのオフセットを送ることになる（2026-09-18、この2ビューへ
+  // 手動配置を通したときに顕在化した）。
+  if (FLOW_LAYOUT_VIEW_TYPES.has(currentViewType)) {
+    return { x: absoluteX, y: absoluteY };
+  }
   const node = latestModel && latestModel.graph_ir.nodes.find((n) => n.id === elementId);
   if (!node || !node.group_id) {
     return { x: absoluteX, y: absoluteY }; // ルート直下は相対化の基準となる親が無いため絶対座標のまま
