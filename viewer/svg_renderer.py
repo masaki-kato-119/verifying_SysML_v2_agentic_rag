@@ -60,13 +60,23 @@ _KIND_DASH = {
     "feature_typing": "4 2",
 }
 
-# 表現力強化 Stage 3: 状態遷移図の状態ノード（Group B f3）とアクティビティ図の
-# アクションノード（Group C g2）は、いずれもSysML/UML標準記法で角丸矩形が
-# 使われる慣習のため、同じ仕組みを流用する（ガード条件ラベル等の詳細な記法は
-# 対象外）。transition/succession/flowエッジ自体は、`_KIND_MARKER`に個別の
-# キーが無いため既存の既定（塗り矢印）にフォールバックする挙動がそのまま
-# 「方向のある矢印」という要件を満たすため、変更不要だった（g2で確認済み）。
-_ROUNDED_NODE_TYPES = {"state_def", "state_usage", "action_def", "action_usage"}
+# **定義（`_def`）は直角、使用（`_usage`/`_instance`）は角丸。**
+#
+# SysML v2の図記法が定義と使用を角の形で区別しているので、それに合わせている
+# （仕様書の Table 4 "Definition and Usage – Representative Notation"）。
+# つまりこれは独自の工夫ではなく、規格への追従である。
+#
+# **2026-09-18にStage 3の実装を訂正した。** それまで角丸は「状態・アクション」を
+# 表しており（`state_def`/`state_usage`/`action_def`/`action_usage`の4種類）、
+# これはUMLで状態・アクションを角丸で描く慣習を持ち込んだものだった。SysML v2で
+# 角の形が意味するのはdef/usageなので、この流用は規格と衝突していた――
+# 「`state def`が角丸」は、SysML v2の記法で読めば「これはusageである」と
+# 言っているに等しい。定義側を直角へ直したのはその訂正であって、
+# 記法忠実度を下げる判断ではない。
+#
+# 境界上のポート（`_render_port_node`）はこの規則の対象外。ポートは矩形では
+# なく境界上の小さな正方形で描いており、そこに角丸を入れても形が潰れて
+# 読み取れないうえ、「ポートである」ことは既に形で分かっている。
 _ROUNDED_CORNER_RADIUS = 10
 
 # 表現力強化 h2: 状態遷移のtrigger/guard/effectラベル。UML/SysML標準記法の
@@ -80,7 +90,9 @@ _EDGE_LABEL_FONT_SIZE = 10
 # 「«part def»」のようにギユメで囲み、名前とは別の行に表示する（同じ行に
 # 並べると読みにくいとのフィードバックにより2行表示へ変更）。ジオメトリは
 # コンテナの見出し高さ（`view_ir.py`の`_LABEL_HEIGHT`）のみ2行分に拡張した。
-_TYPE_KEYWORD_USAGE_SUFFIX_RE = re.compile(r"(_usage|_instance)$")
+# `_usage`と`_instance`のどちらも「使用」側として扱う。ステレオタイプ表記の
+# 組み立て（_type_keyword）と角の形（_is_usage_type）の両方がこれを使う。
+_USAGE_TYPE_SUFFIX_RE = re.compile(r"(_usage|_instance)$")
 _TYPE_KEYWORD_COLOR = "#888888"
 _TYPE_KEYWORD_FONT_SIZE = 9
 
@@ -92,7 +104,14 @@ def _type_keyword(node_type: str) -> str:
     単純な接尾辞除去ではなく`_def`だけ扱いを変える）。"""
     if node_type.endswith("_def"):
         return node_type[: -len("_def")].replace("_", " ") + " def"
-    return _TYPE_KEYWORD_USAGE_SUFFIX_RE.sub("", node_type).replace("_", " ")
+    return _USAGE_TYPE_SUFFIX_RE.sub("", node_type).replace("_", " ")
+
+
+def _is_usage_type(node_type: str) -> bool:
+    """使用側（`_usage`/`_instance`）なら真。定義（`_def`）と、どちらでもない
+    もの（`package`等）は偽。角の形をこれで決める（上の`_ROUNDED_CORNER_RADIUS`
+    のコメント参照）。"""
+    return bool(_USAGE_TYPE_SUFFIX_RE.search(node_type))
 
 
 def _source_range_attrs(source_range: Optional[Dict]) -> str:
@@ -156,7 +175,7 @@ def _render_node(node: Dict) -> str:
     x, y, width, height = node["x"], node["y"], node["width"], node["height"]
     corner_attrs = (
         f' rx="{_ROUNDED_CORNER_RADIUS}" ry="{_ROUNDED_CORNER_RADIUS}"'
-        if node["type"] in _ROUNDED_NODE_TYPES
+        if _is_usage_type(node["type"])
         else ""
     )
 

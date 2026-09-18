@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from sysml_v2_checker_advanced.semantic_model import build_semantic_model
 from viewer.graph_ir import build_graph_ir
 from viewer.svg_renderer import render_svg
@@ -142,32 +144,43 @@ def test_unknown_edge_kind_falls_back_to_filled_arrow():
 # --- 状態遷移図（表現力強化 Stage 3, Group B f3） -------------------------
 
 
-def test_state_nodes_are_rendered_as_rounded_rectangles():
-    view_ir = {
-        "view_type": "state_machine",
-        "nodes": [
-            {"id": "$root::S", "type": "state_def", "label": "S", "source_range": None,
-             "x": 0, "y": 0, "width": 90, "height": 40},
-            {"id": "$root::S::Off", "type": "state_usage", "label": "Off", "source_range": None,
-             "x": 0, "y": 60, "width": 90, "height": 40},
-        ],
-        "edges": [],
-    }
-    svg = render_svg(view_ir)
-    assert svg.count('rx="10" ry="10"') == 2
-
-
-def test_non_state_nodes_are_not_rounded():
-    view_ir = {
+def _single_node_svg(node_type):
+    return render_svg({
         "view_type": "structure",
         "nodes": [{
-            "id": "$root::A", "type": "part_def", "label": "A", "source_range": None,
+            "id": "$root::A", "type": node_type, "label": "A", "source_range": None,
             "x": 0, "y": 0, "width": 90, "height": 40,
         }],
         "edges": [],
-    }
-    svg = render_svg(view_ir)
-    assert "rx=" not in svg
+    })
+
+
+# 角の形は「定義か使用か」を表す。SysML v2の図記法がそう区別しているため
+# （仕様書 Table 4 "Definition and Usage – Representative Notation"）。
+# 2026-09-18以前は「状態・アクションかどうか」を表しておりstate_def/action_defも
+# 角丸だったが、それはUMLの慣習の持ち込みで、SysML v2の記法とは衝突していた。
+@pytest.mark.parametrize(
+    "node_type",
+    ["part_usage", "state_usage", "action_usage", "attribute_usage", "part_instance"],
+)
+def test_usage_nodes_are_rounded(node_type):
+    assert 'rx="10" ry="10"' in _single_node_svg(node_type)
+
+
+@pytest.mark.parametrize(
+    "node_type",
+    ["part_def", "state_def", "action_def", "requirement_def", "package"],
+)
+def test_definition_and_package_nodes_are_square(node_type):
+    """`state_def`と`action_def`がここにいるのが訂正点。UMLの慣習を持ち込んで
+    角丸にしていたが、SysML v2では角丸はusageを意味するので直角が正しい。"""
+    assert "rx=" not in _single_node_svg(node_type)
+
+
+def test_definition_and_its_usage_are_told_apart_by_shape():
+    """同じ`part`でも def と usage で形が変わる、というのがこの規則の要点。"""
+    assert "rx=" not in _single_node_svg("part_def")
+    assert 'rx="10" ry="10"' in _single_node_svg("part_usage")
 
 
 def test_transition_edge_gets_a_directional_arrow():
@@ -177,23 +190,6 @@ def test_transition_edge_gets_a_directional_arrow():
     svg = _render_single_edge("transition")
     assert 'marker-end="url(#sysml-arrow-filled)"' in svg
     assert 'data-kind="transition"' in svg
-
-
-def test_action_nodes_are_rendered_as_rounded_rectangles():
-    """表現力強化 Stage 3, Group C g2: アクティビティ図のアクションノードも
-    状態ノードと同じ角丸矩形の仕組みを流用する。"""
-    view_ir = {
-        "view_type": "activity",
-        "nodes": [
-            {"id": "$root::Act", "type": "action_def", "label": "Act", "source_range": None,
-             "x": 0, "y": 0, "width": 90, "height": 40},
-            {"id": "$root::Act::step1", "type": "action_usage", "label": "step1", "source_range": None,
-             "x": 0, "y": 60, "width": 90, "height": 40},
-        ],
-        "edges": [],
-    }
-    svg = render_svg(view_ir)
-    assert svg.count('rx="10" ry="10"') == 2
 
 
 def test_end_to_end_activity_renders_rounded_actions_with_arrows():
@@ -215,7 +211,8 @@ def test_end_to_end_activity_renders_rounded_actions_with_arrows():
     vir = build_flow_view_ir(gir)
     svg = render_svg(vir)
 
-    assert svg.count('rx="10" ry="10"') == 3  # Act(action_def) + step1 + step2
+    # step1 + step2 のみ。Act は action **def** なので直角（2026-09-18の規則変更）。
+    assert svg.count('rx="10" ry="10"') == 2
     assert svg.count('data-kind="succession"') == 1
     assert "<marker" in svg
 
@@ -241,7 +238,8 @@ def test_end_to_end_state_machine_renders_rounded_states_with_arrows():
     vir = build_flow_view_ir(gir)
     svg = render_svg(vir)
 
-    assert svg.count('rx="10" ry="10"') == 3  # AdvancedSwitch(state_def) + Off + On
+    # Off + On のみ。AdvancedSwitch は state **def** なので直角。
+    assert svg.count('rx="10" ry="10"') == 2
     assert svg.count('data-kind="transition"') == 3
     assert "<marker" in svg
 
