@@ -510,3 +510,59 @@ def test_parent_does_not_shrink_below_what_unpinned_siblings_still_need():
     # 親は、ピン留めされていないmyEngineを収めるのに必要な高さは維持する。
     my_engine = by_id_partial["$root::myEngine"]
     assert by_id_partial["$root"]["height"] >= (my_engine["y"] - by_id_partial["$root"]["y"]) + my_engine["height"]
+
+
+def test_port_type_does_not_vote_on_which_side_the_port_sits():
+    """ポートの**型**（`feature_typing`）は左右の判定に票を持たない。
+
+    2026-09-18のユーザー報告「階層をまたぐポートが右へ動かないことがある」の
+    原因がこれだった。`port def`は普通パッケージ直下に置かれるので、そのボックスは
+    入れ子になったポートから見て常に同じ方向にあり、本物の接続の判定を押し切って
+    しまう。この入力での実測値は、本物の接続が左を52対54で選んでいたのに、
+    型エッジが右を60対46で選び、合計112対100で右に決まっていた。
+
+    それまでのテストがこれを捕まえられなかったのは、どれも型無しのポート
+    （`port p;`）を使っていたため。実モデルのポートはほぼ必ず型を持つ。
+    """
+    text = """
+    package P {
+        port def Pw;
+        part def Inner { port pi : Pw; }
+        part def Outer {
+            port po : Pw;
+            part inner : Inner;
+        }
+        part o : Outer;
+        connect o.po to o.inner.pi;
+    }
+    """
+    vir = _build_view_ir(text)
+    by_id = {n["id"]: n for n in vir["nodes"]}
+    outer = by_id["$root::Outer"]
+    po = by_id["$root::Outer::po"]
+    # 本物の接続（`o.po to o.inner.pi`）だけで決めた結果は左辺。
+    # 型エッジが票を持っていた頃はここが右辺（x=115）になっていた。
+    assert po["port_side"] == "left"
+    assert po["x"] == outer["x"] - po["width"] / 2
+
+
+def test_a_port_definition_box_is_not_dragged_around_by_its_own_type_edges():
+    """`port def`自身もポートとして描かれる。そこへ集まるのは`feature_typing`
+    だけ（配線ではない）なので、配線ゼロのポートとして既定の左辺に落ち着く。
+
+    これが票を持っていた頃は、親（パッケージ）の幅というモデルと無関係な量で
+    左右が入れ替わっていた（同じ`port def Pw`が、他の要素が増えて
+    パッケージが広がるだけで右辺へ移る）。
+    """
+    text = """
+    package P {
+        port def Pw;
+        part def A { port pa : Pw; }
+        part def B { port pb : Pw; }
+        part a : A;
+        part b : B;
+        connect a.pa to b.pb;
+    }
+    """
+    by_id = {n["id"]: n for n in _build_view_ir(text)["nodes"]}
+    assert by_id["$root::Pw"]["port_side"] == "left"

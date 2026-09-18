@@ -26,6 +26,15 @@ _PORT_NODE_TYPES = {"port_usage", "port_def"}
 _PORT_SIZE = 14
 _PORT_GAP = 6
 
+# ポートを親のどちら側の辺に置くかを決めるとき、票を持つエッジ種別
+# （`semantic_model.py`の`build_relation_edges`が出す10種のうち）。
+# **ポートに物理的に刺さる線だけ**を数える。`connect`/`bind`は`connection`、
+# アイテムフローは`flow`。型付け（`feature_typing`）・継承系・要求トレース
+# （`satisfy`/`verify`）・振る舞いの順序（`transition`/`succession`）は
+# モデル上の関係であって配線ではないので数えない（詳しい経緯は
+# `port_edge_partners`を組み立てている箇所のコメント）。
+_PORT_SIDE_EDGE_KINDS = frozenset({"connection", "flow"})
+
 
 def _leaf_size(label: str) -> Tuple[int, int]:
     width = max(_MIN_WIDTH, len(label) * _CHAR_WIDTH + 2 * _PADDING)
@@ -258,8 +267,24 @@ def build_view_ir(graph_ir: Dict, collapsed_ids=None, pinned_positions=None) -> 
     # 短くなる側へ）。全rootのplace()が完了し、全ノードの座標が
     # 確定した後でなければ接続先の位置が分からないため、ここでまとめて
     # 処理する。
+    # **配線されるエッジだけを数える。** 当初は全エッジを見ていたが、そうすると
+    # ポートの**型**（`port po : Pw;` の `feature_typing` エッジ）が左右の判定に
+    # 票を投じてしまう。`port def` は普通パッケージ直下に置かれるので、その
+    # ボックスは深く入れ子になったポートから見て常に同じ方向にあり、本物の接続の
+    # 判定を押し切ることがある（2026-09-18のユーザー報告「階層をまたぐポートが
+    # 右へ動かないことがある」の原因）。実測した例では、本物の接続は左を
+    # 52対54で選んでいたのに、型エッジが右を60対46で選び、合計112対100で
+    # 右に決まっていた。
+    #
+    # 型・継承・要求トレースはモデル上の関係であって、ポートに刺さる線ではない。
+    # 配線が無いポートはどちらの辺に置いても線は短くならないので、既定の左でよい。
+    #
+    # 既存テストがこれを捕まえられなかったのは、どれも型無しのポート
+    # （`port leftish;`）を使っていたため。実モデルのポートはほぼ必ず型を持つ。
     port_edge_partners: Dict[str, List[str]] = {}
     for edge in graph_ir["edges"]:
+        if edge.get("kind") not in _PORT_SIDE_EDGE_KINDS:
+            continue
         port_edge_partners.setdefault(edge["from"], []).append(edge["to"])
         port_edge_partners.setdefault(edge["to"], []).append(edge["from"])
 
@@ -282,6 +307,12 @@ def build_view_ir(graph_ir: Dict, collapsed_ids=None, pinned_positions=None) -> 
         w, h = sizes[anchor_id]
         return x, y, w, h
 
+    # **各ポートを独立に決める。** 相手ポートの仮配置を見て測り直す2巡目を
+    # 試したが（2026-09-18）、互いに繋がった2つのポートが相手の1巡目の位置を
+    # 見て揃って反対側へ移り、結果として線が伸びた（実測: 68 → 116）。
+    # 相互に繋がるポート対の最短化は「両方を同じ側へ」という**連立した**判断で
+    # あって、片方ずつ貪欲に決める形では表現できない。ここは独立判断のままにし、
+    # 限界はCOVERAGE.md §6に記録してある。
     def _preferred_side(port_id: str, parent_x: float, parent_width: float) -> str:
         partner_rects = [
             rect
