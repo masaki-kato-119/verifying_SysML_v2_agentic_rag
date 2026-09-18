@@ -12,7 +12,7 @@
   片方だけ移すと二重実装になるため、全ノード分をここで一度に計算して返す。
 """
 
-from typing import Dict, List
+from typing import Dict, List, Optional, Set
 
 # 影響が伝播する向きはエッジ種別ごとに違う。`semantic_model.py`の`_make_edge`は
 # from=宣言している側・to=参照先 でエッジを作るので、種別によって辿る向きが変わる。
@@ -63,6 +63,69 @@ def impact_origin_id(element_id: str) -> str:
         return ""
     separator = element_id.find("/")
     return element_id if separator == -1 else element_id[:separator]
+
+
+def _parent_element_id(element_id: str) -> str:
+    """idの末尾の1階層を落とす。区切りは`::`（名前付きの入れ子）と`/`（無名ノード）。"""
+    cut = max(element_id.rfind("::"), element_id.rfind("/"))
+    return "" if cut <= 0 else element_id[:cut]
+
+
+def resolve_finding_node_id(element_id: str, node_ids: Set[str]) -> Optional[str]:
+    """Findingを、**実際に描画されているノード**のidへ寄せる（無ければNone）。
+
+    `impact_origin_id`と混同しないこと。あちらは最初の`/`より前を無条件に取る。
+    影響範囲の起点としてはそれでよいが、「この指摘はどの箱のものか」の答えとしては
+    **切りすぎる**。
+
+    2026-09-18にコーパスで実測して判明した落とし穴: `/`を含むidが描画される
+    ノードのidであることが普通にある。例えば
+    `...::home_b/port_usage#0::commandReceived` はそれ自体が描画される
+    `commandReceived`というノードで、無条件に最初の`/`で切ると、指摘の主語では
+    なく数階層上の`home_b`に色が付く。`/`を含むFinding 231件のうち**172件**が
+    この形だった（＝寄せなくても既に正しく当たっていた）。
+
+    したがって手順は「自分自身が描画ノードならそれ。違えば、描画ノードに当たる
+    まで末尾から1階層ずつ落とす」。当たらなければNoneで、**無理にどこかへ
+    結び付けない**（無関係な要素が指摘を持っているように見える方が、
+    フィルタに載らないことより悪い）。
+    """
+    if not element_id:
+        return None
+    current = element_id
+    while current:
+        if current in node_ids:
+            return current
+        current = _parent_element_id(current)
+    return None
+
+
+def attach_owner_element_ids(findings: List[Dict], node_ids: Set[str]) -> List[Dict]:
+    """各Findingに`owner_element_id`（描画されるノードのid、無ければNone）を足す。
+
+    「このFindingはどの要素のものか」という問いは、影響範囲の起点だけでなく
+    **図上のオーバーレイと重要度フィルタ**でも必要になる。この2つは長らく
+    `element_id`をそのまま使っており、要素の中の参照に付いたFindingに対して
+    黙って何もしていなかった（2026-09-18に実測して判明）。同じ寄せを3箇所で
+    書き分けると片方だけ直す事故が起きるので、バックエンドで一度だけ解決する。
+
+    コーパス実測（2026-09-18、819ファイル・1,414 Finding）:
+
+    | element_idの形 | 件数 | 割合 | 図のノードに当たるか |
+    |---|---:|---:|---|
+    | `/`を含まない | 1,013 | 71.6% | 700件が当たる（残りはimport先など実在しない名前） |
+    | `/`を含む | 231 | 16.3% | 172件は元から当たる。残り59件をこの関数が救う |
+    | 空 | 170 | 12.0% | 当たらない。ほぼ単一ルール由来（下記） |
+
+    空の170件は169件が`_check_conjugated_port_typing`由来で、`source_range`も
+    持たないため図にもテキストにも出ない。ルール側の問題なのでここでは扱わない
+    （COVERAGE.md §6に記録）。
+    """
+    for finding in findings:
+        finding["owner_element_id"] = resolve_finding_node_id(
+            finding.get("element_id") or "", node_ids
+        )
+    return findings
 
 
 def build_impact_adjacency(edges: List[Dict]) -> Dict[str, Dict[str, set]]:

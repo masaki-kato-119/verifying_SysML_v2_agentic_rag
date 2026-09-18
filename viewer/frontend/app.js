@@ -255,6 +255,12 @@ function renderDiagram(svg) {
 const SEVERITY_RANK = { error: 3, warning: 2, info: 1 };
 const RANK_TO_CLASS = { 3: "finding-error", 2: "finding-warning", 1: "finding-info" };
 
+// Findingを図上のノードidへ寄せる。バックエンドが解決した`owner_element_id`を
+// 使い、無い場合（古い応答など）だけ生のelement_idへ落とす。
+function findingOwnerId(finding) {
+  return finding.owner_element_id || finding.element_id || null;
+}
+
 function applyFindingsOverlay(findings) {
   document.querySelectorAll("#diagram-container .sysml-node").forEach((el) => {
     el.classList.remove("finding-error", "finding-warning", "finding-info");
@@ -262,10 +268,16 @@ function applyFindingsOverlay(findings) {
 
   const worstRankByElement = new Map();
   for (const finding of findings) {
-    if (!finding.element_id) continue; // 対象外ノード種別を指すfindingは図上には出さない（6.2節）
+    // `owner_element_id`はバックエンドが解決済みの「図上のどのノードのものか」
+    // （viewer/impact.pyのattach_owner_element_ids）。element_idは要素そのもの
+    // ではなく**その中の参照**を指すことがあり、その値はどのノードにも一致しない。
+    // ここで生のelement_idを使っていたため、参照ノードに付いた指摘（実測で
+    // 全体の16.3%）は図上に色が付いていなかった。
+    const elementId = findingOwnerId(finding);
+    if (!elementId) continue; // どのノードにも結び付かないfindingは図上には出さない（6.2節）
     const rank = SEVERITY_RANK[finding.severity] || 0;
-    const current = worstRankByElement.get(finding.element_id) || 0;
-    if (rank > current) worstRankByElement.set(finding.element_id, rank);
+    const current = worstRankByElement.get(elementId) || 0;
+    if (rank > current) worstRankByElement.set(elementId, rank);
   }
 
   for (const [elementId, rank] of worstRankByElement) {
@@ -279,9 +291,13 @@ function applyFindingsOverlay(findings) {
 function applyNodeFilters() {
   const severitiesByElement = new Map();
   for (const finding of latestFindings) {
-    if (!finding.element_id) continue;
-    if (!severitiesByElement.has(finding.element_id)) severitiesByElement.set(finding.element_id, new Set());
-    severitiesByElement.get(finding.element_id).add(finding.severity);
+    // オーバーレイと同じ寄せを使う（findingOwnerId）。生のelement_idで
+    // 突き合わせていたため、参照ノードに付いた指摘に対して重要度フィルタが
+    // 黙って効いていなかった。
+    const elementId = findingOwnerId(finding);
+    if (!elementId) continue;
+    if (!severitiesByElement.has(elementId)) severitiesByElement.set(elementId, new Set());
+    severitiesByElement.get(elementId).add(finding.severity);
   }
 
   document.querySelectorAll("#diagram-container .sysml-node").forEach((el) => {

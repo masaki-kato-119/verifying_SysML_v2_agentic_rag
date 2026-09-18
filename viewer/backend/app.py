@@ -32,7 +32,7 @@ from viewer.graph_ir import (
     VIEW_TYPE_STRUCTURE,
     build_graph_ir,
 )
-from viewer.impact import build_impact_map
+from viewer.impact import attach_owner_element_ids, build_impact_map
 from viewer.svg_renderer import render_svg
 from viewer.view_ir import build_flow_view_ir, build_view_ir
 
@@ -104,6 +104,14 @@ def get_model(request: ModelRequest) -> ModelResponse:
         )
     except ValueError as e:
         return ModelResponse(view_type_error=str(e))
+
+    # `owner_element_id`（図上のどのノードのものか）をここで一度だけ解決して
+    # フロントへ渡す。図のオーバーレイと重要度フィルタの両方が必要とするので、
+    # app.js側で個別に寄せると片方だけ直す事故が起きる（実際に起きていた）。
+    # **Graph IRを組んだ後**でなければ解決できない――「描画されるノードの集合」
+    # そのものが判定材料だからで、view_typeによって集合が変わるのもそのまま
+    # 正しい（そのビューに出ていないノードへ寄せても意味がない）。
+    attach_owner_element_ids(findings, {node["id"] for node in graph_ir["nodes"]})
     # 表現力強化Stage 3, Group B f4 / Group C g3: state_machine/activityは
     # 入れ子矩形（包含関係の表現）ではなく層状（フロー）レイアウトを使う。
     # 手動配置は2026-09-18に対応した（それまでこの2ビューだけドラッグしても
@@ -169,6 +177,11 @@ def post_apply_fix(request: ApplyFixRequest) -> Dict[str, Any]:
         "applied": True,
         "text": new_text,
         "ast_error": None,
+        # ここには`owner_element_id`を付けない。あれは「描画されるノードの集合」に
+        # 対してしか解決できず（viewer/impact.pyの`resolve_finding_node_id`）、
+        # この経路はGraph IRを組まないし、どのビューで見ているかも知らない。
+        # プレビューは件数の増減しか見ないので足りている。図に出す必要が出たら、
+        # view_typeを受け取ってGraph IRを組むところから足すこと。
         "findings": [issue.to_dict(element_index) for issue in issues],
     }
 

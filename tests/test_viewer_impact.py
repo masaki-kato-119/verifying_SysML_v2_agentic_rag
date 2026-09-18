@@ -9,10 +9,12 @@ from __future__ import annotations
 
 from viewer.impact import (
     IMPACT_DEPTH,
+    attach_owner_element_ids,
     build_impact_adjacency,
     build_impact_map,
     find_impacted_elements,
     impact_origin_id,
+    resolve_finding_node_id,
 )
 
 
@@ -90,3 +92,63 @@ def test_build_impact_map_covers_every_graph_node():
     assert [i["id"] for i in impact["Base"]] == ["Derived"]
     assert impact["Derived"] == []
     assert impact["lonely"] == []
+
+
+
+
+# --- Findingを図上のノードへ寄せる（2026-09-18） --------------------------
+#
+# 図のオーバーレイと重要度フィルタが生の`element_id`で突き合わせており、
+# 描画ノードに当たらないFindingに対して黙って何もしていなかった。
+
+
+def test_finding_on_a_rendered_node_resolves_to_itself():
+    assert resolve_finding_node_id("$root::A::g", {"$root::A::g", "$root::A"}) == "$root::A::g"
+
+
+def test_finding_on_an_inner_reference_resolves_to_the_nearest_rendered_ancestor():
+    """`<所有者>/<型>#<連番>` 形は描画されないので、所有者まで上がる。"""
+    node_ids = {"$root::A::g", "$root::A"}
+    assert resolve_finding_node_id("$root::A::g/name_ref#0", node_ids) == "$root::A::g"
+
+
+def test_an_id_containing_a_slash_is_kept_when_it_is_itself_rendered():
+    """**これが2026-09-18に実測で見つかった落とし穴。** `/`を含むidが描画される
+    ノードのidであることは普通にある（コーパスの`/`付きFinding 231件中172件）。
+    無条件に最初の`/`で切ると、指摘の主語ではなく数階層上の祖先に色が付く。
+    """
+    rendered = "$root::S::home_b/port_usage#0::commandReceived"
+    node_ids = {rendered, "$root::S::home_b", "$root::S"}
+    assert resolve_finding_node_id(rendered, node_ids) == rendered
+    # impact_origin_id はここでは使えない（切りすぎる）ことを併記しておく。
+    assert impact_origin_id(rendered) == "$root::S::home_b"
+
+
+def test_resolution_walks_up_through_both_separator_kinds():
+    """`::`（名前付きの入れ子）と`/`（無名ノード）のどちらも1階層として辿る。"""
+    node_ids = {"$root::S::home_b"}
+    assert (
+        resolve_finding_node_id("$root::S::home_b/port_usage#0::x::y", node_ids)
+        == "$root::S::home_b"
+    )
+
+
+def test_resolution_is_none_when_nothing_matches():
+    """寄せ先が無いものを無理に結び付けない。無関係な要素が指摘を持っている
+    ように見える方が、フィルタに載らないことより悪い。"""
+    assert resolve_finding_node_id("$root::NoSuchPackage", {"$root::A"}) is None
+    assert resolve_finding_node_id("", {"$root::A"}) is None
+
+
+def test_attach_owner_element_ids_fills_the_field_for_every_finding():
+    node_ids = {"$root::A::g", "$root::A"}
+    findings = [
+        {"element_id": "$root::A::g/name_ref#0", "severity": "error", "rule": "_check_x"},
+        {"element_id": None, "severity": "warning"},
+        {"element_id": "$root::Nowhere", "severity": "info"},
+    ]
+    attach_owner_element_ids(findings, node_ids)
+    assert [f["owner_element_id"] for f in findings] == ["$root::A::g", None, None]
+    # 元のフィールドは触らない（source_range等の対応付けに要る）。
+    assert findings[0]["element_id"] == "$root::A::g/name_ref#0"
+    assert findings[0]["rule"] == "_check_x"

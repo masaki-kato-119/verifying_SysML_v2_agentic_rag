@@ -55,6 +55,43 @@ def test_model_endpoint_returns_findings_with_element_id_and_source_range():
     assert finding["source_range"] is not None
 
 
+def test_model_endpoint_resolves_each_finding_to_the_node_it_belongs_to():
+    """図のオーバーレイと重要度フィルタが使う`owner_element_id`を必ず返す
+    （2026-09-18）。Findingは要素そのものではなくその中の参照に付くことが
+    あり、その場合`element_id`はどの描画ノードにも一致しない。
+
+    `f::a` は accessible feature path のルールが参照ノードに指摘を付ける形。
+    """
+    response = client.post(
+        "/api/model",
+        json={"text": "package P { part def F { part a; } part f : F; part g = f::a; }"},
+    )
+    findings = response.json()["findings"]
+
+    assert findings, "この入力は少なくとも1件の指摘を出すはず"
+    for finding in findings:
+        assert "owner_element_id" in finding
+    inner = [f for f in findings if f["element_id"] and "/" in f["element_id"]]
+    assert inner, "参照ノードに付いた指摘が含まれているはず（このテストの前提）"
+    for finding in inner:
+        # 所有者側は`/`を含まない＝Graph IRに出るノードのid。
+        assert finding["owner_element_id"] == finding["element_id"].split("/", 1)[0]
+        assert "/" not in finding["owner_element_id"]
+
+
+def test_owner_element_id_is_only_resolved_against_nodes_the_view_actually_draws():
+    """検証ビューは構造ビューの部分集合なので、解決先もそのビューの集合に従う。
+    そのビューに出ていないノードへ寄せても、フロント側で当たらないだけになる。
+    """
+    text = "package P { part def F { part a; } part f : F; part g = f::a; }"
+    for view_type in ("structure", "verification"):
+        data = client.post("/api/model", json={"text": text, "view_type": view_type}).json()
+        node_ids = {n["id"] for n in data["graph_ir"]["nodes"]}
+        for finding in data["findings"]:
+            owner = finding["owner_element_id"]
+            assert owner is None or owner in node_ids
+
+
 def test_model_endpoint_reports_parse_error_without_crashing():
     response = client.post("/api/model", json={"text": "this is not valid sysml {{{"})
     assert response.status_code == 200
