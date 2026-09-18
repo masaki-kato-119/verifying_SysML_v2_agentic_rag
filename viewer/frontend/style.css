@@ -135,6 +135,28 @@ html, body {
   outline-offset: -2px;
 }
 
+/* 図が古いことの表示（2026-09-18）。構文エラー中は直前に成功した図を出し
+   続ける設計（実装仕様書8.4節）だが、それを黙ってやると「タブを押しても
+   何も切り替わらない」という壊れた挙動にしか見えない。構想書§12-6
+   Graceful incompleteness が求める「何が最新の確定モデルで何が未確定か」の
+   区別を、図の側にも出す。 */
+#stale-banner {
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 4px 8px;
+  margin-bottom: 4px;
+  background: #fff4e5;
+  border: 1px solid #e8a33d;
+  border-radius: 3px;
+  color: #6b4400;
+}
+
+#stale-banner .stale-detail {
+  color: #8a6a2f;
+  font-family: ui-monospace, "Consolas", monospace;
+  word-break: break-all;
+}
+
 /* 型/重要度フィルタ（Group2 b9, V3）。Graph IR/View IR自体は変更せず、
    描画済みSVGノードの表示/非表示だけをJSで切り替える。 */
 #filter-controls {

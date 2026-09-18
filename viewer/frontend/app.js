@@ -1019,6 +1019,35 @@ function updateErrorMarkers(message) {
   monaco.editor.setModelMarkers(model, "sysml", markers);
 }
 
+// 構文エラー中であることを図の側にも出す（2026-09-18）。
+//
+// 8.4節の「直前に成功した図を維持する」挙動そのものは正しいが、**黙って**
+// 維持していたため、ビュータブを押しても図が変わらないのが「タブが壊れて
+// いる」ようにしか見えなかった（ユーザー報告）。唯一の手がかりは
+// console.warn とエディタ側の赤い波線だけで、Diagramペインには何も出ない。
+// 構想書§12-6 Graceful incompleteness は「何が最新の確定モデルで何が未確定か
+// を区別して扱う」ことを求めているので、その区別を図の側にも表示する。
+function renderStaleBanner(astError) {
+  const banner = document.getElementById("stale-banner");
+  if (!banner) return;
+  if (!astError) {
+    banner.hidden = true;
+    banner.textContent = "";
+    return;
+  }
+  banner.textContent = latestModel
+    ? "⚠ テキストをパースできないため、図は直前に成功した内容のままです。ビューを切り替えても変わりません。"
+    : "⚠ テキストをパースできないため、まだ図を描けません。";
+  // エラー本文は長く、`; `区切りで複数のエラーが連なることがある
+  // （parse_sysmlの契約）。先頭の1件だけ出し、全文はエディタ側の
+  // マーカーに任せる。
+  const detail = document.createElement("div");
+  detail.className = "stale-detail";
+  detail.textContent = String(astError).split("; ")[0];
+  banner.appendChild(detail);
+  banner.hidden = false;
+}
+
 function onModelUpdated(data) {
   if (data.ast_error) {
     // 8.4節: 構文エラー時は直前成功時のgraph_ir/view_ir/svg表示を維持する
@@ -1029,9 +1058,11 @@ function onModelUpdated(data) {
       renderDiagram("");
     }
     updateErrorMarkers(data.ast_error);
+    renderStaleBanner(data.ast_error);
     console.warn("パースエラー:", data.ast_error);
     return;
   }
+  renderStaleBanner(null);
   latestModel = data;
   latestFindings = data.findings || [];
   updateErrorMarkers(null);
