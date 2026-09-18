@@ -1,11 +1,17 @@
 # SysML v2 Viewer 対応状況
 
-このドキュメントは、`viewer/` のSysML v2ビュアーが現時点（2026-09-04、表現力強化
-Stage 0〜3 ＋ h1〜h7 完了時点）で「何を表示し、何を表示しないか」を示す。
-実装（`viewer/graph_ir.py`・`viewer/view_ir.py`・`viewer/svg_renderer.py`、および
-関連抽出元の `sysml_v2_checker_advanced/semantic_model.py`）を根拠に記載しており、
+このドキュメントは、`viewer/` のSysML v2ビュアーが現時点（2026-09-18、表現力強化
+Stage 0〜3 ＋ h1〜h7、および構想書 Phase C・Phase D 完了時点）で
+「何を表示し、何を表示しないか」「検証結果に対して何ができるか」を示す。
+実装（`viewer/graph_ir.py`・`viewer/view_ir.py`・`viewer/svg_renderer.py`・
+`viewer/impact.py`・`viewer/apply_fix.py`・`viewer/backend/app.py`、および
+関連抽出元の `sysml_v2_checker_advanced/semantic_model.py`・`lint_issue.py`・
+`fix_candidates.py`）を根拠に記載しており、
 企画段階の仕様書（`SysMLv2_Viewer_構想書.md`等、gitignore対象の内部ドキュメント）とは
 表記が食い違う箇所があるため、実装の実態を優先して書いている。
+
+§1〜§4 が描画（何が図に出るか）、§5 が検証結果まわり（Findingに対して何ができるか）、
+§6 以降が未対応項目とスコープ方針である。
 
 ## 1. 要素間の関連（エッジ）は表示されるか
 
@@ -107,7 +113,104 @@ Stage 0〜3 ＋ h1〜h7 完了時点）で「何を表示し、何を表示し�
 - **角丸ノード（Stage 3）**: `state_def`/`state_usage`/`action_def`/`action_usage`は
   UML/SysML慣習に合わせ角丸矩形で描く。
 
-## 5. 対応していないもの
+## 5. 検証結果（Finding）まわりでできること
+
+ここは描画ではなくレビュー支援側の能力で、構想書 Phase C（Verification Review）と
+Phase D（AI-assisted Editing）で入った。
+
+### 5.1 Findingの取得と図上への反映
+
+`/api/model` が `findings`（`LintIssue.to_dict()` の配列）を返し、重大度ごとに図上へ
+オーバーレイする。`view_type="verification"`（§3）はFindingが付いた要素を起点に
+範囲を絞ったビューである。
+
+**Findingは要素そのものとは限らない場所に付く。** 要素の中の参照（無名ノード、
+idは`<所有者のid>/<型>#<連番>`）に付くことがあり、そのidはGraph IRに存在しない。
+インスペクタ表示と検証ビューの起点はどちらも `impact_origin_id()` で所有者へ
+寄せてから扱う（寄せずに扱っていた時期があり、`_check_import`のように730件中
+146ファイルで発火するルールの指摘が丸ごと落ちていた）。
+
+### 5.2 確信度（confidence）
+
+`LintIssue.to_dict()` の `confidence` が、そのルールが参照実装とどれだけ一致したかの
+**実測値**を返す（`sysml_v2_checker_advanced/rule_confidence.json` に同梱）。
+`{value, sole_agree, sole_disagree, basis, caveat, measured_at}` の形で、
+値だけを切り出せないよう根拠と但し書きを必ず同じ辞書に入れて返す。
+
+- 供給源は730件コーパス×参照実装の実測のみ。LLMにもヒューリスティックにも由来しない。
+- `value` は「参照実装も同じファイルを不正と判定した割合」であって
+  「同じ箇所を同じ理由で指摘した割合」ではない。**一致率の上限**であり真の精度ではない。
+- 単独発火が閾値に満たないルールは `null`。**推定で埋めない**（「未測定」と
+  「測ったが低い」を混同させないため）。インスペクタは未測定をそう明示する。
+
+### 5.3 影響範囲
+
+`viewer/impact.py`。Findingを起点に、解決済みエッジを**有向**にBFSで2次
+（`IMPACT_DEPTH`）まで辿る。伝播方向はエッジ種別ごとに違う（`IMPACT_DIRECTION`）:
+
+| 種別 | 向き | 理由 |
+|---|---|---|
+| `specialization`／`subsetting`／`redefinition`／`feature_typing` | 逆 | 宣言は参照先に依存する（`x : T` のTが変われば x が影響を受ける） |
+| `satisfy`／`verify` | 逆 | `by`側が変われば充足・検証の主張が影響を受ける |
+| `transition`／`succession`／`flow` | 順 | from=source なのでエッジの向きがそのまま |
+| `connection` | 無向 | どちらが上流とも言えない |
+
+未知の種別は無向として扱う（取りこぼすより広く見せる方が用途上安全側）。
+`/api/model` が `impact` として全ノード分をまとめて返す。
+2026-09-14に`app.js`から移設し、方向づけの表ごと `tests/test_viewer_impact.py` で固定した。
+
+### 5.4 修正候補
+
+`sysml_v2_checker_advanced/fix_candidates.py`。形は
+`{title, detail, edit: {find, replace}, caveat}`。
+
+**方針: 書き換え方が一意に決まるルールにだけ付ける。** もっともらしいだけの候補は
+指摘そのものの信頼を削るので、候補が書けないルールは `suggestion=None` のままにする。
+現在候補を持つのは3つ:
+
+| ルール | 候補 |
+|---|---|
+| `_check_accessible_feature_paths` | 不正な`::`境界を`.`へ |
+| interface／allocation usage の種別エラー | 期待する種別のdefinitionでの型付けへ（同一ファイル内に候補が1つだけのときのみ。複数あれば一意に決まらないので候補なし） |
+| `_check_package_level_feature_redefinition` | `redefines` → `subsets`（**意味が変わる**ので但し書き付き） |
+
+MCPサーバ経由の利用者にもそのまま届く（`GraphRAG/mcp_server.py` の
+`_format_lint_issue` が `suggestion` を通す）。
+
+### 5.5 候補の適用（Phase D）
+
+**プレビューと確定を必ず2段に分ける。** 「適用した場合を確認」を押すと
+`/api/apply-fix` が適用済みテキストを作り、`/api/model` と同じ経路で再パース・
+再検証して返す。UIは「指摘 N件 → M件」を見せ、そのうえで適用するかを利用者が決める
+（構想書§12-5 Human authority）。**適用すると壊れる候補**（当てた結果パースできなく
+なるもの）も `ast_error` としてそのまま見せる。
+
+適用契約（`viewer/apply_fix.py`）: Findingの`source_range`が示す範囲内に現れる
+最初の`find`を`replace`に置き換える。範囲を限るので、同じ文字列がファイル中の別の
+場所にあっても巻き込まない。なお`end_offset`は**終端の文字を含む**ので、
+Pythonのスライスは`[start_offset : end_offset + 1]`である。
+
+### 5.6 レビュー状態と履歴
+
+Open／Accepted／Resolved／False-Positive の状態遷移と履歴を持つが、
+**保存先はブラウザの`localStorage`だけである。** サーバー側永続化は見送った
+（c5、2026-09-07のユーザー判断。Viewerの位置づけがローカル開発ツールであるため）。
+したがってブラウザ・端末をまたいで引き継がれず、レビュアー間でも共有されない。
+手動ドラッグ配置（`pinned_positions`）とビュー状態も同じくlocalStorageに載る。
+
+### 5.7 RAG連携
+
+- `/api/related-concepts` — 選択要素の型・ラベルでGraphRAGを引き、関連概念を返す。
+- `/api/explain` — 選択要素やFindingの説明をLLMで生成する。**実課金**なので
+  選択のたびに自動では走らせず、明示的な要求時のみ呼ぶ。引用は決定的に付ける。
+
+いずれも直接importではなく**MCP stdio経由**で呼ぶ。README が
+`HybridRAG/rag/`・`GraphRAG/graphrag/` 配下を内部実装と明記しており、
+公開契約はMCPサーバの側だからである（Group4 b15の判断）。
+
+## 6. 対応していないもの
+
+### 描画
 
 - **合成／共有集約の菱形記法**: `end`ごとのaggregation kindがそもそもパースされて
   いないため、区別に必要な情報がAST側に無い（h6で明示的に見送り。新たなパーサー
@@ -125,7 +228,25 @@ Stage 0〜3 ＋ h1〜h7 完了時点）で「何を表示し、何を表示し�
 - **状態遷移図の疑似状態**: 初期状態の黒丸、終了状態の二重丸等の専用記号なし。
 - エッジの交差回避・経路最適化は行わない（直線で結び、交差は許容する）。
 
-## 6. スコープに関する方針
+### レビュー支援側
+
+- **レビュー状態のサーバー側永続化**: §5.6のとおり見送り（設計判断）。共同レビューや
+  端末をまたいだ継続はできない。
+- **意図からのパッチ生成**: 「この構成を冗長化したい」のような意図を起点に候補を
+  作る経路は無い。現在の修正候補はチェッカーのルールが機械的に組み立てたものだけで、
+  LLMは介在しない。構想書 Phase E（Generation Review Workbench）の範囲。
+- **複数候補の比較**: 1つのFindingに対する候補は最大1つで、複数案を並べて比べる
+  UIは無い。
+- **外部MBSEツールへの描画委任**: §7の位置づけが前提にしている「完成後の正式な
+  描画を外部ツールへMCP経由で委ねる」経路は、**まだ実装も実証もされていない**
+  （`mcp_servers.json` に該当サーバは無い）。多くの非目標がこの未検証の前提の上に
+  載っていることは意識しておくこと。
+- **フロントエンドの自動テスト**: `viewer/frontend/app.js` にJSのテスト基盤は入れて
+  いない（P2-Gの判断、2026-09-14）。検証手順はREADMEの「Viewerフロントエンドの
+  検証方針」に明文化してある。回帰を抱えたいロジックはPython側へ移す
+  （§5.3の影響範囲走査がその先例）。
+
+## 7. スコープに関する方針
 
 `SysMLv2_Viewer_構想書.md`§13（非目標）は「SysML v2のすべての表記・図法を一度に
 完全再現すること」を初期段階の非目標としている。さらに
@@ -138,10 +259,14 @@ Stage 0〜3 ＋ h1〜h7 完了時点）で「何を表示し、何を表示し�
 
 したがって新しい記法対応の採否は「見た目が正式記法にどれだけ近いか」ではなく、
 **「それを実施することで、人とAIが認識しなくてはいけないことが図で判断つくか」**
-の1点で判断する。§5の未対応項目は、この基準に照らして現時点で優先度が低いか、
-必要な情報がAST側に無いものである。
+の1点で判断する。§6の未対応項目（描画側）は、この基準に照らして現時点で優先度が
+低いか、必要な情報がAST側に無いものである。
 
-## 7. 拡張する場合の入り口
+なお**この基準が適用されるのは描画・記法の話に限る。** §5のレビュー支援側
+（確信度・影響範囲・修正候補）は「図で判断つくか」ではなく構想書§12の設計原則
+（4 Explain before persuade、5 Human authority）が採否の基準になる。
+
+## 8. 拡張する場合の入り口
 
 - 新しい関連種別の視覚表現を追加する場合: `svg_renderer.py`の`_KIND_MARKER`／
   `_KIND_DASH`にキーを足す（未知の種別は既定へフォールバックするため、
@@ -154,3 +279,16 @@ Stage 0〜3 ＋ h1〜h7 完了時点）で「何を表示し、何を表示し�
   `build_flow_view_ir`（層別フロー）の2アルゴリズムがある）。
 - ノードの形状を種別ごとに変える場合: `svg_renderer.py`の`_ROUNDED_NODE_TYPES`
   （角丸）や`_render_port_node`（ポート）が先例。
+- 修正候補を持つルールを増やす場合: 候補の文面と組み立ては
+  `sysml_v2_checker_advanced/fix_candidates.py` へ集約してあるので、そこへ
+  ビルダー関数を足し、ルール側は`LintIssue(..., suggestion=...)`と1行渡すだけにする
+  （ルール名キーの一覧表にしないのは、「そのルールが何を根拠に落としたか」を
+  知らないと作れない候補があるため。§5.4の`::`境界がその例）。適用経路（§5.5）は
+  `edit`さえ埋まっていればそのまま動くので、UI側の変更は要らない。
+- 影響の伝播方向を変える／エッジ種別を増やす場合: `viewer/impact.py`の
+  `IMPACT_DIRECTION`にキーを足す（未知の種別は無向へフォールバックするので、
+  足さなくても壊れない）。`tests/test_viewer_impact.py`が表ごと固定しているので、
+  変えたら期待値も一緒に動かすこと。
+- 確信度を測り直す場合: `scripts/recheck_local_only.py --rule-stats` →
+  `scripts/build_rule_confidence_table.py` で`rule_confidence.json`を作り直す。
+  チェッカー本体は`confidence`の有無に依存しないので、テーブルが無くても動く。
