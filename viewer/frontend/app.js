@@ -1076,7 +1076,12 @@ function setupViewTypeTabs() {
   const buttons = document.querySelectorAll(".view-type-tab");
   function refreshActiveState() {
     buttons.forEach((btn) => {
-      btn.classList.toggle("active", btn.dataset.viewType === currentViewType);
+      const selected = btn.dataset.viewType === currentViewType;
+      btn.classList.toggle("active", selected);
+      // 見た目（class）だけでなくaria-selectedも動かす。振る舞いは元から
+      // 排他選択なので、支援技術にも独立したボタン5個ではなくタブとして
+      // 伝わるようにする（2026-09-18）。
+      btn.setAttribute("aria-selected", String(selected));
     });
   }
   buttons.forEach((btn) => {

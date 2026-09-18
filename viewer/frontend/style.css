@@ -92,24 +92,47 @@ html, body {
 }
 
 /* ビュー切り替えタブ（Group2 b7, V1-2）。 */
+/* ビュー切り替えタブ（Group2 b7, V1-2）。振る舞いは元から排他選択なので、
+   見た目もタブに揃えた（2026-09-18）。1本の下線をタブ列全体で共有し、
+   選択中のタブだけがその線を自分の色で置き換える。
+   個別に枠線を持つボタンが並んでいると「押すたびに何かが起きる操作」に
+   見えるが、実際は「今どのビューを見ているか」の表示なので、タブの方が
+   振る舞いと合う。 */
 #view-type-tabs {
-  margin-bottom: 4px;
+  display: flex;
+  gap: 2px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid #ccc;
 }
 
 .view-type-tab {
   font-size: 12px;
-  padding: 2px 8px;
-  margin-right: 4px;
+  padding: 4px 10px;
   cursor: pointer;
-  border: 1px solid #666;
   background: transparent;
-  color: inherit;
+  color: #555;
+  border: none;
+  /* 下線は下端の1px罫と重ねる。太さが違うので、選択中のタブの線が
+     罫を覆う形になる。 */
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
 }
 
+.view-type-tab:hover:not(.active) {
+  color: #222;
+  background: #f0f0f0;
+}
+
+/* 選択状態は色と下線だけで示し、font-weightは変えない。太字にすると
+   タブ幅が変わって隣がずれ、切り替えるたびに列全体が動く。 */
 .view-type-tab.active {
-  background: #1a73e8;
-  color: white;
-  border-color: #1a73e8;
+  color: #1a73e8;
+  border-bottom-color: #1a73e8;
+}
+
+.view-type-tab:focus-visible {
+  outline: 2px solid #1a73e8;
+  outline-offset: -2px;
 }
 
 /* 型/重要度フィルタ（Group2 b9, V3）。Graph IR/View IR自体は変更せず、
