@@ -34,6 +34,16 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
+# 進捗表示を出力のリダイレクト先に依存させない（2026-09-24）。
+# Windowsではパイプへ書くときstdoutがロケールのcp932になり、出力文字列に
+# 含まれるem dash等をエンコードできずに**実行そのものが落ちる**。
+# 730件を23分かけて回すスクリプトが最初の進捗行で死ぬうえ、パイプ経由だと
+# 終了コードがtail側のものになって成功と見分けが付かない（実際に踏んだ）。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
