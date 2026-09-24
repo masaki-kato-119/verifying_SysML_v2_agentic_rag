@@ -23,8 +23,11 @@ EXPECTED_TOOLS = {
     "get_server_info",
 }
 
+# 2026-09-24: import 無しの組み込み型は参照実装0.62.0でエラー（Couldn't resolve reference to Type 'X'.）。
+# 正しいモデルとして使うため ScalarValues を import する
 VALID_SYSML_TEXT = """
 package SimpleTest {
+    private import ScalarValues::*;
     part def SimplePart {
         attribute name : String;
     }

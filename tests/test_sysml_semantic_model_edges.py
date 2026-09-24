@@ -93,13 +93,20 @@ def test_builtin_type_reference_is_unresolved_external():
     linter自身がエラー扱いしない参照のため resolution_status は
     "unresolved_external"（拡張仕様書8.2章）。
     """
-    _, model = build_semantic_model(_SAMPLE.strip())
+    # 2026-09-24: import 無しの組み込み型は参照実装0.62.0でエラー（Couldn't resolve reference to Type 'X'.）。
+    # import していれば external、していなければ lint と同じくエラー
+    imported = _SAMPLE.strip().replace("package Vehicle {", "package Vehicle { private import ScalarValues::*;", 1)
+    _, model = build_semantic_model(imported)
     edge = next(e for e in model["edges"] if e["from_id"] == "$root::Machine::mass")
     assert edge["kind"] == "feature_typing"
     assert edge["reference_text"] == "Real"
     assert edge["resolved"] is False
     assert edge["to_id"] is None
     assert edge["resolution_status"] == "unresolved_external"
+
+    _, model = build_semantic_model(_SAMPLE.strip())
+    edge = next(e for e in model["edges"] if e["from_id"] == "$root::Machine::mass")
+    assert edge["resolution_status"] == "unresolved_error"
 
 
 def test_resolved_edge_has_resolved_status():

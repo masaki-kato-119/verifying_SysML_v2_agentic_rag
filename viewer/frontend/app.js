@@ -2,7 +2,10 @@
 // 素のHTML+JS+Monaco Editor（CDN）構成。ビルドツールを使わない
 // （2026-09-03、va11でユーザー確認の上決定）。
 
+// Real は ScalarValues の型で、import しないと参照実装でもリンターでもエラーになる
+// （2026-09-24 からリンターも参照実装に合わせて報告する）。
 const DEFAULT_TEXT = `package Vehicle {
+    private import ScalarValues::*;
     part def Machine {
         attribute mass : Real;
     }

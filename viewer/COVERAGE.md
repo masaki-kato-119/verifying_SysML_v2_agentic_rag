@@ -202,6 +202,13 @@ idは`<所有者のid>/<型>#<連番>`）に付くことがあり、そのidはG
 結び付くFindingは **872件 → 1,242件**（+370）になり、**元から正しく当たっていた
 ものが別ノードへ移った件数は0**。
 
+**Findingの中身はチェッカーの判定そのもの**なので、チェッカーが参照実装に
+寄せると図上の表示も変わる。2026-09-24から、import していない組み込み型
+（`attribute mass : Real;` で ScalarValues を import していない）と存在しない
+attribute の型は **error** として出る（以前は無指摘か warning。参照実装0.62.0は
+どちらもエラー）。エディタの初期サンプル（`app.js` の `DEFAULT_TEXT`）も
+`private import ScalarValues::*;` を持つ形に直した。
+
 ### 5.2 確信度（confidence）
 
 `LintIssue.to_dict()` の `confidence` が、そのルールが参照実装とどれだけ一致したかの

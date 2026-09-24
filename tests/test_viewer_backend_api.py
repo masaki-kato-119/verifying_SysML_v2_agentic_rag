@@ -25,7 +25,9 @@ def test_health_endpoint():
 
 
 def test_model_endpoint_returns_full_pipeline_output():
-    response = client.post("/api/model", json={"text": "package P { part def A { attribute x : Real; } }"})
+    # 2026-09-24: import 無しの組み込み型は参照実装0.62.0でエラー（Couldn't resolve reference to Type 'X'.）
+    text = "package P { private import ScalarValues::*; part def A { attribute x : Real; } }"
+    response = client.post("/api/model", json={"text": text})
     assert response.status_code == 200
 
     data = response.json()

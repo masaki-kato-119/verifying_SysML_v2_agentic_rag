@@ -3479,7 +3479,15 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # `**`べき乗演算子の追加（2026-08-29）により`::**`は単一の`**`
         # トークンとしてレキシングされうるため、`*`単体だけでなく`**`も
         # ワイルドカードとして検出する。
-        is_wildcard = any(child.getText() in ("*", "**") for child in ctx.getChildren())
+        child_texts = [child.getText() for child in ctx.getChildren()]
+        is_wildcard = any(text in ("*", "**") for text in child_texts)
+        # `::**`（再帰import）は`::*`と違い、定義のメンバーまで持ち込む。リンターは
+        # 標準ライブラリの`::*`なら中身を索引で列挙できるが、`::**`は列挙できない
+        # ので区別が要る（2026-09-24）。`**`トークンと`'*' '*'`の2通りでレキシング
+        # されうる。
+        is_recursive = "**" in child_texts or any(
+            a == "*" and b == "*" for a, b in zip(child_texts, child_texts[1:])
+        )
         visibility_ctx = ctx.visibilityIndicator()
         # `import vehicle::**[@Safety and ...];`のように、ワイルドカード
         # 直後にブラケット付きインラインフィルタ式が続くこともある
@@ -3498,6 +3506,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             # exact-equality辞書テストを壊さないよう、無い場合はキー自体を
             # 省略する。
             **({"isAll": True} if ctx.isAll is not None else {}),
+            # 既存のexact-equality辞書テストを壊さないよう、再帰でなければ省略する
+            **({"recursive": True} if is_recursive else {}),
             # `private import ScalarValues::Integer { doc /* ... */ }`の
             # ように、`;`終端だけでなくdocコメントのみのbody形も持ちうる
             # （2026-08-29、730件ベースライン154件エラー要因分析で発見）。

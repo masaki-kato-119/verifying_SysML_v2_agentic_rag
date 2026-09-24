@@ -87,6 +87,9 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         # 同: `import Objects::*;`のように中身の見えないパッケージからの
         # ワイルドカードimportがあるか（あれば未解決の非修飾名の不在は証明できない）。
         self.has_opaque_wildcard_import: bool = False
+        # 標準ライブラリからの import で、このファイルに見えている名前 → 宣言の種別。
+        # 索引（library_index.json）で中身を列挙できる import だけから作る。
+        self.library_visible_names: Dict[str, str] = {}
         self.types: Set[str] = BUILTIN_TYPES.copy()  # 組み込み型
         self.connections: List[Dict] = []
         self.requirements: List[Dict] = []
@@ -131,7 +134,12 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         self.issues = []
         self.symbols = {}
         self.element_refs = {}
-        self.types = BUILTIN_TYPES.copy()
+        # 組み込み型（Boolean・Real 等、ScalarValues の型）は、import か修飾で
+        # 見えているときだけ有効にする。参照実装は import 無しの `Boolean` を
+        # `Couldn't resolve reference to Type 'Boolean'.` とする（2026-09-24実測）。
+        # 見えているかは import から求める（_collect_library_visible_names）。
+        self.library_visible_names = self._collect_library_visible_names(ast)
+        self.types = {t for t in BUILTIN_TYPES if t in self.library_visible_names}
         if known_external_types:
             self.types.update(known_external_types)
         self.connections = []
@@ -245,6 +253,13 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         # `to_end`等のネストしたreferenceフィールドまで届かないため、
         # 専用の全木走査で行う。
         self._check_accessible_feature_paths(ast)
+
+        # 第15パス: 数量リテラルの単位（`1.8 [kg]`）の名前解決（2026-09-24）。
+        # 単位は式の中にあり _check_rules の再帰では届かないため、全木走査で行う。
+        self._check_quantity_units(ast)
+
+        # 最後に、import 漏れで解決できなかった名前へ import のヒントを付ける
+        self._add_library_import_hints()
 
         return self.issues
     
@@ -385,6 +400,8 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
             "item_def": self._check_item_def,
             "attribute_def": self._check_attribute_definition,
             "attribute_usage": self._check_attribute_def,
+            "item_usage": self._check_usage_type_exists,
+            "calc_parameter": self._check_usage_type_exists,
             "connection_def": self._check_connection_def,
             "requirement_def": self._check_requirement_def,
             "requirement_usage": self._check_requirement_usage,
@@ -544,6 +561,66 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
             for child in node.get(key, []) or []:
                 yield from self._iter_import_nodes(child)
 
+    @staticmethod
+    def _declared_package_names(ast: Dict) -> Set[str]:
+        """このファイルが宣言しているパッケージの名前（先頭の名前との衝突判定用）。"""
+        names: Set[str] = set()
+
+        def walk(node):
+            if isinstance(node, dict):
+                if node.get("type") == "package" and node.get("name"):
+                    names.add(node["name"])
+                for value in node.values():
+                    if isinstance(value, (dict, list)):
+                        walk(value)
+            elif isinstance(node, list):
+                for item in node:
+                    walk(item)
+
+        walk(ast)
+        return names
+
+    def _library_import_target(self, node: Dict, local_packages: Set[str]):
+        """import が標準ライブラリを指すなら、その修飾名を返す（指さなければ None）。
+        ファイル自身が同じ名前のパッケージを宣言していれば、そちらを指しうるので None。"""
+        import_name = node.get("name") or ""
+        root = import_name.split("::")[0]
+        if not import_name or root not in STANDARD_LIBRARY_PACKAGES or root in local_packages:
+            return None
+        return import_name
+
+    def _collect_library_visible_names(self, ast: Dict) -> Dict[str, str]:
+        """標準ライブラリからの import でこのファイルに見える名前を集める。
+
+        - `import Pkg::*;` は、索引が Pkg の中身を列挙できれば、その全部。
+        - `import Pkg::X;` は X（実在すれば）。
+        - `import Pkg::**;`（再帰）や、索引が列挙できないもの（complete でない
+          パッケージ、定義のメンバーの import）は集めない。これらは
+          _has_opaque_wildcard_import が「中身の見えない import」として扱い、
+          非修飾名を検証不能にする。
+
+        **import の置き場所（名前空間）は区別しない。** ファイル内のどこかで
+        import された名前は、ファイル全体で見えるとみなす。参照実装は兄弟の
+        パッケージの import を見せないが（2026-09-24実測）、名前空間ごとに
+        分けると判定が細かくなる分だけ誤検出の余地が増える。見逃す側に倒した近似。
+        """
+        local_packages = self._declared_package_names(ast)
+        visible: Dict[str, str] = {}
+        for node in self._iter_import_nodes(ast):
+            target = self._library_import_target(node, local_packages)
+            if target is None or node.get("recursive"):
+                continue
+            if node.get("wildcard"):
+                members = library_index.package_members(target)
+                if members:
+                    for name, kind in members.items():
+                        visible.setdefault(name, kind)
+                continue
+            if "::" in target and library_index.resolve_qualified_name(target):
+                member = target.rsplit("::", 1)[1].strip("'")
+                visible.setdefault(member, library_index.member_kind(target) or "")
+        return visible
+
     def _collect_opaque_import_names(self, ast: Dict) -> Set[str]:
         """`import A::B;`という明示的なメンバーimportのうち、`A`の中身が
         このファイルからは確認できないもの（標準ライブラリ等）の`B`を集める。
@@ -571,11 +648,22 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         """中身の見えないパッケージからのワイルドカードimport（`import
         Objects::*;`等）があるか。ある場合、未解決の非修飾名は「そのパッケージに
         由来する可能性」を排除できないため、不在を根拠にした誤検出を避ける。"""
+        local_packages = self._declared_package_names(ast)
         for node in self._iter_import_nodes(ast):
             if not node.get("wildcard"):
                 continue
             package_name = node.get("name") or ""
             if not package_name:
+                continue
+            # 標準ライブラリのパッケージで、索引が中身を列挙できるもの
+            # （`import ISQ::*;`）は、持ち込まれる名前が分かっている
+            # （library_visible_names）。再帰 import は列挙していないので除く。
+            target = self._library_import_target(node, local_packages)
+            if (
+                target is not None
+                and not node.get("recursive")
+                and library_index.package_members(target) is not None
+            ):
                 continue
             if package_name in self.packages or self._find_element_in_symbols(package_name):
                 continue
@@ -601,6 +689,12 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
                 return self._library_reference_verdict(type_name) is not False
             if root in self.opaque_import_names:
                 return True
+            # 先頭が標準ライブラリから import で持ち込まれた名前（多くは型）なら、
+            # その先は型のメンバーで、継承をたどらないと判定できない。
+            # 例: ShapeItems.sysml の `item def Path :> StructuredSpaceObject::StructuredCurve;`
+            # （StructuredSpaceObject は `private import Objects::*;` 由来の struct）。
+            if root.strip("'") in self.library_visible_names:
+                return True
             # 先頭セグメント自体がローカルに解決できず、かつ中身の見えない
             # ワイルドカードimportがある場合、その名前はワイルドカード由来で
             # ある可能性がある（例: ShapeItems.sysmlの
@@ -619,6 +713,10 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
             if self._package_has_wildcard_import(type_name.rsplit("::", 1)[0]):
                 return True
             return False
+        # 標準ライブラリからの import で見えている名前は、実在が分かっている
+        # （feature の参照など、_find_type_in_symbols を通らない規則のため）
+        if type_name.strip("'") in self.library_visible_names:
+            return True
         return self.has_opaque_wildcard_import
 
     def _library_reference_verdict(self, name: str):
@@ -673,6 +771,9 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
             if sym_name.endswith(f"::{type_name}") or sym_name == type_name:
                 return True
 
+        if "::" not in type_name and type_name.strip("'") in self.library_visible_names:
+            return True
+
         # 解決できなかった参照のうち、「単一ファイルlintの範囲では検証不能」な
         # ものは存在しないと断定できないため有効扱いにする（誤検出の回避）。
         if self._is_unverifiable_reference(type_name):
@@ -700,6 +801,134 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
                     + self._library_suggestion_suffix(target),
                     node
                 ))
+
+    def _check_quantity_units(self, ast: Dict) -> None:
+        """数量リテラルの単位の名前を解決する。
+
+        `attribute mass : MassValue = 1.8 [kg];` は、SI を import していなければ
+        参照実装が `Couldn't resolve reference to Element 'kg'.` を返す。
+        `[SI::m/s]` も `s` が解決できずエラーになる（どちらも2026-09-24実測）。
+        複合単位は、式の中の名前ごとに解決する。
+
+        解決の判定は他の参照と同じで、ローカルの要素、import で見えている
+        ライブラリの名前、索引で実在の分かる修飾名なら有効。中身の見えない
+        import があるなど検証できない場合は通す。
+
+        **非修飾名は、標準ライブラリに実在するが見えていない名前だけを報告する**
+        （`kg`・`kW`・`min` のような import 漏れ。LLM が典型的に犯す誤り）。
+        単位の角括弧には座標系などの feature も書け、継承した feature
+        （SimpleQuadcopter.sysml の `(0, shape.width/2, 0)[source]`）は継承を
+        たどらないと解決できない。どこにも無い名前を報告すると、730件で
+        こうした形の誤検出が出た（2026-09-24実測）ため、見逃す側に倒している。
+        ファイル内で宣言した名前・短い名前（`attribute <'A⋅h'> 'ampere hour' ...`）・
+        再定義の対象（`:>> source = ecf;`）は宣言済みとして扱う。
+        """
+        declared = self._declared_names_anywhere(ast)
+
+        def unit_names(expr, out):
+            if isinstance(expr, dict):
+                if expr.get("type") == "name_ref" and isinstance(expr.get("reference"), str):
+                    out.append(expr["reference"])
+                    return
+                for value in expr.values():
+                    if isinstance(value, (dict, list)):
+                        unit_names(value, out)
+            elif isinstance(expr, list):
+                for item in expr:
+                    unit_names(item, out)
+
+        def walk(node, owner):
+            if isinstance(node, dict):
+                if node.get("type") == "quantity_literal":
+                    names: List[str] = []
+                    unit_names(node.get("unit"), names)
+                    for name in names:
+                        if not self._unit_name_resolves(name, declared):
+                            self.issues.append(LintIssue(
+                                SEVERITY_ERROR,
+                                f"Couldn't resolve reference to Element '{name}'.",
+                                owner,
+                            ))
+                if node.get("name") and node.get("type"):
+                    owner = node
+                for value in node.values():
+                    if isinstance(value, (dict, list)):
+                        walk(value, owner)
+            elif isinstance(node, list):
+                for item in node:
+                    walk(item, owner)
+
+        walk(ast, None)
+
+    def _unit_name_resolves(self, name: str, declared: Set[str]) -> bool:
+        if "." in name:
+            return True  # feature chain（`x.unit`）はここでは判定しない
+        if "::" in name:
+            verdict = self._library_reference_verdict(name)
+            if verdict is not None:
+                return verdict
+            return self._type_reference_exists(name)
+        bare = name.strip("'")
+        if bare in declared or self._find_element_in_symbols(name) or name in self.types:
+            return True
+        if self._is_unverifiable_reference(name):
+            return True
+        # ライブラリにも無い名前は判定しない（docstring 参照）
+        return not library_index.packages_defining(bare)
+
+    @staticmethod
+    def _declared_names_anywhere(ast: Dict) -> Set[str]:
+        """ファイル内のどこかで宣言された名前・短い名前・再定義の対象（引用符は外す）。"""
+        names: Set[str] = set()
+
+        def add(value):
+            if isinstance(value, str) and value:
+                names.add(value.split("::")[-1].strip("'"))
+
+        def walk(node):
+            if isinstance(node, dict):
+                if node.get("type"):
+                    add(node.get("name"))
+                    add(node.get("shortName"))
+                    for entry in node.get("redefines") or []:
+                        if isinstance(entry, dict):
+                            add(entry.get("target"))
+                for value in node.values():
+                    if isinstance(value, (dict, list)):
+                        walk(value)
+            elif isinstance(node, list):
+                for item in node:
+                    walk(item)
+
+        walk(ast)
+        return names
+
+    def _add_library_import_hints(self) -> None:
+        """import 漏れで解決できなかった非修飾名に、import のヒントを付ける。
+
+        `attribute enabled : Boolean;`（import 無し）は、名前は実在するが見えて
+        いないだけ。LLM の自己修正のため、どのパッケージにあるかを添える。
+        対象は「存在しない型 'X'」「Couldn't resolve reference to ... 'X'.」の形で、
+        X が非修飾名かつ標準ライブラリのどこかにある場合だけ。
+        """
+        import re
+
+        pattern = re.compile(r"(?:存在しない型|Couldn't resolve reference to \w+) '([^':]+)'")
+        for issue in self.issues:
+            if issue.severity != SEVERITY_ERROR or "標準ライブラリの" in issue.message:
+                continue
+            m = pattern.search(issue.message)
+            if not m:
+                continue
+            name = m.group(1)
+            packages = library_index.packages_defining(name)
+            if not packages:
+                continue
+            pkg = packages[0]
+            issue.message += (
+                f" 標準ライブラリの {pkg} にあります"
+                f"（`private import {pkg}::*;` を追加するか、`{pkg}::{name}` と書く）。"
+            )
 
     @staticmethod
     def _library_suggestion_suffix(name: str) -> str:

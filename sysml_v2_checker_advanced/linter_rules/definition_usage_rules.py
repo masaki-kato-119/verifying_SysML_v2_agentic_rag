@@ -121,6 +121,30 @@ class DefinitionUsageRulesMixin:
                     f"Attribute definition '{name}' が存在しない型 '{base}' を継承しています",
                     node
                 ))
+    def _check_usage_type_exists(self, node: Dict, namespace: str) -> None:
+        """item の型と、calc/constraint の引数・戻り値の型の存在を確かめる。
+
+        どちらも型の存在を見る規則が無く、`item i : Nope;` や
+        `calc def F { in x : Real; }`（Real を import していない）が通っていた。
+        参照実装はいずれも `Couldn't resolve reference to Type 'X'.` を返す
+        （2026-09-24実測）。判定は part の型（_check_part_instance）と同じ。
+        """
+        type_name = node.get("type_name")
+        if not type_name or self._find_type_in_symbols(type_name):
+            return
+        if node.get("type") == "calc_parameter":
+            direction = node.get("direction") or "parameter"
+            label = f"{direction} パラメータ '{node.get('name') or '(名前なし)'}'"
+        else:
+            label = f"Item '{node.get('name')}'"
+        message = f"{label} が存在しない型 '{type_name}' を参照しています"
+        if self._library_reference_verdict(type_name) is False:
+            message = (
+                f"Couldn't resolve reference to Type '{type_name}'."
+                + self._library_suggestion_suffix(type_name)
+            )
+        self.issues.append(LintIssue(SEVERITY_ERROR, message, node))
+
     def _check_part_instance(self, node: Dict, namespace: str) -> None:
         """
         パートインスタンスのチェック

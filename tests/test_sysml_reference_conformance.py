@@ -54,12 +54,31 @@ REFERENCE_HAS_ERROR = {
     "s1n_redefines_missing.sysml": True,  # Couldn't resolve reference to Feature 'ISQ::massY'.
     "s1o_specializes_missing_def.sysml": True,  # Couldn't resolve reference to Classifier 'Parts::PartX'.
     "s1p_specializes_existing_def.sysml": False,
+    # e2（S2）の境界。import していない組み込み型・単位、import の見え方（2026-09-24 実測）
+    "s2a_builtin_wildcard_import.sysml": False,
+    "s2b_builtin_member_import.sysml": False,
+    "s2c_builtin_qualified.sysml": False,
+    "s2d_outer_import_visible_in_nested.sysml": False,
+    "s2e_sibling_import_not_visible.sysml": True,  # Couldn't resolve reference to Type 'Boolean'.
+    "s2f_reexport_via_local_package.sysml": False,
+    "s2g_isq_does_not_export_real.sysml": True,  # Couldn't resolve reference to Type 'Real'.
+    "s2h_isq_exports_value_types.sysml": False,
+    "s2i_unit_with_si_import.sysml": False,
+    "s2j_unit_qualified.sysml": False,
+    "s2k_unit_partly_qualified.sysml": True,  # Couldn't resolve reference to Element 's'.
+    "s2l_unknown_name_with_library_import.sysml": True,  # Couldn't resolve reference to Type 'Nope'.
+    "s2m_library_feature_unqualified.sysml": False,
+    "s2n_import_inside_definition.sysml": False,
+    "s2o_local_unit.sysml": False,
+    "s2p_recursive_import.sysml": False,
+    "s2q_builtin_used_in_def_specialization.sysml": True,  # Couldn't resolve reference to Classifier 'Boolean'.
+    "s2r_builtin_in_param.sysml": True,  # Couldn't resolve reference to Type 'Real'.
+    "s2s_uscustomary_unit.sysml": False,
+    "s2t_import_after_use.sysml": False,
 }
 
-# まだ一致しないもの → 担当タスク
+# まだ一致しないもの → 担当タスク（または一致させない理由）
 PENDING = {
-    "r02_builtin_without_import.sysml": "e2_builtin_and_unit_import_visibility",
-    "r03_unit_without_import.sysml": "e2_builtin_and_unit_import_visibility",
     "r04_flow_end_not_feature_chain.sysml": "e4_flow_end_resolution",
     "r05_flow_end_not_accessible.sysml": "e4_flow_end_resolution",
     "r06_undefined_trigger.sysml": "e5_trigger_and_event_reference",
@@ -68,6 +87,10 @@ PENDING = {
     "r09_actor_at_package_level.sysml": "e3_grammar_conformance",
     "r10_constraint_result_semicolon.sysml": "e3_grammar_conformance",
     "r11_transition_body_accept_valid.sysml": "e3_grammar_conformance",
+    # 既知の近似（直す予定は無い）: import の置き場所を区別せず、ファイル内の
+    # どこかで import した名前はファイル全体で見えるとみなす。参照実装は兄弟の
+    # パッケージの import を見せない。linter._collect_library_visible_names 参照
+    "s2e_sibling_import_not_visible.sysml": "近似: import の名前空間を区別しない",
 }
 
 
@@ -83,7 +106,7 @@ def _params():
     for name, expected in sorted(REFERENCE_HAS_ERROR.items()):
         marks = []
         if name in PENDING:
-            marks.append(pytest.mark.xfail(strict=True, reason=f"未対応: {PENDING[name]}"))
+            marks.append(pytest.mark.xfail(strict=True, reason=PENDING[name]))
         yield pytest.param(name, expected, id=Path(name).stem, marks=marks)
 
 

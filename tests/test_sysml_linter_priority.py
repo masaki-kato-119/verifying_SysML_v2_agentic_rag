@@ -213,7 +213,14 @@ def test_lint_sysml_imported_names_are_resolvable():
     assert lint_sysml(parse_sysml(stdlib, strict=True)) == []
 
     # 中身の見えないワイルドカードimportがあれば、非修飾の未解決名も報告しない。
-    wildcard = "package P { private import Objects::*; item def X :> SomeOpaqueType; }"
+    # 標準ライブラリの `Objects::*` は、2026-09-24 から索引（library_index.json）で
+    # 中身が分かるので「中身の見えない import」ではない。参照実装どおり
+    # `SomeOpaqueType` は解決できない（Couldn't resolve reference to Classifier）。
+    listed = "package P { private import Objects::*; item def X :> SomeOpaqueType; }"
+    assert any("SomeOpaqueType" in i.message for i in lint_sysml(parse_sysml(listed, strict=True)))
+    # 再帰 import（`::**`）は索引で列挙していないので、従来どおり報告しない
+    # （参照実装はエラーにする。見逃す側に倒した近似）。
+    wildcard = "package P { private import Objects::**; item def X :> SomeOpaqueType; }"
     assert lint_sysml(parse_sysml(wildcard, strict=True)) == []
 
 
@@ -256,7 +263,11 @@ def test_lint_sysml_enum_def_is_a_type_and_specializes_attribute():
     assert lint_sysml(parse_sysml(as_type, strict=True)) == []
 
     # (b) enum def が attribute def を特殊化する
-    enum_attr = "package P { attribute def Level :> Real; enum def LevelEnum :> Level { low; high; } }"
+    # 2026-09-24: import 無しの組み込み型は参照実装0.62.0でエラー（Couldn't resolve reference to Type 'X'.）
+    enum_attr = (
+        "package P { private import ScalarValues::*; "
+        "attribute def Level :> Real; enum def LevelEnum :> Level { low; high; } }"
+    )
     assert lint_sysml(parse_sysml(enum_attr, strict=True)) == []
 
     # (b) requirement def が constraint def を特殊化する。

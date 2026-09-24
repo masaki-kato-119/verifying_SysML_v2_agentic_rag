@@ -39,8 +39,10 @@ def test_linter_does_not_flag_real_action_param_type():
     from sysml_v2_checker_advanced.linter import SysMLAdvancedLinter
     from sysml_v2_checker_advanced.parser import parse_sysml
 
+    # 2026-09-24: import 無しの組み込み型は参照実装0.62.0でエラー（Couldn't resolve reference to Type 'X'.）
     src = (
         "package P {\n"
+        "    private import ScalarValues::*;\n"
         "    action def DoSomething {\n"
         "        in x : Real;\n"
         "    }\n"

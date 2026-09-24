@@ -127,3 +127,19 @@ def suggest(qualified_name: str, limit: int = 3) -> List[str]:
 def _quote_if_needed(name: str) -> str:
     """そのまま書ける名前でなければ引用符で囲む（`km/h` → `'km/h'`）。"""
     return name if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) else f"'{name}'"
+
+
+# import のヒントで優先して挙げるパッケージ（LLM が書くモデルで最もよく要るもの）
+_PREFERRED_PACKAGES = ("ScalarValues", "ISQ", "SI", "USCustomaryUnits")
+
+
+def packages_defining(name: str, limit: int = 2) -> List[str]:
+    """非修飾名 `name` を外へ見せているライブラリのパッケージ（import のヒント用）。"""
+    name = _unquote(name)
+    found = [q for q, entry in _packages().items() if name in entry["members"]]
+
+    def rank(q: str):
+        preferred = _PREFERRED_PACKAGES.index(q) if q in _PREFERRED_PACKAGES else len(_PREFERRED_PACKAGES)
+        return (preferred, q.count("::"), len(q))
+
+    return sorted(found, key=rank)[:limit]
