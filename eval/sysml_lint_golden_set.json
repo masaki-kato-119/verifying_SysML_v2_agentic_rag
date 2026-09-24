@@ -44,9 +44,10 @@
       "id": "sysml-clean-06",
       "category": "clean",
       "description": "標準ライブラリ Time パッケージの名前付きimport（回帰テスト）",
-      "sysml": "import Time::Instant;\n",
+      "sysml": "private import Time::TimeInstantValue;\n",
       "expected_issue_count": 0,
-      "regression_for": "sysml-clean-05と同様"
+      "regression_for": "sysml-clean-05と同様",
+      "reference_note": "2026-09-24: 元の `import Time::Instant;` は参照実装0.62.0で2つの理由によりエラーだった（可視性の無い import は構文エラー `missing EOF at 'import'`、かつ Time に Instant は無く `Couldn't resolve reference to Membership 'Time::Instant'.`）。趣旨（標準ライブラリの要素の名前付き import を誤検出しない）を保ったまま、実在する要素を正しい構文で import する形に直した。"
     },
     {
       "id": "sysml-clean-07",
@@ -101,10 +102,11 @@
       "expected_issue_count": 1,
       "expected_issues": [
         {
-          "severity": "warning",
+          "severity": "error",
           "message_contains": "reading' が存在しない型 'UndefinedScalarType' を参照しています"
         }
-      ]
+      ],
+      "reference_note": "2026-09-24: 期待値の severity を warning から error に変更。参照実装0.62.0は `Couldn't resolve reference to Type 'UndefinedScalarType'.` を error として返す。"
     },
     {
       "id": "sysml-broken-04",

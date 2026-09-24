@@ -620,13 +620,21 @@ class DefinitionUsageRulesMixin:
             node: attribute_defノード
             namespace: 現在の名前空間
         """
+        # 初版から warning だったが、参照実装はこれを error とする
+        # （`attribute m : ISQ::Mass;` → `Couldn't resolve reference to Type
+        # 'ISQ::Mass'.`、2026-09-24実測）。warning のままだとエラー0件と
+        # 報告され、LLMの自己修正ループが「問題なし」として終わってしまう
+        # （フェーズ2評価で実際に起きた）。part の型（_check_part_instance）と
+        # 同じ存在判定なので、検証不能な参照は従来どおり通る。
         type_name = node.get("type_name")
         if type_name and not self._find_type_in_symbols(type_name):
-            self.issues.append(LintIssue(
-                SEVERITY_WARNING,
-                f"Attribute '{node.get('name')}' が存在しない型 '{type_name}' を参照しています",
-                node
-            ))
+            message = f"Attribute '{node.get('name')}' が存在しない型 '{type_name}' を参照しています"
+            if self._library_reference_verdict(type_name) is False:
+                message = (
+                    f"Couldn't resolve reference to Type '{type_name}'."
+                    + self._library_suggestion_suffix(type_name)
+                )
+            self.issues.append(LintIssue(SEVERITY_ERROR, message, node))
     def _check_connection_def(self, node: Dict, namespace: str) -> None:
         """
         接続定義のチェック

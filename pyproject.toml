@@ -73,8 +73,10 @@ packages = [
 viewer = ["frontend/*"]
 # ルール別 confidence の実測テーブル。LintIssue.to_dict() が実行時に読むため、
 # インストール後も同梱されている必要がある（scripts/build_rule_confidence_table.py
-# が生成する）。
-sysml_v2_checker_advanced = ["rule_confidence.json"]
+# が生成する）。library_index.json は標準ライブラリの公開名の索引で、
+# リンターが実行時に読む（scripts/build_library_index.py が生成する。
+# 元データの sysml.library は gitignore 対象なので、生成物を同梱する）。
+sysml_v2_checker_advanced = ["rule_confidence.json", "library_index.json"]
 
 [tool.ruff]
 target-version = "py310"

@@ -6,6 +6,7 @@ SysML v2 Advanced Checker Linter
 
 from typing import Dict, List, Set
 
+from . import library_index
 from .constants import (
     BUILTIN_TYPES,
     ELEMENT_REFERENCE_ONLY_USAGE_TYPES,
@@ -477,6 +478,10 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
             # どこにでも書けてしまうため）。
             self._check_variation_variant_ownership(node, namespace)
 
+        # 標準ライブラリの feature を名指しする subsets/redefines（2026-09-24）
+        if node.get("redefines"):
+            self._check_library_feature_references(node)
+
         # 多重度のチェック（後方互換性）
         if "multiplicity" in node:
             self._check_multiplicity(node["multiplicity"], node.get("name", "unknown"))
@@ -589,7 +594,12 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         """
         if "::" in type_name:
             root = type_name.split("::")[0]
-            if root in STANDARD_LIBRARY_PACKAGES or root in self.opaque_import_names:
+            if root in STANDARD_LIBRARY_PACKAGES:
+                # 標準ライブラリの修飾名は、実在しないと索引で言い切れるもの
+                # （`ISQ::Mass`）だけを「検証不能」から外す。詳細は
+                # _library_reference_verdict を参照。
+                return self._library_reference_verdict(type_name) is not False
+            if root in self.opaque_import_names:
                 return True
             # 先頭セグメント自体がローカルに解決できず、かつ中身の見えない
             # ワイルドカードimportがある場合、その名前はワイルドカード由来で
@@ -611,6 +621,26 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
             return False
         return self.has_opaque_wildcard_import
 
+    def _library_reference_verdict(self, name: str):
+        """標準ライブラリの修飾名が実在するかを、同梱の索引で判定する。
+
+        True（実在する）/ False（実在しない）/ None（判定できない）の3値。
+        索引（library_index.json、scripts/build_library_index.py で生成）は
+        パッケージごとに外から見える名前を持つので、パッケージ直下の名前までは
+        確かめられる。`ISQ::Mass` は False（参照実装は
+        `Couldn't resolve reference to Type 'ISQ::Mass'.`、2026-09-24実測）。
+        索引で判定できない形（`ISQ::MassValue::num` のような型のメンバー、
+        索引が complete と言えないパッケージ）は None で、呼び出し側は従来どおり
+        検証不能として通す。
+
+        先頭の名前がこのファイルにも定義されている場合（ユーザーが自分で
+        `package Parts { ... }` を書いた等）は、そちらが優先されうるので None。
+        """
+        root = name.split("::")[0]
+        if root not in STANDARD_LIBRARY_PACKAGES or self._find_element_in_symbols(root):
+            return None
+        return library_index.resolve_qualified_name(name)
+
     def _find_type_in_symbols(self, type_name: str) -> bool:
         """
         シンボルテーブルで型を検索
@@ -630,7 +660,13 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         short_name = type_name.split("::")[-1]
         if short_name in self.types and "::" in type_name:
             prefix = type_name.rsplit("::", 1)[0]
-            if prefix.split("::")[-1] in STANDARD_LIBRARY_PACKAGES:
+            # ただし索引が「そのパッケージからは見えない」と言う名前は除く。
+            # `ISQ::Real` は ISQ が `private import ScalarValues::Real;` しているだけで
+            # 再公開しておらず、参照実装は解決できないとする（2026-09-24実測）。
+            if (
+                prefix.split("::")[-1] in STANDARD_LIBRARY_PACKAGES
+                and self._library_reference_verdict(type_name) is not False
+            ):
                 return True
 
         for sym_name in self.symbols:
@@ -644,6 +680,36 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
 
         return False
     
+    def _check_library_feature_references(self, node: Dict) -> None:
+        """subsets/redefines が名指しする標準ライブラリの feature の実在を確かめる。
+
+        `attribute m :> ISQ::massX;` / `attribute :>> ISQ::massY;` は、参照実装が
+        `Couldn't resolve reference to Feature 'ISQ::massX'.` を返す（2026-09-24実測）。
+        対象は標準ライブラリの修飾名で、索引が「実在しない」と言い切れるものだけ。
+        修飾されていない参照先（継承した feature の redefines など）は、継承を
+        たどらないと判定できないのでここでは見ない。
+        """
+        for entry in node.get("redefines") or []:
+            target = entry.get("target") if isinstance(entry, dict) else None
+            if not isinstance(target, str) or "::" not in target:
+                continue
+            if self._library_reference_verdict(target) is False:
+                self.issues.append(LintIssue(
+                    SEVERITY_ERROR,
+                    f"Couldn't resolve reference to Feature '{target}'."
+                    + self._library_suggestion_suffix(target),
+                    node
+                ))
+
+    @staticmethod
+    def _library_suggestion_suffix(name: str) -> str:
+        """実在しないライブラリの名前に付けるヒント（LLMの自己修正のため）。"""
+        root = name.split("::")[0]
+        candidates = library_index.suggest(name)
+        if candidates:
+            return f" 標準ライブラリ '{root}' にこの名前はありません。候補: {', '.join(candidates)}"
+        return f" 標準ライブラリ '{root}' にこの名前はありません。"
+
     def _find_element_in_symbols(self, element_name: str) -> bool:
         """
         シンボルテーブルで要素を検索
@@ -746,6 +812,21 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         if not import_name:
             return
         
+        # 標準ライブラリ配下の import は、索引で実在を確かめられる範囲だけ判定する
+        # （`import ISQ::Mass;` / `import ISQ::Nope::*;`）。参照実装はそれぞれ
+        # `Couldn't resolve reference to Membership 'ISQ::Mass'.` /
+        # `... to Namespace 'ISQ::Nope'.` を返す（2026-09-24実測）。判定できない
+        # もの（None）は、下の従来の分岐がライブラリ配下として通す。
+        if self._library_reference_verdict(import_name) is False:
+            kind = "Namespace" if is_wildcard else "Membership"
+            self.issues.append(LintIssue(
+                SEVERITY_ERROR,
+                f"Couldn't resolve reference to {kind} '{import_name}'."
+                + self._library_suggestion_suffix(import_name),
+                node
+            ))
+            return
+
         # ワイルドカードの場合は、パッケージの存在のみチェック
         if is_wildcard:
             # パッケージ名を取得（最後の::*を除く）

@@ -50,7 +50,9 @@ def test_model_endpoint_returns_findings_with_element_id_and_source_range():
 
     assert len(data["findings"]) == 1
     finding = data["findings"][0]
-    assert finding["severity"] == "warning"
+    # 2026-09-24 から error（参照実装に合わせて、存在しない attribute の型を
+    # warning から error に上げた。_check_attribute_def のコメント参照）
+    assert finding["severity"] == "error"
     assert finding["element_id"] == "$root::A::x"
     assert finding["source_range"] is not None
 

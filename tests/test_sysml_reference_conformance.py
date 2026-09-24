@@ -6,6 +6,7 @@ tests/fixtures/reference_conformance/ の各ファイルについて、「エラ
 
 r01〜r12 はフェーズ2評価（LLMにSysML v2を書かせ、公式実装で判定した評価）の
 最小再現で、出典は SysMLv2_pilot/sysml-mcp-server/eval/phase2/repro/。
+s1* などは各項目の境界を公式実装で測ったもの。
 まだ一致しないものは、対応するBlackboardタスク
 （plan: sysml_checker_false_negatives）を reason に書いて strict な xfail にしてある。
 直ると XPASS でこのテストが落ちるので、そのときは PENDING から外すこと。
@@ -36,11 +37,27 @@ REFERENCE_HAS_ERROR = {
     "r10_constraint_result_semicolon.sysml": True,  # extraneous input ';' expecting '}'
     "r11_transition_body_accept_valid.sysml": False,
     "r12_correct_forms_valid.sysml": False,
+    # e1（S1）の境界。標準ライブラリの修飾名・import・subsets/redefines（2026-09-24 実測）
+    "s1a_qualified_missing.sysml": True,  # Couldn't resolve reference to Type 'ISQ::Mass'.
+    "s1b_qualified_exists_without_import.sysml": False,
+    "s1c_private_import_not_reexported.sysml": True,  # Couldn't resolve reference to Type 'ISQ::Real'.
+    "s1d_import_missing_member.sysml": True,  # Couldn't resolve reference to Membership 'ISQ::Mass'.
+    "s1e_import_missing_namespace_wildcard.sysml": True,  # Couldn't resolve reference to Namespace 'ISQ::Nope'.
+    "s1f_import_def_members_wildcard.sysml": False,
+    "s1g_alias_member.sysml": False,
+    "s1h_subsets_library_feature.sysml": False,
+    "s1i_subsets_missing_library_feature.sysml": True,  # Couldn't resolve reference to Feature 'ISQ::massX'.
+    "s1j_type_member_path.sysml": False,  # 型のメンバーまで降りる修飾名は検証不能として通す
+    "s1k_nested_package.sysml": False,
+    "s1l_quoted_unit.sysml": False,
+    "s1m_kerml_member.sysml": True,  # Couldn't resolve reference to Type 'ScalarValues::Bool'.
+    "s1n_redefines_missing.sysml": True,  # Couldn't resolve reference to Feature 'ISQ::massY'.
+    "s1o_specializes_missing_def.sysml": True,  # Couldn't resolve reference to Classifier 'Parts::PartX'.
+    "s1p_specializes_existing_def.sysml": False,
 }
 
 # まだ一致しないもの → 担当タスク
 PENDING = {
-    "r01_lib_member_not_found.sysml": "e1_library_index_member_existence",
     "r02_builtin_without_import.sysml": "e2_builtin_and_unit_import_visibility",
     "r03_unit_without_import.sysml": "e2_builtin_and_unit_import_visibility",
     "r04_flow_end_not_feature_chain.sysml": "e4_flow_end_resolution",
