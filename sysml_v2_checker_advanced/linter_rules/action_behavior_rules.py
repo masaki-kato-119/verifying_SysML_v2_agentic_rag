@@ -526,23 +526,11 @@ class ActionBehaviorRulesMixin:
         """
         members = self._build_feature_member_resolver(ast)
 
-        def walk(node, owners):
-            if isinstance(node, dict):
-                node_type = node.get("type") or ""
-                ends = _flow_end_texts(node)
-                for end in ends:
-                    self._check_one_flow_end(end, node, owners, members)
-                inner = owners
-                if node_type and not node_type.endswith("_stmt") and not ends:
-                    inner = owners + [node]
-                for key, value in node.items():
-                    if isinstance(value, (dict, list)) and key != "source_range":
-                        walk(value, inner)
-            elif isinstance(node, list):
-                for item in node:
-                    walk(item, owners)
+        def visit(node, owners):
+            for end in _flow_end_texts(node):
+                self._check_one_flow_end(end, node, owners, members)
 
-        walk(ast, [])
+        _walk_with_owners(ast, [], visit)
 
     @staticmethod
     def _build_feature_member_resolver(ast: Dict):
@@ -615,45 +603,34 @@ class ActionBehaviorRulesMixin:
                 return None
             return target.get("type") == "event_occurrence_usage"
 
-        def walk(node, owners):
-            if isinstance(node, dict):
-                node_type = node.get("type") or ""
-                if node_type == "message_usage":
-                    ends = [node.get("from_end"), node.get("to_end")]
-                    verdicts = [
-                        end_is_event_occurrence(end, owners) for end in ends if isinstance(end, str) and end
-                    ]
-                    if False in verdicts:
-                        label = node.get("name") or ""
-                        self.issues.append(LintIssue(
-                            SEVERITY_WARNING,
-                            f"message '{label}' の端点が event occurrence ではないため、公式の "
-                            "sequence ビューには表示されない（構文・意味としては正しい）。"
-                            "各ライフラインに `event occurrence sendM;` などを宣言し、"
-                            "`message m from a.sendM to b.recvM;` のように両端をそれへ向ける",
-                            node,
-                        ))
-                inner = owners
-                if node_type and not node_type.endswith("_stmt") and node_type != "message_usage":
-                    inner = owners + [node]
-                for key, value in node.items():
-                    if isinstance(value, (dict, list)) and key != "source_range":
-                        walk(value, inner)
-            elif isinstance(node, list):
-                for item in node:
-                    walk(item, owners)
+        def visit(node, owners):
+            if node.get("type") != "message_usage":
+                return
+            ends = [node.get("from_end"), node.get("to_end")]
+            verdicts = [end_is_event_occurrence(end, owners) for end in ends if isinstance(end, str) and end]
+            if False in verdicts:
+                label = node.get("name") or ""
+                self.issues.append(LintIssue(
+                    SEVERITY_WARNING,
+                    f"message '{label}' の端点が event occurrence ではないため、公式の "
+                    "sequence ビューには表示されない（構文・意味としては正しい）。"
+                    "各ライフラインに `event occurrence sendM;` などを宣言し、"
+                    "`message m from a.sendM to b.recvM;` のように両端をそれへ向ける",
+                    node,
+                ))
 
-        walk(ast, [])
+        _walk_with_owners(ast, [], visit)
 
     def _check_one_flow_end(self, end: str, flow_node: Dict, owners: list, members) -> None:
         segments = [_flow_unquote(s) for s in re.split(r"\.|::", end) if s]
         if not segments or not owners:
             return
         if segments[0] in _FLOW_CONTEXT_WORDS:
-            segments = segments[1:]
-            if not segments:
-                return
-        elif len(segments) == 1:
+            # `this.x` の this は flow の直接の所有者とは限らない（if の分岐の中でも
+            # 外側の定義を指す。フェーズ2 t03 の `flow from this.sugar to ...` は
+            # 参照実装でクリーン）。どこを指すかを確かめないので判定しない
+            return
+        if len(segments) == 1:
             self.issues.append(LintIssue(
                 SEVERITY_ERROR,
                 f"Cannot identify flow end (use dot notation): flow の端点 '{end}' は "
@@ -699,6 +676,45 @@ class ActionBehaviorRulesMixin:
 
 
 _FLOW_CONTEXT_WORDS = ("this", "that", "self")
+# `_stmt` で終わる型のうち、中身を包むだけの入れ物ではなく本体（名前空間）を持つもの。
+# if の then/else はそれぞれが別の本体（参照実装は、then の中の flow から外の
+# 兄弟を指すと `Must be an accessible feature` とし、同じ then の中の action は
+# 解決する。2026-09-24、フェーズ2 t03 のモデルで実測）
+_NAMESPACE_STMT_TYPES = {"loop_stmt", "for_loop_stmt"}
+_BRANCH_KEYS = ("then", "else")
+
+
+def _walk_with_owners(node, owners: list, visit) -> None:
+    """全木を走査し、各ノードを「それを所有する要素の列（外→内）」と一緒に visit へ渡す。
+
+    所有者になるのは型を持つノードで、`_stmt` で終わる入れ物（flow_stmt 等）は
+    除く。ただし if の then/else の本体と、while/for の本体は所有者になる。
+    flow・message の端点を探すノード自身も所有者にはしない。
+    """
+    if isinstance(node, list):
+        for item in node:
+            _walk_with_owners(item, owners, visit)
+        return
+    if not isinstance(node, dict):
+        return
+    node_type = node.get("type") or ""
+    visit(node, owners)
+    if node_type == "if_stmt":
+        for key, value in node.items():
+            if key in _BRANCH_KEYS and isinstance(value, list):
+                branch = {"type": f"if_{key}_branch", "children": value}
+                _walk_with_owners(value, owners + [branch], visit)
+            elif isinstance(value, (dict, list)) and key != "source_range":
+                _walk_with_owners(value, owners, visit)
+        return
+    is_end_holder = bool(_flow_end_texts(node)) or node_type == "message_usage"
+    is_owner = bool(node_type) and not is_end_holder and (
+        not node_type.endswith("_stmt") or node_type in _NAMESPACE_STMT_TYPES
+    )
+    inner = owners + [node] if is_owner else owners
+    for key, value in node.items():
+        if isinstance(value, (dict, list)) and key != "source_range":
+            _walk_with_owners(value, inner, visit)
 # 名前を持ちうるキー（accept アクションは `actionName` に名前を入れる）
 _FLOW_NAME_KEYS = ("name", "shortName", "actionName", "declared_name", "endName")
 # ライブラリで定義された暗黙の引数（payload・receiver 等）を持つアクション。

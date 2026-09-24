@@ -143,3 +143,22 @@ def packages_defining(name: str, limit: int = 2) -> List[str]:
         return (preferred, q.count("::"), len(q))
 
     return sorted(found, key=rank)[:limit]
+
+
+def membership_names(qualified_name: str) -> List[str]:
+    """名指しの import（`import SI::volt;`）で見えるようになる名前（名前と短い名前）。
+
+    import は membership を持ち込むので、`volt` を import すれば短い名前の `V` も、
+    `V` を import すれば `volt` も見える（参照実装で `[V]` が解決する。2026-09-24）。
+    """
+    segments = _split(qualified_name)
+    length = _owning_package(segments)
+    if length is None or length != len(segments) - 1:
+        return [segments[-1]]
+    entry = _packages()["::".join(segments[:length])]
+    name = segments[-1]
+    names = {name}
+    for short, long in (entry.get("short_names") or {}).items():
+        if name in (short, long):
+            names.update((short, long))
+    return sorted(names)

@@ -646,8 +646,10 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
                         visible.setdefault(name, kind)
                 continue
             if "::" in target and library_index.resolve_qualified_name(target):
-                member = target.rsplit("::", 1)[1].strip("'")
-                visible.setdefault(member, library_index.member_kind(target) or "")
+                kind = library_index.member_kind(target) or ""
+                # membership ごと持ち込むので、短い名前（`SI::volt` の `V`）も見える
+                for member in library_index.membership_names(target):
+                    visible.setdefault(member, kind)
         return visible
 
     def _collect_opaque_import_names(self, ast: Dict) -> Set[str]:

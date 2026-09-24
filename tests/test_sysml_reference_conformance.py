@@ -175,6 +175,15 @@ REFERENCE_HAS_ERROR = {
     "k22_part_library_item_def.sysml": False,
     "k23_attribute_action_def.sysml": True,  # An attribute must be typed by attribute definitions.
     "k24_state_action_def.sysml": False,
+    # e8 の見直しで見つけた形。名指しの import と短い名前、if/while の本体の中の flow（2026-09-24 実測）
+    "s2u_member_import_brings_short_name.sysml": False,
+    "s2v_short_name_import_brings_long_name.sysml": False,
+    "f34_this_in_if_branch.sysml": False,
+    "f29_if_branch_owns_its_actions.sysml": False,
+    "f30_if_branch_refers_outer_sibling.sysml": True,  # Must be an accessible feature (use dot notation for nesting)
+    "f31_else_refers_then_action.sysml": True,  # Couldn't resolve reference to Feature 'a'.
+    "f32_outer_refers_into_branch.sysml": True,  # Couldn't resolve reference to Feature 'a'.
+    "f33_while_body_owns_its_actions.sysml": False,
 }
 
 # まだ一致しないもの → 担当タスク（または一致させない理由）

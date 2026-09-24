@@ -41,6 +41,8 @@ Occurrences など）、SysML 用のこのパーサーでは読めない。索�
 `members` は外から `Pkg::名前` で見える名前（public な自前の宣言、短い名前、
 public import で再公開された名前、入れ子のパッケージ）。値は宣言のキーワード列
 （`attribute def`、`datatype`、`alias` など）で、種別の判定に使う。
+`short_names` は短い名前 → 名前（`"V": "volt"`）。`import SI::volt;` のような
+名指しの import は membership ごと持ち込むので、短い名前 V も見えるようになる。
 """
 
 from __future__ import annotations
@@ -162,6 +164,9 @@ class PackageScan:
     qname: str
     owned: dict[str, str] = field(default_factory=dict)  # public な自前の宣言 名前 → 種別
     imports: list[tuple[str, str]] = field(default_factory=list)  # (path, "*"|"**"|"")
+    # 短い名前 → 名前（`attribute <V> volt ...`）。名指しの import（`import SI::volt;`）は
+    # その membership を持ち込むので、短い名前 V も見えるようになる
+    pairs: dict[str, str] = field(default_factory=dict)
     problems: list[str] = field(default_factory=list)
 
 
@@ -285,6 +290,8 @@ class LibraryScanner:
         elif visibility == "public":
             for n in names:
                 package.owned[n] = kind
+            if len(names) == 2:
+                package.pairs[names[0]] = names[1]
         if term == "{":
             self._skip_braced_body()
 
@@ -338,6 +345,7 @@ class LibraryScanner:
 
 def resolve_index(packages: dict[str, PackageScan]) -> dict[str, dict]:
     exported: dict[str, dict[str, str]] = {}
+    exported_pairs: dict[str, dict[str, str]] = {}
     complete: dict[str, bool] = {}
     in_progress: set[str] = set()
 
@@ -356,6 +364,7 @@ def resolve_index(packages: dict[str, PackageScan]) -> dict[str, dict]:
         in_progress.add(qname)
         scan = packages[qname]
         members = dict(scan.owned)
+        pairs = dict(scan.pairs)
         ok = not scan.problems
         for path, wildcard in scan.imports:
             if wildcard == "**":
@@ -371,6 +380,7 @@ def resolve_index(packages: dict[str, PackageScan]) -> dict[str, dict]:
                     ok = False  # 循環。安全側に倒す
                     continue
                 members.update({k: v for k, v in exported[target].items() if k not in members})
+                pairs.update({k: v for k, v in exported_pairs[target].items() if k not in pairs})
                 ok = ok and complete[target]
                 continue
             owner, _, name = path.rpartition("::")
@@ -387,13 +397,26 @@ def resolve_index(packages: dict[str, PackageScan]) -> dict[str, dict]:
                     ok = False
                 continue
             members.setdefault(name, kind)
+            # 名指しの import は membership ごと持ち込むので、短い名前と名前の両方が見える
+            for short, long in exported_pairs.get(target, {}).items():
+                if name in (short, long):
+                    members.setdefault(short, kind)
+                    members.setdefault(long, kind)
+                    pairs.setdefault(short, long)
         exported[qname] = members
+        exported_pairs[qname] = pairs
         complete[qname] = ok
         in_progress.discard(qname)
 
     for qname in packages:
         resolve(qname)
-    return {q: {"complete": complete[q], "members": dict(sorted(exported[q].items()))} for q in sorted(packages)}
+    index = {}
+    for q in sorted(packages):
+        entry = {"complete": complete[q], "members": dict(sorted(exported[q].items()))}
+        if exported_pairs[q]:
+            entry["short_names"] = dict(sorted(exported_pairs[q].items()))
+        index[q] = entry
+    return index
 
 
 def library_files() -> list[Path]:
