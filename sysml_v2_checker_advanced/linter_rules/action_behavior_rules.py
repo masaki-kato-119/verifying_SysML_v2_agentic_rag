@@ -4,6 +4,7 @@ sysml_v2_checker_advanced.linter.SysMLAdvancedLinter に多重継承で合成さ
 単独では使わない(self.issues/self.symbols等、本体側__init__の状態に依存する)。
 """
 
+import re
 from typing import Dict
 
 from ..constants import (
@@ -501,3 +502,214 @@ class ActionBehaviorRulesMixin:
                 "[8.2.2.17] ForLoopNode で反復対象が指定されていません",
                 for_node
             ))
+
+    # --- flow の端点（2026-09-24） ------------------------------------------------
+
+    def _check_flow_ends(self, ast: Dict) -> None:
+        """flow の端点を、flow を所有する要素からたどる feature の連鎖として解決する。
+
+        参照実装（0.62.0）で実測した規則（2026-09-24、
+        tests/fixtures/reference_conformance/f*.sysml）:
+
+        - 端点は `a.x` のような連鎖でなければならない。名前1つの端点
+          （`flow x to b.y;`）は、それが自分の引数でも
+          `Cannot identify flow end (use dot notation)`。`this.x` は可。
+        - 先頭の名前は、flow を所有する要素の feature（継承したものを含む）。
+          外側の要素の feature（入れ子のアクションの中から外の兄弟を指す）は
+          `Must be an accessible feature (use dot notation for nesting)`、
+          どこにも無ければ `Couldn't resolve reference to Feature 'q'.`。
+        - 2番目の名前は、先頭の feature の本体か型が持つ feature。
+
+        **確かめられない形は通す。** 所有者や feature の継承元・型がこのファイルに
+        無い（ライブラリ由来など）、同名の定義が複数ある、3番目以降の名前、
+        のいずれかに当たったら、その端点の判定をやめる。
+        """
+        defs: Dict[str, list] = {}
+
+        def collect_defs(node):
+            if isinstance(node, dict):
+                if (node.get("type") or "").endswith("_def") and node.get("name"):
+                    defs.setdefault(_flow_unquote(node["name"]), []).append(node)
+                for value in node.values():
+                    if isinstance(value, (dict, list)):
+                        collect_defs(value)
+            elif isinstance(node, list):
+                for item in node:
+                    collect_defs(item)
+
+        collect_defs(ast)
+        cache: Dict[int, object] = {}
+
+        def members(node, depth=0):
+            key = id(node)
+            if key in cache:
+                return cache[key]
+            cache[key] = None  # 循環継承への備え（計算中は「不明」）
+            result = _flow_members(node, defs, members, depth)
+            cache[key] = result
+            return result
+
+        def walk(node, owners):
+            if isinstance(node, dict):
+                node_type = node.get("type") or ""
+                ends = _flow_end_texts(node)
+                for end in ends:
+                    self._check_one_flow_end(end, node, owners, members)
+                inner = owners
+                if node_type and not node_type.endswith("_stmt") and not ends:
+                    inner = owners + [node]
+                for key, value in node.items():
+                    if isinstance(value, (dict, list)) and key != "source_range":
+                        walk(value, inner)
+            elif isinstance(node, list):
+                for item in node:
+                    walk(item, owners)
+
+        walk(ast, [])
+
+    def _check_one_flow_end(self, end: str, flow_node: Dict, owners: list, members) -> None:
+        segments = [_flow_unquote(s) for s in re.split(r"\.|::", end) if s]
+        if not segments or not owners:
+            return
+        if segments[0] in _FLOW_CONTEXT_WORDS:
+            segments = segments[1:]
+            if not segments:
+                return
+        elif len(segments) == 1:
+            self.issues.append(LintIssue(
+                SEVERITY_ERROR,
+                f"Cannot identify flow end (use dot notation): flow の端点 '{end}' は "
+                "`<所有する要素>.<feature>` の形で書く（例: `flow extract.coffee to serve.coffee;`）",
+                flow_node,
+            ))
+            return
+
+        owner_members = members(owners[-1])
+        if owner_members is None:
+            return
+        first = segments[0]
+        if first not in owner_members:
+            outer = False
+            for ancestor in owners[:-1]:
+                found = members(ancestor)
+                if found is not None and first in found:
+                    outer = True
+                    break
+            if outer:
+                message = (
+                    f"Must be an accessible feature (use dot notation for nesting): '{first}' は "
+                    "この flow を含む要素の feature ではない。flow を "
+                    f"'{first}' と同じ階層へ移すか、端点をこの要素の feature からたどる"
+                )
+            else:
+                message = f"Couldn't resolve reference to Feature '{first}'."
+            self.issues.append(LintIssue(SEVERITY_ERROR, message, flow_node))
+            return
+        if len(segments) < 2 or owner_members[first] is _FLOW_AMBIGUOUS:
+            return
+        feature_members = members(owner_members[first])
+        if feature_members is None:
+            return
+        if segments[1] not in feature_members:
+            known = ", ".join(sorted(feature_members)[:6])
+            hint = f"（'{first}' の feature: {known}）" if known else ""
+            self.issues.append(LintIssue(
+                SEVERITY_ERROR,
+                f"Couldn't resolve reference to Feature '{segments[1]}'.{hint}",
+                flow_node,
+            ))
+
+
+_FLOW_CONTEXT_WORDS = ("this", "that", "self")
+# 名前を持ちうるキー（accept アクションは `actionName` に名前を入れる）
+_FLOW_NAME_KEYS = ("name", "shortName", "actionName", "declared_name", "endName")
+# ライブラリで定義された暗黙の引数（payload・receiver 等）を持つアクション。
+# ActionTest.sysml の `flow aa.target to snd.receiver;`（snd は send アクション）が
+# 正しい形なので、中身は確かめられないものとして扱う
+_FLOW_IMPLICIT_MEMBER_TYPES = {"accept_action", "send_action", "assignment_stmt"}
+# 同じ名前のノードが複数ある（`then braking;` の後続参照と `action braking { ... }`
+# の宣言など）。どれが宣言か判別できないので、その先の判定をやめる印
+_FLOW_AMBIGUOUS = object()
+# AST の中で、要素の直接のメンバーを持たないリスト（参照の列など）
+_FLOW_NON_MEMBER_KEYS = {"redefines", "bases", "segments", "extra_types", "extraTypeRefs"}
+
+
+def _flow_unquote(name: str) -> str:
+    name = name.strip()
+    return name[1:-1] if len(name) >= 2 and name[0] == name[-1] == "'" else name
+
+
+def _flow_end_texts(node: Dict) -> list:
+    node_type = node.get("type")
+    if node_type in ("flow_short_stmt", "flow_from_stmt"):
+        keys = ("from_port", "to_port")
+    elif node_type == "flow_usage":
+        keys = ("from_end", "to_end")
+    elif node_type == "succession_usage" and node.get("isFlow"):
+        keys = ("fromEnd", "toEnd")
+    else:
+        return []
+    return [node[k] for k in keys if isinstance(node.get(k), str) and node[k]]
+
+
+def _flow_members(node: Dict, defs: Dict[str, list], members, depth: int):
+    """node が持つ feature の名前 → 宣言ノード。確かめられなければ None。"""
+    if depth > 8:
+        return None
+    node_type = node.get("type") or ""
+    if node_type in _FLOW_IMPLICIT_MEMBER_TYPES:
+        return None
+    result: Dict[str, object] = {}
+
+    def put(name, child):
+        name = _flow_unquote(name)
+        if name in result and result[name] is not child:
+            result[name] = _FLOW_AMBIGUOUS
+        else:
+            result.setdefault(name, child)
+
+    def add_member(child):
+        if not isinstance(child, dict) or not child.get("type"):
+            return
+        if child["type"].endswith("_stmt") and not child.get("name"):
+            for grand in child.get("children") or []:
+                add_member(grand)
+            return
+        names = {child[key] for key in _FLOW_NAME_KEYS if isinstance(child.get(key), str) and child[key]}
+        for name in names:
+            put(name, child)
+        # 名前の無い再定義（`out :>> x;`）は、再定義した名前の feature を持つ
+        if not names:
+            for entry in child.get("redefines") or []:
+                if isinstance(entry, dict) and isinstance(entry.get("target"), str):
+                    put(entry["target"].split("::")[-1], child)
+
+    for key, value in node.items():
+        if key in _FLOW_NON_MEMBER_KEYS or not isinstance(value, list):
+            continue
+        for child in value:
+            add_member(child)
+
+    # 継承・型付けで持ち込まれる feature
+    bases = []
+    inheritance = node.get("inheritance")
+    if isinstance(inheritance, dict):
+        bases.extend(inheritance.get("bases") or [inheritance.get("base")])
+    if node_type not in ("package", "root") and not node_type.endswith("_def"):
+        if node.get("type_name"):
+            bases.append(node["type_name"])
+        if node.get("redefines"):
+            return None  # 別の feature を特殊化・再定義した usage は、元の feature の中身が要る
+    for base in bases:
+        if not isinstance(base, str) or not base:
+            continue
+        candidates = defs.get(_flow_unquote(base.lstrip("~").split("::")[-1]))
+        if not candidates or len(candidates) != 1:
+            return None  # ライブラリ由来・同名が複数など
+        inherited = members(candidates[0], depth + 1)
+        if inherited is None:
+            return None
+        for name, member in inherited.items():
+            if name not in result:
+                result[name] = member
+    return result

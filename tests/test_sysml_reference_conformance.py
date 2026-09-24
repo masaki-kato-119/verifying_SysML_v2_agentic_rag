@@ -98,18 +98,49 @@ REFERENCE_HAS_ERROR = {
     "g4b_transition_body_action.sysml": False,
     "g4c_transition_body_doc.sysml": False,
     "g4d_transition_body_attribute.sysml": False,
+    # e4（S4）の境界。flow の端点（2026-09-24 実測）
+    "f01_owned_param_single_name.sysml": True,  # Cannot identify flow end (use dot notation)
+    "f02_sibling_actions.sysml": False,
+    "f03_inherited_subaction.sysml": False,
+    "f04_typed_usage_existing_param.sysml": False,
+    "f05_typed_usage_missing_param.sysml": True,  # Couldn't resolve reference to Feature 'nope'.
+    "f06_body_missing_param.sysml": True,  # Couldn't resolve reference to Feature 'nope'.
+    "f07_nested_refers_outer_sibling.sysml": True,  # Must be an accessible feature (use dot notation for nesting)
+    "f08_nested_refers_outer_param.sysml": True,  # Cannot identify flow end (use dot notation)
+    "f09_this_prefix.sysml": False,
+    "f10_part_ports.sysml": False,
+    "f11_part_port_not_owned.sysml": True,  # Couldn't resolve reference to Feature 'o'.
+    "f12_flow_usage_named.sysml": False,
+    "f13_flow_usage_unresolved.sysml": True,  # Couldn't resolve reference to Feature 'q'.
+    "f14_succession_flow_unresolved.sysml": True,  # Couldn't resolve reference to Feature 'q'.
+    "f15_typed_by_library_or_unknown.sysml": True,  # Couldn't resolve reference to Feature 'x'.
+    "f16_flow_in_nested_owned.sysml": False,
+    "f17_inherited_param_single_name.sysml": True,  # Cannot identify flow end (use dot notation)
+    "f18_three_segment_chain.sysml": False,
+    "f19_flow_at_package_level.sysml": False,
+    "f20_redefined_feature_first.sysml": False,
+    "f21_parts_single_name.sysml": True,  # Cannot identify flow end (use dot notation)
+    "f22_flow_of_parts_single_name.sysml": True,  # Cannot identify flow end (use dot notation)
+    "f23_package_level_single_name.sysml": True,  # Cannot identify flow end (use dot notation)
+    "f24_flow_usage_single_name_both.sysml": True,  # Cannot identify flow end (use dot notation)
+    "f25_second_segment_on_untyped_bare_usage.sysml": True,  # Couldn't resolve reference to Feature 'x'.
+    "f26_flow_in_interface_def.sysml": False,
+    "f27_message_single_name.sysml": False,
+    "f28_succession_flow_single.sysml": True,  # Cannot identify flow end (use dot notation)
 }
 
 # まだ一致しないもの → 担当タスク（または一致させない理由）
 PENDING = {
-    "r04_flow_end_not_feature_chain.sysml": "e4_flow_end_resolution",
-    "r05_flow_end_not_accessible.sysml": "e4_flow_end_resolution",
     "r06_undefined_trigger.sysml": "e5_trigger_and_event_reference",
     "r07_event_not_occurrence.sysml": "e5_trigger_and_event_reference",
     # 既知の近似（直す予定は無い）: import の置き場所を区別せず、ファイル内の
     # どこかで import した名前はファイル全体で見えるとみなす。参照実装は兄弟の
     # パッケージの import を見せない。linter._collect_library_visible_names 参照
     "s2e_sibling_import_not_visible.sysml": "近似: import の名前空間を区別しない",
+    # 既知の近似: flow の端点の feature の型がライブラリ由来（`action a : Action;`）
+    # だと、その feature が何を持つか確かめられないので判定しない
+    # （action_behavior_rules._check_flow_ends 参照）
+    "f15_typed_by_library_or_unknown.sysml": "近似: ライブラリの型の feature は確かめない",
 }
 
 

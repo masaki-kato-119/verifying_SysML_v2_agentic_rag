@@ -262,6 +262,10 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         # しまうもの（2026-09-24）。詳細は _check_official_syntax_constraints。
         self._check_official_syntax_constraints(ast)
 
+        # 第14.6パス: flow の端点（2026-09-24）。flow を所有する要素から端点を
+        # たどる必要があるため、祖先をたどれる全木走査で行う。
+        self._check_flow_ends(ast)
+
         # 第15パス: 数量リテラルの単位（`1.8 [kg]`）の名前解決（2026-09-24）。
         # 単位は式の中にあり _check_rules の再帰では届かないため、全木走査で行う。
         self._check_quantity_units(ast)
@@ -989,7 +993,8 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         """
         import re
 
-        pattern = re.compile(r"(?:存在しない型|Couldn't resolve reference to \w+) '([^':]+)'")
+        # feature の解決失敗（flow の端点など）は import 漏れではないので対象外
+        pattern = re.compile(r"(?:存在しない型|Couldn't resolve reference to (?:Type|Element|Classifier)) '([^':]+)'")
         for issue in self.issues:
             if issue.severity != SEVERITY_ERROR or "標準ライブラリの" in issue.message:
                 continue
