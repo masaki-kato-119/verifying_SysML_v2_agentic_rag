@@ -1,0 +1,3 @@
+package Signals {
+    event TimerEvent;
+}
