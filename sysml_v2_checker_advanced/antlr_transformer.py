@@ -3560,6 +3560,13 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # `name`/`typeRef`という専用ラベルを使う。2026-09、参照実装比較
         # レポートで発見）。
         redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
+        # `occurrence`キーワードの無い`event X;`は、公式文法（SysML.xtext の
+        # EventOccurrenceUsage）では X という名前の宣言ではなく、既存の occurrence
+        # X への参照（OwnedReferenceSubsetting）。`event occurrence x;`が宣言。
+        # リンターが区別できるよう印を残す（2026-09-24）。既存の exact-equality
+        # 辞書テストを壊さないよう、宣言形ではキー自体を省略する。
+        has_occurrence_keyword = any(child.getText() == "occurrence" for child in ctx.getChildren())
+        is_reference = ctx.name is not None and not has_occurrence_keyword
         return {
             "type": "event_occurrence_usage",
             "name": _namespace_path_text(ctx.name) if ctx.name is not None else None,
@@ -3571,6 +3578,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "ownedReferenceSubsetting": None,
             "children": [self.visit(el) for el in ctx.partBodyElement()],
             **({"isThen": True} if ctx.isThen is not None else {}),
+            **({"isReference": True} if is_reference else {}),
         }
 
     def visitExhibitStateUsageStmt(self, ctx: SysMLMinParser.ExhibitStateUsageStmtContext) -> Dict:

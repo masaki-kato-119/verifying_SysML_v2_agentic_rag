@@ -904,6 +904,9 @@ def test_antlr_transition_full_form_with_trigger_guard_effect():
     ast = parse_sysml_antlr(
         "state def S { state def A; state def B; "
         "transition T1 first A accept Trig if x > 0 do action Y then B; }"
+        # 2026-09-24: 未定義のトリガー型は参照実装0.62.0でエラー
+        # （Couldn't resolve reference to Type 'Trig'.）。AST の形を見るテストなので定義を足す
+        " item def Trig;"
     )
     transition = ast["children"][0]["children"][2]
     assert transition["name"] == "T1"

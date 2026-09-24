@@ -127,12 +127,33 @@ REFERENCE_HAS_ERROR = {
     "f26_flow_in_interface_def.sysml": False,
     "f27_message_single_name.sysml": False,
     "f28_succession_flow_single.sysml": True,  # Cannot identify flow end (use dot notation)
+    # e5（S5）の境界。accept のトリガーの型と `event X;` の参照先（2026-09-24 実測）
+    "t01_accept_item_def.sysml": False,
+    "t02_accept_attribute_def.sysml": False,
+    "t03_accept_undefined.sysml": True,  # Couldn't resolve reference to Type 'Tick'.
+    "t04_accept_event_usage.sysml": True,  # A usage must be typed by definitions.
+    "t05_accept_named_payload_typed.sysml": False,
+    "t06_accept_named_payload_undefined_type.sysml": True,  # Couldn't resolve reference to Type 'Tick'.
+    "t07_accept_via_port.sysml": True,  # Couldn't resolve reference to Element 'p'.
+    "t08_accept_after_time.sysml": False,
+    "t09_accept_when_change.sysml": False,
+    "t10_implicit_transition_undefined.sysml": True,  # no viable alternative at input 'state'
+    "t11_accept_library_type.sysml": False,
+    "t12_accept_part_def.sysml": False,
+    "e01_event_undefined_in_package.sysml": True,  # Couldn't resolve reference to Feature 'TimerEvent'.
+    "e02_event_refers_occurrence_usage.sysml": False,
+    "e03_event_refers_def.sysml": True,  # Couldn't resolve reference to Feature 'O'.
+    "e04_event_refers_attribute.sysml": True,  # Must reference an occurrence.
+    "e05_event_occurrence_named_typed.sysml": False,
+    "e06_event_occurrence_named_untyped.sysml": False,
+    "e07_event_refers_part.sysml": False,
+    "e08_event_in_part_def_refers_owned.sysml": False,
+    "e09_event_refers_nested_chain.sysml": False,
+    "e10_event_refers_item.sysml": False,
 }
 
 # まだ一致しないもの → 担当タスク（または一致させない理由）
 PENDING = {
-    "r06_undefined_trigger.sysml": "e5_trigger_and_event_reference",
-    "r07_event_not_occurrence.sysml": "e5_trigger_and_event_reference",
     # 既知の近似（直す予定は無い）: import の置き場所を区別せず、ファイル内の
     # どこかで import した名前はファイル全体で見えるとみなす。参照実装は兄弟の
     # パッケージの import を見せない。linter._collect_library_visible_names 参照
@@ -141,6 +162,10 @@ PENDING = {
     # だと、その feature が何を持つか確かめられないので判定しない
     # （action_behavior_rules._check_flow_ends 参照）
     "f15_typed_by_library_or_unknown.sysml": "近似: ライブラリの型の feature は確かめない",
+    # 未対応: accept の `via p` のポートは、遷移を持つ状態定義から見える名前で
+    # なければならない（参照実装は `Couldn't resolve reference to Element 'p'.`）。
+    # via の解決は実装していない
+    "t07_accept_via_port.sysml": "未対応: accept の via のポートを解決しない",
 }
 
 

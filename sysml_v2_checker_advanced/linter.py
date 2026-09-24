@@ -54,6 +54,9 @@ _SUBJECT_FIRST_NODE_TYPES = (
     "verification_case_def", "verification_case_usage",
 )
 
+# occurrence ではない usage の型（`event X;` の参照先にできない。_check_event_references）
+_NON_OCCURRENCE_USAGE_TYPES = {"attribute_usage", "enumeration_usage", "reference_usage"}
+
 # actor を所有できる要素の AST の型名に含まれる語（_check_official_syntax_constraints）
 _ACTOR_OWNER_WORDS = ("requirement", "concern", "viewpoint", "case", "satisfy", "verify", "objective")
 
@@ -262,6 +265,9 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         # しまうもの（2026-09-24）。詳細は _check_official_syntax_constraints。
         self._check_official_syntax_constraints(ast)
 
+        # 第14.55パス: `event X;` の参照先（2026-09-24）
+        self._check_event_references(ast)
+
         # 第14.6パス: flow の端点（2026-09-24）。flow を所有する要素から端点を
         # たどる必要があるため、祖先をたどれる全木走査で行う。
         self._check_flow_ends(ast)
@@ -304,6 +310,11 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         # self.typesに登録されなくなるため）。
         elif node_type in ["part_def", "action_def", "activity_def", "type_def", "port_def", "state_def", "state_usage", "interface_def", "allocation_def", "calculation_def", "constraint_def", "item_def", "attribute_def", "enum_def", "case_def", "analysis_case_def", "verification_case_def", "use_case_def", "view_def", "viewpoint_def", "rendering_def", "metadata_def", "event_occurrence_usage", "occurrence_def", "individual_def", "occurrence_usage", "requirement_def", "concern_def"]:
             name = node.get("name")
+            # `event X;`（occurrence キーワード無し）は X への参照で、何も宣言しない
+            # （antlr_transformer.visitEventOccurrenceUsageStmt の isReference）。
+            # 登録すると、宣言されていない X への `accept X` が解決できてしまう。
+            if node.get("isReference"):
+                name = None
             if name:
                 self.symbols[full_name] = node
                 if node_type == "type_def":
@@ -881,6 +892,67 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
                     walk(item, owner_type)
 
         walk(ast, None)
+
+    def _check_event_references(self, ast: Dict) -> None:
+        """`event X;` の X が occurrence の feature として解決できるかを確かめる。
+
+        公式文法では `event X;` は既存の occurrence X への参照で、X という名前の
+        イベントを宣言しない（宣言は `event occurrence x;`）。LLM はパッケージ直下に
+        `event TimerEvent;` と書いて「イベントを定義した」つもりになるが、参照実装は
+        `Couldn't resolve reference to Feature 'TimerEvent'.` と
+        `Must reference an occurrence.` を返す（2026-09-24実測）。
+
+        参照先が定義だけ（`occurrence def O; event O;`）ならエラー、attribute
+        だけ（`attribute a; event a;`）なら occurrence でないのでエラー。
+        occurrence・part・item などの usage と、連鎖（`event d.tick;`）は可。
+        import で見えている名前や検証不能な参照は通す。
+        """
+        declared: Dict[str, Set[str]] = {}
+        references: List[Dict] = []
+
+        def walk(node):
+            if isinstance(node, dict):
+                if node.get("type") == "event_occurrence_usage" and node.get("isReference"):
+                    references.append(node)
+                elif node.get("type"):
+                    for key in ("name", "shortName"):
+                        if isinstance(node.get(key), str) and node[key]:
+                            declared.setdefault(node[key].strip("'"), set()).add(node["type"])
+                for value in node.values():
+                    if isinstance(value, (dict, list)):
+                        walk(value)
+            elif isinstance(node, list):
+                for item in node:
+                    walk(item)
+
+        walk(ast)
+        for node in references:
+            name = node.get("name") or ""
+            if "::" in name or "." in name:
+                continue  # 連鎖や修飾名は、ここでは判定しない
+            bare = name.strip("'")
+            kinds = declared.get(bare)
+            if kinds:
+                if all(kind.endswith("_def") for kind in kinds):
+                    message = (
+                        f"Couldn't resolve reference to Feature '{name}'. Must reference an occurrence. "
+                        f"'{name}' は定義で、`event {name};` は定義を参照できない"
+                        f"（`event occurrence e : {name};` と書く）"
+                    )
+                elif kinds <= _NON_OCCURRENCE_USAGE_TYPES:
+                    message = f"Must reference an occurrence. '{name}' は occurrence ではない（attribute 等）"
+                else:
+                    continue
+            elif bare in self.library_visible_names or self._is_unverifiable_reference(name):
+                continue
+            else:
+                message = (
+                    f"Couldn't resolve reference to Feature '{name}'. Must reference an occurrence. "
+                    f"`event {name};` は既存の occurrence '{name}' を参照する書き方で、宣言ではない。"
+                    f"イベントを宣言するなら `event occurrence {name};`、"
+                    f"accept のトリガーの型にするなら `item def {name};` と書く"
+                )
+            self.issues.append(LintIssue(SEVERITY_ERROR, message, node))
 
     def _check_quantity_units(self, ast: Dict) -> None:
         """数量リテラルの単位の名前を解決する。

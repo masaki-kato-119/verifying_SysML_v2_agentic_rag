@@ -28,9 +28,10 @@
       "id": "sysml-clean-04",
       "category": "clean",
       "description": "state defとtransitionの正しい参照（2026-08-11修正の回帰テスト）",
-      "sysml": "state def Switch {\n    entry; then Off;\n    state Off;\n    state On;\n    transition first Off accept TurnOn then On;\n    transition first On accept TurnOff then Off;\n}\n",
+      "sysml": "item def TurnOn;\nitem def TurnOff;\nstate def Switch {\n    entry; then Off;\n    state Off;\n    state On;\n    transition first Off accept TurnOn then On;\n    transition first On accept TurnOff then Off;\n}\n",
       "expected_issue_count": 0,
-      "regression_for": "state usage（bare `state X;`）がシンボルテーブルに登録されず、有効な遷移先/元でも「存在しない」と誤検出するバグ"
+      "regression_for": "state usage（bare `state X;`）がシンボルテーブルに登録されず、有効な遷移先/元でも「存在しない」と誤検出するバグ",
+      "reference_note": "2026-09-24: accept のトリガーの型（TurnOn 等）が未定義で、参照実装0.62.0は `Couldn't resolve reference to Type 'TurnOn'.` を返す。リンターも報告するようになったため、ケースの趣旨を保ったまま item def を足した（足した形は参照実装で確認済み）。"
     },
     {
       "id": "sysml-clean-05",
@@ -140,14 +141,15 @@
       "id": "sysml-broken-06",
       "category": "broken",
       "description": "transitionが存在しないターゲットステートを参照",
-      "sysml": "state def Switch {\n    state Off;\n    transition first Off accept TurnOn then NonExistentState;\n}\n",
+      "sysml": "item def TurnOn;\nstate def Switch {\n    state Off;\n    transition first Off accept TurnOn then NonExistentState;\n}\n",
       "expected_issue_count": 1,
       "expected_issues": [
         {
           "severity": "error",
           "message_contains": "ターゲットステート 'NonExistentState' が存在しません"
         }
-      ]
+      ],
+      "reference_note": "2026-09-24: accept のトリガーの型（TurnOn 等）が未定義で、参照実装0.62.0は `Couldn't resolve reference to Type 'TurnOn'.` を返す。リンターも報告するようになったため、ケースの趣旨を保ったまま item def を足した（足した形は参照実装で確認済み）。"
     },
     {
       "id": "sysml-broken-07",

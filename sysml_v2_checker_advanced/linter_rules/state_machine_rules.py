@@ -141,6 +141,55 @@ class StateMachineRulesMixin:
                 f"Transition のターゲットステート '{target}' が存在しません",
                 node
             ))
+
+        self._check_transition_trigger_type(node)
+
+    def _check_transition_trigger_type(self, node: Dict) -> None:
+        """accept のトリガーの型が定義として解決できるかを確かめる（2026-09-24）。
+
+        `accept TimerEvent` / `accept t : Tick` の TimerEvent・Tick は型で、
+        参照実装は未定義なら `Couldn't resolve reference to Type 'TimerEvent'.` を
+        返す。`event TimerEvent;` のような event の usage を指しても型ではないので
+        同じくエラー（`A usage must be typed by definitions.`）。item def・
+        attribute def・part def・ライブラリの型（import 済みの Boolean 等）は可。
+        `accept after ...` / `accept when ...`（時間・変化のトリガー）は型を
+        持たないので見ない。判定は他の型参照と同じ _find_type_in_symbols で、
+        検証不能な参照は通す。
+        """
+        trigger = node.get("trigger")
+        if not isinstance(trigger, dict) or trigger.get("trigger_kind"):
+            return
+        # `accept t : Tick` なら型は Tick、`accept Tick` なら参照そのものが型
+        type_name = trigger.get("type_name") or trigger.get("reference")
+        if not isinstance(type_name, str) or not type_name:
+            return
+        if self._find_type_in_symbols(type_name):
+            # self.symbols には usage（event occurrence 等）も入っているので、
+            # 解決先が usage だけなら型ではない（`event occurrence tick : O;` の
+            # あとの `accept tick`。参照実装は `A usage must be typed by definitions.`）
+            matches = [
+                sym for key, sym in self.symbols.items()
+                if key == type_name or key.endswith(f"::{type_name}")
+            ]
+            if (
+                matches
+                and type_name not in self.types
+                and all((m.get("type") or "") in _TRIGGER_USAGE_TYPES for m in matches)
+            ):
+                self.issues.append(LintIssue(
+                    SEVERITY_ERROR,
+                    f"A usage must be typed by definitions. accept のトリガー '{type_name}' は usage で、"
+                    "型ではない（item def などの定義を書き、それを accept する）",
+                    node
+                ))
+            return
+        self.issues.append(LintIssue(
+            SEVERITY_ERROR,
+            f"Couldn't resolve reference to Type '{type_name}'. accept のトリガーは型（item def・"
+            "attribute def など）で書く。`event X;` は型を宣言しない"
+            f"（例: `item def {type_name};` を定義して `accept {type_name}` とする）",
+            node
+        ))
     def _check_parallel_state_has_no_transitions(self, node: Dict, namespace: str) -> None:
         """parallel な state は succession/transition を持てない (8.2.2.11)。
 
@@ -329,3 +378,7 @@ class StateMachineRulesMixin:
                     f"[8.2.2.18] EffectBehavior で kind = '{effect_kind}' が設定されていますが、'effect' である必要があります",
                     effect
                 ))
+
+
+# シンボル表に入る usage の型（accept のトリガーの型にはなれない）
+_TRIGGER_USAGE_TYPES = {"event_occurrence_usage", "occurrence_usage", "state_usage"}
