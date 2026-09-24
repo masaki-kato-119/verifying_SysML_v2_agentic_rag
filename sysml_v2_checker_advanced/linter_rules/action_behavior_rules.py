@@ -524,6 +524,33 @@ class ActionBehaviorRulesMixin:
         無い（ライブラリ由来など）、同名の定義が複数ある、3番目以降の名前、
         のいずれかに当たったら、その端点の判定をやめる。
         """
+        members = self._build_feature_member_resolver(ast)
+
+        def walk(node, owners):
+            if isinstance(node, dict):
+                node_type = node.get("type") or ""
+                ends = _flow_end_texts(node)
+                for end in ends:
+                    self._check_one_flow_end(end, node, owners, members)
+                inner = owners
+                if node_type and not node_type.endswith("_stmt") and not ends:
+                    inner = owners + [node]
+                for key, value in node.items():
+                    if isinstance(value, (dict, list)) and key != "source_range":
+                        walk(value, inner)
+            elif isinstance(node, list):
+                for item in node:
+                    walk(item, owners)
+
+        walk(ast, [])
+
+    @staticmethod
+    def _build_feature_member_resolver(ast: Dict):
+        """要素ノード → その要素が持つ feature（名前 → ノード）を返す関数を作る。
+
+        継承・型付けはこのファイルの定義だけをたどる。確かめられなければ None。
+        flow の端点（_check_flow_ends）と message の端点（sequence ビュー）が使う。
+        """
         defs: Dict[str, list] = {}
 
         def collect_defs(node):
@@ -549,14 +576,65 @@ class ActionBehaviorRulesMixin:
             cache[key] = result
             return result
 
+        return members
+
+    def _check_message_ends_for_sequence_view(self, ast: Dict) -> None:
+        """端点が event occurrence でない message を warning として知らせる。
+
+        `message m from a to b;`（端点がライフラインそのもの）は構文も意味も
+        正しく、参照実装はエラーを出さない。ただし公式の可視化の sequence
+        ビューは、**両端が各ライフラインの event occurrence のときだけ**
+        メッセージを描く。ライフラインそのもの・port・片側だけ event occurrence、
+        のいずれも図が空になる（2026-09-24、SysMLv2_pilot の render で実測）。
+        フェーズ2評価の t05（ATM のシーケンス）では、合格したモデルがすべてこの
+        形で、図にすると何も出なかった。
+
+        **warning であって error ではない**（参照実装との一致判定に影響させない）。
+        端点の feature がこのファイルで確かめられない場合は何も言わない。
+        """
+        members = self._build_feature_member_resolver(ast)
+
+        def end_is_event_occurrence(end, owners):
+            """True / False / None（確かめられない）"""
+            segments = [_flow_unquote(s) for s in re.split(r"\.|::", end) if s]
+            if len(segments) == 1:
+                return False  # ライフラインそのもの
+            if len(segments) != 2 or not owners:
+                return None
+            owner_members = members(owners[-1])
+            if owner_members is None:
+                return None
+            lifeline = owner_members.get(segments[0])
+            if lifeline is None or lifeline is _FLOW_AMBIGUOUS:
+                return None
+            lifeline_members = members(lifeline)
+            if lifeline_members is None:
+                return None
+            target = lifeline_members.get(segments[1])
+            if target is None or target is _FLOW_AMBIGUOUS:
+                return None
+            return target.get("type") == "event_occurrence_usage"
+
         def walk(node, owners):
             if isinstance(node, dict):
                 node_type = node.get("type") or ""
-                ends = _flow_end_texts(node)
-                for end in ends:
-                    self._check_one_flow_end(end, node, owners, members)
+                if node_type == "message_usage":
+                    ends = [node.get("from_end"), node.get("to_end")]
+                    verdicts = [
+                        end_is_event_occurrence(end, owners) for end in ends if isinstance(end, str) and end
+                    ]
+                    if False in verdicts:
+                        label = node.get("name") or ""
+                        self.issues.append(LintIssue(
+                            SEVERITY_WARNING,
+                            f"message '{label}' の端点が event occurrence ではないため、公式の "
+                            "sequence ビューには表示されない（構文・意味としては正しい）。"
+                            "各ライフラインに `event occurrence sendM;` などを宣言し、"
+                            "`message m from a.sendM to b.recvM;` のように両端をそれへ向ける",
+                            node,
+                        ))
                 inner = owners
-                if node_type and not node_type.endswith("_stmt") and not ends:
+                if node_type and not node_type.endswith("_stmt") and node_type != "message_usage":
                     inner = owners + [node]
                 for key, value in node.items():
                     if isinstance(value, (dict, list)) and key != "source_range":

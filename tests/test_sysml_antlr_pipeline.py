@@ -4226,8 +4226,9 @@ def test_antlr_event_occurrence_usage_is_new_construct():
     （AST_SCHEMA.md参照）。新実装ではクリーンな形にした。`_collect_symbols`の
     シンボル収集whitelistに`event_occurrence_usage`が無く
     `_check_event_occurrence_usage`が発火しないバグはlinter.py側で修正済み
-    （AST_SCHEMA.md §3.29参照）。`ownedReferenceSubsetting`を持たせる構文が
-    無いため、常に「参照サブセッティングが無い」というWARNINGが1件出る。"""
+    （AST_SCHEMA.md §3.29参照）。以前は「参照サブセッティングが無い」という
+    WARNINGが常に1件出ていたが、正しい宣言を誤った形へ誘導するため2026-09-24に
+    削除した（case_and_view_rules._check_event_occurrence_usage 参照）。"""
     ast = parse_sysml_antlr("event occurrence A;")
     assert ast["children"][0] == {
         "type": "event_occurrence_usage",
@@ -4240,9 +4241,7 @@ def test_antlr_event_occurrence_usage_is_new_construct():
         "ownedReferenceSubsetting": None,
         "children": [],
     }
-    issues = lint_ast(ast)
-    assert len(issues) == 1
-    assert issues[0].severity == "warning"
+    assert lint_ast(ast) == []
 
 
 def test_antlr_event_occurrence_usage_multiplicity_type_and_body():

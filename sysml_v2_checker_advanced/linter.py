@@ -275,6 +275,9 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         # たどる必要があるため、祖先をたどれる全木走査で行う。
         self._check_flow_ends(ast)
 
+        # 第14.7パス: sequence ビューに描かれない message（warning、2026-09-24）
+        self._check_message_ends_for_sequence_view(ast)
+
         # 第15パス: 数量リテラルの単位（`1.8 [kg]`）の名前解決（2026-09-24）。
         # 単位は式の中にあり _check_rules の再帰では届かないため、全木走査で行う。
         self._check_quantity_units(ast)

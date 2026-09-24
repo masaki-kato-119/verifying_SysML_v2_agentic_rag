@@ -126,15 +126,16 @@ class CaseAndViewRulesMixin:
         現時点で occurrence_usage について検証すべき固有ルールは無い。
         """
     def _check_event_occurrence_usage(self, node: Dict, node_name: str) -> None:
-        """EventOccurrenceUsage の構造チェック"""
-        # Event occurrence は特定の構造を持つ必要がある
-        reference_subsetting = node.get("ownedReferenceSubsetting")
-        if not reference_subsetting:
-            self.issues.append(LintIssue(
-                SEVERITY_WARNING,
-                f"[8.2.2.9] Event occurrence usage '{node.get('name', node_name)}' は参照サブセッティングを持つことが推奨されます",
-                node
-            ))
+        """EventOccurrenceUsage の構造チェック。
+
+        以前はここで「参照サブセッティングを持つことが推奨されます」という
+        warning を出していたが、AST の ownedReferenceSubsetting は常に空で、
+        **すべての event に出ていた**。しかもその勧めに従って
+        `event occurrence sendM;`（正しい宣言。sequence ビューにはこれが要る）を
+        `event sendM;` に書き換えると、参照先の無い参照になってエラーになる。
+        参照実装にも対応する警告は無いので削除した（2026-09-24）。
+        `event X;`（参照形）の参照先は linter._check_event_references が見る。
+        """
     def _check_requirement_advanced_rules(self) -> None:
         """
         Requirement 高度ルールチェック (8.2.2.19)
