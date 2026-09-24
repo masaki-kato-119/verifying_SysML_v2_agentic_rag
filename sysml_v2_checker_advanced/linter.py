@@ -54,6 +54,10 @@ _SUBJECT_FIRST_NODE_TYPES = (
     "verification_case_def", "verification_case_usage",
 )
 
+# actor を所有できる要素の AST の型名に含まれる語（_check_official_syntax_constraints）
+_ACTOR_OWNER_WORDS = ("requirement", "concern", "viewpoint", "case", "satisfy", "verify", "objective")
+
+
 class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, StateMachineRulesMixin, CaseAndViewRulesMixin, TypeAndInheritanceRulesMixin, UsageAndExpressionRulesMixin, ActionBehaviorRulesMixin, ConnectionAndAnnotationRulesMixin):
     """
     SysML v2高度ルールチェッカー
@@ -253,6 +257,10 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         # `to_end`等のネストしたreferenceフィールドまで届かないため、
         # 専用の全木走査で行う。
         self._check_accessible_feature_paths(ast)
+
+        # 第14.5パス: 公式文法が構文エラーとする形のうち、この文法が受理して
+        # しまうもの（2026-09-24）。詳細は _check_official_syntax_constraints。
+        self._check_official_syntax_constraints(ast)
 
         # 第15パス: 数量リテラルの単位（`1.8 [kg]`）の名前解決（2026-09-24）。
         # 単位は式の中にあり _check_rules の再帰では届かないため、全木走査で行う。
@@ -801,6 +809,74 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
                     + self._library_suggestion_suffix(target),
                     node
                 ))
+
+    def _check_official_syntax_constraints(self, ast: Dict) -> None:
+        """公式文法（SysML.xtext / KerML.xtext）が構文エラーとする形を報告する。
+
+        この文法（SysMLMin.g4）は、実在するサンプルを通すために公式より緩く
+        作ってある箇所がある。そこで受理した形のうち、参照実装が構文エラーに
+        するものをここで error にする（2026-09-24実測）。
+
+        文法で拒否せず規則にしているのは、構文エラーにするとそのファイルの他の
+        指摘が1件も出なくなるため。LLM の自己修正では、他の指摘と一緒に
+        「どう直すか」まで返すほうが直しやすい。判定（エラーの有無）は
+        参照実装と同じになる。
+
+        - import の可視性: `import X::*;` は不可で、`private import X::*;` と書く
+          （KerML.xtext の ImportPrefix は `visibility = VisibilityIndicator` で省略不可）。
+        - actor の置き場所: `actor` を書けるのは requirement・concern・viewpoint・
+          case（analysis・verification・use case を含む）と、include use case・
+          satisfy の本体だけ（SysML.xtext の RequirementBody / CaseBody の
+          ActorMember）。パッケージ直下や part・action の中は構文エラー。
+          所有者の型名にこれらの語が1つも含まれないときだけ報告する
+          （AST の型名の揺れで正しい形を落とさないため）。
+        - 結果の式の末尾の `;`: calc/constraint などの本体の最後の式は `;` で
+          終えない（`speed <= limit` と書く）。公式文法の ResultExpressionMember は
+          `;` を持たず、式を `;` で終えると構文エラーになる。
+        """
+
+        def walk(node, owner_type):
+            if isinstance(node, dict):
+                node_type = node.get("type") or ""
+                if node_type == "actor_usage" and not any(
+                    word in (owner_type or "") for word in _ACTOR_OWNER_WORDS
+                ):
+                    self.issues.append(LintIssue(
+                        SEVERITY_ERROR,
+                        f"actor '{node.get('name') or ''}' はここには書けません。actor を書けるのは "
+                        "use case・requirement・case（analysis/verification を含む）・concern・"
+                        "viewpoint の本体だけです（公式文法では構文エラー）。"
+                        "パッケージや part の中で人や外部システムを表すなら `part` を使う",
+                        node,
+                    ))
+                if node_type == "result_expression_member" and node.get("terminated"):
+                    self.issues.append(LintIssue(
+                        SEVERITY_ERROR,
+                        "結果の式の末尾に ';' は書けません。calc/constraint の本体の最後の式は "
+                        "`;` を付けずに書く（例: `speed <= limit`。公式文法では構文エラー）。"
+                        "式を最後以外に置くこともできない",
+                        node,
+                    ))
+                if node_type == "import" and not node.get("visibility"):
+                    target = node.get("name") or ""
+                    suffix = "::*" if node.get("wildcard") else ""
+                    self.issues.append(LintIssue(
+                        SEVERITY_ERROR,
+                        f"import には可視性の指定が必要です: `private import {target}{suffix};` と書く"
+                        "（公式文法では `private` / `public` を省略できず、構文エラーになる）",
+                        node,
+                    ))
+                child_owner = owner_type
+                if node_type and not node_type.endswith("_stmt"):
+                    child_owner = node_type
+                for value in node.values():
+                    if isinstance(value, (dict, list)):
+                        walk(value, child_owner)
+            elif isinstance(node, list):
+                for item in node:
+                    walk(item, owner_type)
+
+        walk(ast, None)
 
     def _check_quantity_units(self, ast: Dict) -> None:
         """数量リテラルの単位の名前を解決する。

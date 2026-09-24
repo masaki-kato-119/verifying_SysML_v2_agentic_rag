@@ -152,10 +152,10 @@ def test_lint_sysml_nested_package_reference_resolves():
 
     型解決用のself.symbolsではなく専用のself.packagesへ登録しているため、
     パッケージ名を型名として参照した場合は依然エラーになることも確認する。"""
-    wildcard = parse_sysml("package Outer { package Inner { part def P; } import Inner::*; }", strict=True)
+    wildcard = parse_sysml("package Outer { package Inner { part def P; } private import Inner::*; }", strict=True)
     assert lint_sysml(wildcard) == []
 
-    member = parse_sysml("package Outer { package Inner { part def P; } import Inner::P; }", strict=True)
+    member = parse_sysml("package Outer { package Inner { part def P; } private import Inner::P; }", strict=True)
     assert lint_sysml(member) == []
 
     # パッケージ名は「型」ではないため、型参照位置での使用は引き続き検出される。
@@ -174,14 +174,14 @@ def test_lint_sysml_standard_library_import_not_flagged():
     最終セグメントのみで判定しており非ワイルドカード側と不整合だった）。
     実在しないパッケージが引き続き検出されることも確認する。"""
     for src in (
-        "package P { import ISQ::*; }",
-        "package P { import SequenceFunctions::size; }",
-        "package P { import SpatialFrames::PositionOf; }",
-        "package P { import KerML::Kernel::*; }",
+        "package P { private import ISQ::*; }",
+        "package P { private import SequenceFunctions::size; }",
+        "package P { private import SpatialFrames::PositionOf; }",
+        "package P { private import KerML::Kernel::*; }",
     ):
         assert lint_sysml(parse_sysml(src, strict=True)) == [], src
 
-    broken = parse_sysml("package P { import NoSuchPackage::*; }", strict=True)
+    broken = parse_sysml("package P { private import NoSuchPackage::*; }", strict=True)
     issues = lint_sysml(broken)
     assert len(issues) == 1
     assert "NoSuchPackage" in issues[0].message
@@ -237,7 +237,7 @@ def test_lint_sysml_unknown_type_without_import_is_still_flagged():
     no_import = parse_sysml("package P { item def X :> TotallyUnknown; }", strict=True)
     assert [i.message for i in lint_sysml(no_import)] != []
 
-    broken_wildcard = parse_sysml("package P { import NoSuchPackage::*; }", strict=True)
+    broken_wildcard = parse_sysml("package P { private import NoSuchPackage::*; }", strict=True)
     assert len(lint_sysml(broken_wildcard)) == 1
 
 
@@ -349,7 +349,7 @@ def test_lint_sysml_qualified_reference_rooted_at_wildcard_import():
     assert [i.message for i in lint_sysml(no_wildcard)] != []
 
     # 偽陰性ガード: 実在しないパッケージのワイルドカードimportは引き続き検出。
-    assert len(lint_sysml(parse_sysml("package P { import NoSuchPackage::*; }", strict=True))) == 1
+    assert len(lint_sysml(parse_sysml("package P { private import NoSuchPackage::*; }", strict=True))) == 1
 
 
 def test_lint_sysml_transition_endpoints_accept_action_usage():

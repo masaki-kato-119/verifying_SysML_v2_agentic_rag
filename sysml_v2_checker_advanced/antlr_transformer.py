@@ -2095,16 +2095,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
     def visitTransitionStmt(self, ctx: SysMLMinParser.TransitionStmtContext) -> Dict:
         trigger, guard, effect = self._transition_trigger_guard_effect(ctx)
         # `then launch { doc /* ... */ }`（MissionPackage.sysml）のように、
-        # targetに`;`終端の代わりにdocのみのbodyが付くことがある
-        # （2026-08-29、235件パース失敗の要因分析で発見）。
-        children = [
-            self.visit(child)
-            for child in ctx.getChildren()
-            if isinstance(
-                child,
-                (SysMLMinParser.DocumentationStmtContext, SysMLMinParser.BareDocCommentContext),
-            )
-        ]
+        # targetに`;`終端の代わりにbodyが付くことがある（2026-08-29、235件
+        # パース失敗の要因分析で発見）。bodyは公式の ActionBody で、docに限らず
+        # `accept t : Tick;` なども書ける（2026-09-24）。本体の accept は
+        # トリガー（`trigger`）ではなく、本体に含まれるアクションとして
+        # childrenに入れる。
+        children = [self.visit(el) for el in ctx.actionBodyElement()]
         # `transition initial then off;`（5-State-based Behavior-1.sysml）
         # のように、名前はあるが`first source`節が完全に省略されることが
         # ある（`_check_transition`はsource=Noneならチェックをスキップする
@@ -3100,7 +3096,16 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return self.visit(ctx.getChild(0))
 
     def visitResultExpressionMember(self, ctx: SysMLMinParser.ResultExpressionMemberContext) -> Dict:
-        return {"type": "result_expression_member", "expression": self.visit(ctx.expression())}
+        # 文法は末尾の`;`を受理するが、公式文法の ResultExpressionMember は`;`で
+        # 終わらない（参照実装は`extraneous input ';' expecting '}'`）。リンターが
+        # 報告できるよう、`;`があったことを残す（2026-09-24）。既存の
+        # exact-equality辞書テストを壊さないよう、無い場合はキー自体を省略する。
+        terminated = any(child.getText() == ";" for child in ctx.getChildren())
+        return {
+            "type": "result_expression_member",
+            "expression": self.visit(ctx.expression()),
+            **({"terminated": True} if terminated else {}),
+        }
 
     def visitAssertConstraintUsage(self, ctx: SysMLMinParser.AssertConstraintUsageContext) -> Dict:
         # `assert constraint c;`のようなbare形は

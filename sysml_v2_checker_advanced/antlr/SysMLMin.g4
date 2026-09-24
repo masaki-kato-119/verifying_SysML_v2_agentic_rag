@@ -3286,7 +3286,13 @@ transitionStmt
       ( 'if' guard=expression )?
       ( 'do' transitionEffect )?
       'then' target=namespacePath
-      ( '{' (documentationStmt | bareDocComment)* '}' | ';' )
+      // 本体は公式の ActionBody（SysML.xtext の TransitionUsage 末尾、
+      // `';' | '{' ActionBodyItem* '}'`）。以前は doc だけを受理しており、
+      // `transition first Red then Green { accept t : Tick; }` のような正しい形を
+      // パースエラーにしていた（2026-09-24、参照実装0.62.0はエラー0件）。
+      // 本体の accept は遷移のトリガーではなく本体に含まれるアクションで、
+      // トリガーは `first X accept T then Y` の位置のものだけ。
+      ( '{' actionBodyElement* '}' | ';' )
     ;
 
 // `accept s : Sig do action D then S2;`・`accept Exit then done;`

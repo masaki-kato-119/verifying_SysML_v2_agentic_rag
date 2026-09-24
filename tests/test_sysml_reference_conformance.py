@@ -75,6 +75,29 @@ REFERENCE_HAS_ERROR = {
     "s2r_builtin_in_param.sysml": True,  # Couldn't resolve reference to Type 'Real'.
     "s2s_uscustomary_unit.sysml": False,
     "s2t_import_after_use.sysml": False,
+    # e3（S6・S7）の境界。import の可視性、actor の置き場所、結果の式の `;`、遷移の本体（2026-09-24 実測）
+    "g1a_bare_import_top_level.sysml": True,  # missing EOF at 'import'
+    "g1b_bare_import_in_part_def.sysml": True,  # mismatched input 'import' expecting '}'
+    "g1c_public_import_ok.sysml": False,
+    "g2a_actor_in_part_def.sysml": True,  # mismatched input 'actor' expecting '}'
+    "g2b_actor_in_use_case_def.sysml": True,  # Subject must be first parameter.
+    "g2c_actor_in_requirement_def.sysml": True,  # Subject must be first parameter.
+    "g2d_actor_in_analysis_def.sysml": True,  # Subject must be first parameter.
+    "g2e_actor_in_use_case_usage.sysml": True,  # Subject must be first parameter.
+    "g2f_actor_in_part_usage.sysml": True,  # mismatched input 'actor' expecting '}'
+    "g2g_actor_in_verification_def.sysml": True,  # Subject must be first parameter.
+    "g2h_actor_in_action_def.sysml": True,  # no viable alternative at input 'actor'
+    "g3a_calc_result_semicolon.sysml": True,  # extraneous input ';' expecting '}'
+    "g3b_calc_result_no_semicolon.sysml": False,
+    "g3c_constraint_usage_semicolon.sysml": True,  # extraneous input ';' expecting '}'
+    "g3d_assert_constraint_semicolon.sysml": True,  # extraneous input ';' expecting '}'
+    "g3e_require_constraint_semicolon.sysml": True,  # no viable alternative at input 'require'
+    "g3f_expression_not_last.sysml": True,  # mismatched input ';' expecting '}'
+    "g3g_return_semicolon.sysml": False,
+    "g4a_transition_body_accept.sysml": False,
+    "g4b_transition_body_action.sysml": False,
+    "g4c_transition_body_doc.sysml": False,
+    "g4d_transition_body_attribute.sysml": False,
 }
 
 # まだ一致しないもの → 担当タスク（または一致させない理由）
@@ -83,10 +106,6 @@ PENDING = {
     "r05_flow_end_not_accessible.sysml": "e4_flow_end_resolution",
     "r06_undefined_trigger.sysml": "e5_trigger_and_event_reference",
     "r07_event_not_occurrence.sysml": "e5_trigger_and_event_reference",
-    "r08_import_without_visibility.sysml": "e3_grammar_conformance",
-    "r09_actor_at_package_level.sysml": "e3_grammar_conformance",
-    "r10_constraint_result_semicolon.sysml": "e3_grammar_conformance",
-    "r11_transition_body_accept_valid.sysml": "e3_grammar_conformance",
     # 既知の近似（直す予定は無い）: import の置き場所を区別せず、ファイル内の
     # どこかで import した名前はファイル全体で見えるとみなす。参照実装は兄弟の
     # パッケージの import を見せない。linter._collect_library_visible_names 参照

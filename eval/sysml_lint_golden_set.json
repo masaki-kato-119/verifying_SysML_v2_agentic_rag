@@ -36,9 +36,10 @@
       "id": "sysml-clean-05",
       "category": "clean",
       "description": "標準ライブラリ ScalarValues のワイルドカードimport（回帰テスト）",
-      "sysml": "import ScalarValues::*;\n",
+      "sysml": "private import ScalarValues::*;\n",
       "expected_issue_count": 0,
-      "regression_for": "ScalarValues/Time等の標準ライブラリパッケージのimportを「存在しないパッケージ」と誤検出するバグ"
+      "regression_for": "ScalarValues/Time等の標準ライブラリパッケージのimportを「存在しないパッケージ」と誤検出するバグ",
+      "reference_note": "2026-09-24: 可視性の無い import（`import X::*;`）は参照実装0.62.0で構文エラー（KerML.xtext の ImportPrefix は visibility を省略できない）。リンターも報告するようになったため、ケースの趣旨を保ったまま `private` を付けた。"
     },
     {
       "id": "sysml-clean-06",
@@ -112,14 +113,15 @@
       "id": "sysml-broken-04",
       "category": "broken",
       "description": "存在しないパッケージのワイルドカードimport",
-      "sysml": "import NoSuchPackage::*;\n",
+      "sysml": "private import NoSuchPackage::*;\n",
       "expected_issue_count": 1,
       "expected_issues": [
         {
           "severity": "error",
           "message_contains": "存在しないパッケージ 'NoSuchPackage'"
         }
-      ]
+      ],
+      "reference_note": "2026-09-24: 可視性の無い import（`import X::*;`）は参照実装0.62.0で構文エラー（KerML.xtext の ImportPrefix は visibility を省略できない）。リンターも報告するようになったため、ケースの趣旨を保ったまま `private` を付けた。"
     },
     {
       "id": "sysml-broken-05",

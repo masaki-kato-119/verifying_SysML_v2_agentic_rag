@@ -533,7 +533,7 @@ def test_standard_library_wildcard_does_not_excuse_other_bogus_imports():
     assert "NoSuchPackage" in issues[0].message
 
     # golden set の sysml-broken-04 相当
-    assert len(lint_sysml(parse_sysml("import NoSuchPackage::*;"))) == 1
+    assert len(lint_sysml(parse_sysml("private import NoSuchPackage::*;"))) == 1
 
 
 def test_circular_specialization_is_a_warning_not_an_error():

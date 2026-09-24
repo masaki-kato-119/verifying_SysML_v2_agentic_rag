@@ -130,7 +130,10 @@ h3の多重度）も同じ`data-edge-id`を持たせてあり、線と一緒に�
   `_usage`/`_instance`は接尾辞を落として`"part"`と表示し、**定義と使用を区別**できる。
 - **状態遷移のラベル（h2）**: `transition`エッジに`trigger [guard] / effect`形式の
   ラベルをエッジ中点付近へ描く（`semantic_model.py`の`_format_transition_label`が
-  組み立て、レンダラーは描くだけ）。
+  組み立て、レンダラーは描くだけ）。ラベルのトリガーは `first X accept T then Y` の
+  位置のものだけで、遷移の本体（`transition ... then Y { accept t : Tick; }`。
+  2026-09-24から公式どおりパースできる）の中のアクションはトリガーではなく、
+  遷移の子要素（無名ノード）として図に出る。
 - **多重度ラベル（h3）**: `feature_typing`エッジと、h7で畳まれた2項connectorの
   エッジにラベルとして多重度を載せる（`[1]`／`[1..*]`等）。
 - **ポートの境界表示（h5）**: `port_def`/`port_usage`は通常の矩形ではなく、親要素の
