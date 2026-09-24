@@ -621,6 +621,52 @@ def build_semantic_model(text: str, known_external_types: Optional[Set[str]] = N
     return ast, model
 
 
+def lint_text_with_locations(text: str, known_external_types: Optional[Set[str]] = None):
+    """テキストをパースして lint し、各指摘を位置付きの辞書で返す（MCP ツール用）。
+
+    `lint_sysml(parse_sysml(text))` の経路では AST が source_range を持たず、指摘に
+    行番号が付かない。LLM が自己修正に使うには、どの行の指摘かが要る
+    （2026-09-25）。そこで parse_sysml_with_semantic_model() でパースし（AST は
+    parse_sysml() と同一内容）、同じ AST の nodes から作った索引で
+    `LintIssue.to_dict(element_index)` を呼ぶ。判定（どの指摘が出るか）は
+    `lint_sysml(parse_sysml(text))` と変わらない。
+
+    戻り値は (ast, issues, issue_dicts)。issue_dicts の各要素は to_dict() の
+    キーに `line` を加えたもの。`line` は指摘が付いたノードの開始行で、
+    そのノードに範囲が無ければ（パーサーの文脈を持たない入れ物のノード等）
+    範囲を持つ最も近い祖先の開始行。ノードを持たない指摘（型システムの
+    指摘など）は None。source_range 自体は to_dict() どおり、そのノード自身の
+    範囲（無ければ None）のまま。ast がパースエラーなら issues は空。
+    """
+    from .antlr_transformer import parse_sysml_with_semantic_model
+
+    ast, model = parse_sysml_with_semantic_model(text)
+    if ast.get("type") == "error":
+        return ast, [], []
+
+    linter = SysMLAdvancedLinter()
+    issues = linter.lint(ast, known_external_types=known_external_types)
+    nodes = model["nodes"]
+    element_index = build_element_index(nodes)
+    stable_id_by_node = _build_reverse_index(nodes)
+
+    def line_of(node) -> Optional[int]:
+        stable_id = stable_id_by_node.get(id(node)) if node is not None else None
+        while stable_id is not None:
+            entry = nodes[stable_id]
+            if entry.get("source_range"):
+                return entry["source_range"]["start_line"]
+            stable_id = entry.get("parent_id")
+        return None
+
+    issue_dicts = []
+    for issue in issues:
+        data = issue.to_dict(element_index)
+        data["line"] = issue.line if issue.line is not None else line_of(issue.node)
+        issue_dicts.append(data)
+    return ast, issues, issue_dicts
+
+
 def semantic_model_to_json_dict(semantic_model: Dict) -> Dict:
     """semantic_model（{"nodes", "root_id", "edges"}）をJSON化可能なdictへ変換する（拡張仕様書10章）。
 

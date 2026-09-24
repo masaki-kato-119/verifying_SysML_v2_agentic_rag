@@ -20,9 +20,10 @@ from fastmcp import FastMCP  # noqa: E402
 # 以前はImportError時に`from parser import ...`へフォールバックしていたが、
 # 前者が失敗する状況(パッケージ自体が壊れている等)では後者も同じ原因で
 # 失敗するため、実質デッドコードだった(SYSML_CHECKER_STANDALONE_AUDIT参照)。
-from sysml_v2_checker_advanced.parser import lint_sysml, parse_sysml  # noqa: E402
+from sysml_v2_checker_advanced.parser import parse_sysml  # noqa: E402
 from sysml_v2_checker_advanced.semantic_model import (  # noqa: E402
     build_semantic_model,
+    lint_text_with_locations,
     semantic_model_to_json_dict,
 )
 from sysml_v2_checker_advanced.utils import ast_to_json  # noqa: E402
@@ -126,7 +127,9 @@ def lint_sysml_file(file_path: str) -> Dict[str, Any]:
         file_path: SysMLファイルのパス
         
     Returns:
-        リント結果と問題のリストを含む辞書
+        リント結果と問題のリストを含む辞書。issues の各要素は重大度・メッセージ・
+        rule・element_id・source_range に加え、指摘の行番号 `line`（1始まり。
+        位置の分からない指摘は None）を持つ
     """
     try:
         # ファイルの存在確認
@@ -142,8 +145,8 @@ def lint_sysml_file(file_path: str) -> Dict[str, Any]:
         # ファイル読み込み
         text = path.read_text(encoding="utf-8")
         
-        # パース実行
-        ast = parse_sysml(text)
+        # パースとリント。指摘に行番号を付けるため、source_range を持つ経路でパースする
+        ast, issues, issue_dicts = lint_text_with_locations(text)
         
         if ast.get("type") == "error":
             return {
@@ -152,9 +155,6 @@ def lint_sysml_file(file_path: str) -> Dict[str, Any]:
                 "issues": [],
                 "summary": {"total": 0, "errors": 0, "warnings": 0, "info": 0}
             }
-        
-        # リント実行
-        issues = lint_sysml(ast)
         
         # 問題の集計
         summary = {
@@ -167,7 +167,7 @@ def lint_sysml_file(file_path: str) -> Dict[str, Any]:
         return {
             "success": True,
             "error": None,
-            "issues": [issue.to_dict() for issue in issues],
+            "issues": issue_dicts,
             "summary": summary,
             "file_path": str(path.absolute()),
             "file_size": len(text)
@@ -191,11 +191,13 @@ def lint_sysml_text(sysml_text: str) -> Dict[str, Any]:
         sysml_text: SysMLのテキスト内容
         
     Returns:
-        リント結果と問題のリストを含む辞書
+        リント結果と問題のリストを含む辞書。issues の各要素は重大度・メッセージ・
+        rule・element_id・source_range に加え、指摘の行番号 `line`（1始まり。
+        位置の分からない指摘は None）を持つ
     """
     try:
-        # パース実行
-        ast = parse_sysml(sysml_text)
+        # パースとリント。指摘に行番号を付けるため、source_range を持つ経路でパースする
+        ast, issues, issue_dicts = lint_text_with_locations(sysml_text)
         
         if ast.get("type") == "error":
             return {
@@ -204,9 +206,6 @@ def lint_sysml_text(sysml_text: str) -> Dict[str, Any]:
                 "issues": [],
                 "summary": {"total": 0, "errors": 0, "warnings": 0, "info": 0}
             }
-        
-        # リント実行
-        issues = lint_sysml(ast)
         
         # 問題の集計
         summary = {
@@ -219,7 +218,7 @@ def lint_sysml_text(sysml_text: str) -> Dict[str, Any]:
         return {
             "success": True,
             "error": None,
-            "issues": [issue.to_dict() for issue in issues],
+            "issues": issue_dicts,
             "summary": summary,
             "text_length": len(sysml_text)
         }
@@ -314,8 +313,8 @@ def analyze_sysml_complete(file_path: str) -> Dict[str, Any]:
         # ファイル読み込み
         text = path.read_text(encoding="utf-8")
         
-        # パース実行
-        ast = parse_sysml(text)
+        # パースとリント。指摘に行番号を付けるため、source_range を持つ経路でパースする
+        ast, issues, issue_dicts = lint_text_with_locations(text)
         
         if ast.get("type") == "error":
             return {
@@ -326,9 +325,6 @@ def analyze_sysml_complete(file_path: str) -> Dict[str, Any]:
                 "summary": {"total": 0, "errors": 0, "warnings": 0, "info": 0},
                 "ast_json": None
             }
-        
-        # リント実行
-        issues = lint_sysml(ast)
         
         # 問題の集計
         summary = {
@@ -345,7 +341,7 @@ def analyze_sysml_complete(file_path: str) -> Dict[str, Any]:
             "success": True,
             "error": None,
             "ast": ast,
-            "issues": [issue.to_dict() for issue in issues],
+            "issues": issue_dicts,
             "summary": summary,
             "ast_json": ast_json,
             "file_path": str(path.absolute()),

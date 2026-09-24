@@ -136,12 +136,15 @@ class TypeAndInheritanceRulesMixin:
             typing: ConjugatedPortTypingノード
             typing_name: タイピング名
         """
+        # リンターがその場で作った合成ノード（`~P` の型付けから組み立てたもの）は
+        # AST に無く、位置も element_id も引けない。元の port usage に付ける（2026-09-25）
+        report_node = typing.get("owner_node") or typing
         original_port_def = typing.get("originalPortDefinition")
         if not original_port_def:
             self.issues.append(LintIssue(
                 SEVERITY_ERROR,
                 "[8.2.2.12] ConjugatedPortTyping は originalPortDefinition を指定する必要があります",
-                typing
+                report_node
             ))
             return
         
@@ -175,7 +178,7 @@ class TypeAndInheritanceRulesMixin:
                 self.issues.append(LintIssue(
                     SEVERITY_WARNING,
                     f"[8.2.2.12] PortDefinition '{qualified_name}' の ConjugatedPortDefinition が自動生成されていません",
-                    typing
+                    report_node
                 ))
                 return
         
@@ -184,7 +187,7 @@ class TypeAndInheritanceRulesMixin:
             SEVERITY_ERROR,
             f"[8.2.2.12] ConjugatedPortTyping が存在しない PortDefinition '{qualified_name}' を参照しています。"
             f"解決を試みました: '{conjugated_name_method1 if segments else qualified_name}'",
-            typing
+            report_node
         ))
     def _find_port_definition_by_resolved_name(self, resolved_name: str) -> Optional[Dict]:
         """
@@ -567,6 +570,7 @@ class TypeAndInheritanceRulesMixin:
                     original_port = type_name[1:]  # ~ を除去
                     conjugated_typing_dict = {
                         "type": "conjugated_port_typing",
-                        "originalPortDefinition": original_port
+                        "originalPortDefinition": original_port,
+                        "owner_node": child,
                     }
                     self._check_conjugated_port_typing(conjugated_typing_dict, f"{node_name}::{type_name}")

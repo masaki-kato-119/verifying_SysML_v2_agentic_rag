@@ -93,3 +93,59 @@ async def test_get_semantic_model_text_parse_error(sysml_client):
 
     assert result.data["success"] is False
     assert result.data["semantic_model"] is None
+
+
+# 行番号の付いた指摘（2026-09-25）。以前は lint 系ツールの指摘に位置が無く
+# （line も source_range も None）、LLM がどの行を直せばよいか分からなかった。
+# 各エラーを別の行に置き、ツールの応答がその行を指すことを確かめる。
+LOCATED_ERRORS_TEXT = """package P {
+    private import ISQ::*;
+    part def V {
+        attribute m : ISQ::Mass;
+        attribute w = 1.8 [kg];
+    }
+    action def B {
+        action a { out x : MassValue; }
+        action b { in y : MassValue; }
+        flow x to b.y;
+    }
+    event TimerEvent;
+    part def S { port p : ~Nope; }
+}
+"""
+
+# ルール → そのエラーがある行
+EXPECTED_ERROR_LINES = {
+    "_check_attribute_def": 4,  # ISQ::Mass は存在しない
+    "_check_quantity_units": 5,  # SI を import していない kg
+    "_check_one_flow_end": 10,  # 名前1つの flow の端点
+    "_check_event_references": 12,  # `event X;` は参照で、X が無い
+    "_check_port_usage": 13,  # 存在しない port def
+    "_check_conjugated_port_typing": 13,  # 合成ノードの指摘も元の port usage の行に付く
+}
+
+
+def _error_lines(issues):
+    return {i["rule"]: i["line"] for i in issues if i["severity"] == "error"}
+
+
+async def test_lint_sysml_text_reports_the_line_of_each_error(sysml_client):
+    result = await sysml_client.call_tool("lint_sysml_text", {"sysml_text": LOCATED_ERRORS_TEXT})
+
+    assert result.data["success"] is True
+    issues = result.data["issues"]
+    assert _error_lines(issues) == EXPECTED_ERROR_LINES
+    assert all(i["line"] is not None for i in issues)
+    ranged = [i for i in issues if i["rule"] == "_check_attribute_def"][0]
+    assert ranged["source_range"]["start_line"] == 4
+    assert ranged["element_id"] == "$root::V::m"
+
+
+async def test_lint_sysml_file_reports_the_line_of_each_error(sysml_client, tmp_path):
+    path = tmp_path / "located.sysml"
+    path.write_text(LOCATED_ERRORS_TEXT, encoding="utf-8")
+
+    result = await sysml_client.call_tool("lint_sysml_file", {"file_path": str(path)})
+
+    assert result.data["success"] is True
+    assert _error_lines(result.data["issues"]) == EXPECTED_ERROR_LINES

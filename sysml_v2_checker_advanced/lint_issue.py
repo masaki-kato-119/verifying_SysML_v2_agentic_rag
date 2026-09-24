@@ -87,7 +87,8 @@ class LintIssue:
         node: 問題が発生したASTノード（オプション）
         line: 行番号（オプション。実際にこの値を設定する呼び出し元はなく、
             常にNoneのまま。位置情報が必要な場合は to_dict(element_index)
-            経由で source_range を使うこと）
+            経由で source_range を使うこと。テキストから位置付きの指摘を
+            まとめて得るなら semantic_model.lint_text_with_locations()）
         rule: この指摘を生成したチェックメソッド名（`__post_init__`が
             呼び出し元フレームから自動取得する。詳細は`__post_init__`参照）
         suggestion: 修正候補（オプション。書き換え方が一意に決まるルールだけが

@@ -135,3 +135,34 @@ def test_issue_with_no_node_returns_none_fields_even_with_index():
     result = issue.to_dict(element_index)
     assert result["element_id"] is None
     assert result["source_range"] is None
+
+
+def test_lint_text_with_locations_matches_the_plain_lint_path():
+    """位置を付ける経路でも、指摘の中身と順序は lint_sysml(parse_sysml(text)) と同じ。"""
+    from sysml_v2_checker_advanced.parser import parse_sysml
+    from sysml_v2_checker_advanced.semantic_model import lint_text_with_locations
+
+    text = "package P {\n    part def V {\n        attribute m : NoSuchType;\n    }\n}\n"
+    _, issues, dicts = lint_text_with_locations(text)
+    plain = [(i.severity, i.message, i.rule) for i in lint_sysml(parse_sysml(text))]
+    assert [(d["severity"], d["message"], d["rule"]) for d in dicts] == plain
+    assert [d["line"] for d in dicts] == [3]
+
+
+def test_lint_text_with_locations_on_parse_error_returns_no_issues():
+    from sysml_v2_checker_advanced.semantic_model import lint_text_with_locations
+
+    ast, issues, dicts = lint_text_with_locations("package P { part def }")
+    assert ast["type"] == "error"
+    assert issues == [] and dicts == []
+
+
+def test_conjugated_port_typing_finding_points_at_the_port_usage():
+    """`~P` の検査はリンターがその場で作る合成ノードに対して行う。以前はその合成ノードに
+    指摘を付けていたため、element_id も位置も引けなかった（2026-09-25）。"""
+    from sysml_v2_checker_advanced.semantic_model import lint_text_with_locations
+
+    _, _, dicts = lint_text_with_locations("package P {\n    part def S { port p : ~Nope; }\n}\n")
+    conjugated = [d for d in dicts if d["rule"] == "_check_conjugated_port_typing"]
+    assert conjugated
+    assert all(d["element_id"] == "$root::S::p" and d["line"] == 2 for d in conjugated)

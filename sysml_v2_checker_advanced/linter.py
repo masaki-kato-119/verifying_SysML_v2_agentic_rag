@@ -560,7 +560,10 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
             original_port = (node.get("type_name") or "")[1:]  # ~ を除去
             conjugated_typing_dict = {
                 "type": "conjugated_port_typing",
-                "originalPortDefinition": original_port
+                "originalPortDefinition": original_port,
+                # 指摘の位置を引けるよう、元の port usage を持たせる
+                # （_check_conjugated_port_typing が指摘をこちらに付ける）
+                "owner_node": node,
             }
             self._check_conjugated_port_typing(conjugated_typing_dict, f"{node.get('name', 'unknown')}::{node.get('type_name', '')}")
         
