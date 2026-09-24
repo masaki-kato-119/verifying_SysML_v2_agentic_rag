@@ -6,6 +6,7 @@ sysml_v2_checker_advanced.linter.SysMLAdvancedLinter に多重継承で合成さ
 
 from typing import Dict
 
+from .. import library_index
 from ..constants import (
     SEVERITY_ERROR,
     SEVERITY_WARNING,
@@ -1425,3 +1426,152 @@ class DefinitionUsageRulesMixin:
                 f"Port '{node.get('name')}' が存在しない型 '{type_name}' を参照しています",
                 node
             ))
+
+    # --- usage の型の種別（2026-09-24） --------------------------------------------
+
+    def _check_usage_type_kinds(self, ast: Dict) -> None:
+        """usage の型が、その usage に許される種別の定義かを確かめる。
+
+        参照実装（0.62.0）で実測した規則（2026-09-24、
+        tests/fixtures/reference_conformance/k*.sysml）:
+
+        - attribute の型は attribute def・enum def・データ型（ScalarValues::Real 等）。
+          part def・item def・occurrence def・port def・action def や、usage
+          （`ISQ::mass`）は `An attribute must be typed by attribute definitions.`
+        - part・item の型は occurrence 系の定義（part/item/occurrence def 等）。
+          attribute def は `An occurrence, item or part must be typed by occurrence definitions.`
+        - port の型は port def（`A port must be typed by port definitions.`）。
+        - action の型は action 系の定義（action/calc/state/case def 等。
+          `An action must be typed by action definitions.`）。
+        - calc/action の引数には種別の制約が無い。
+
+        型の種別は、同じファイルの定義（同名の定義が種別の違うものを含めば
+        判定しない）か、標準ライブラリの索引（修飾名、または import で見えている
+        名前）で決める。どちらでも分からない型は通す。型が存在しない場合は
+        存在の規則（_check_attribute_def 等）が報告するので、ここでは見ない。
+        """
+        local_kinds: Dict[str, set] = {}
+
+        def collect(node):
+            if isinstance(node, dict):
+                node_type = node.get("type") or ""
+                if node_type.endswith("_def") and node.get("name"):
+                    local_kinds.setdefault(node["name"].strip("'"), set()).add(node_type)
+                for value in node.values():
+                    if isinstance(value, (dict, list)):
+                        collect(value)
+            elif isinstance(node, list):
+                for item in node:
+                    collect(item)
+
+        def walk(node):
+            if isinstance(node, dict):
+                rule = _USAGE_KIND_RULES.get(node.get("type"))
+                type_name = node.get("type_name")
+                if rule and isinstance(type_name, str) and type_name:
+                    category = self._type_category(type_name.lstrip("~"), local_kinds)
+                    allowed, message = rule
+                    if category is not None and category not in allowed:
+                        self.issues.append(LintIssue(
+                            SEVERITY_ERROR,
+                            f"{message} '{node.get('name') or ''}' の型 '{type_name}' は"
+                            f"{_CATEGORY_LABELS[category]}",
+                            node,
+                        ))
+                for value in node.values():
+                    if isinstance(value, (dict, list)):
+                        walk(value)
+            elif isinstance(node, list):
+                for item in node:
+                    walk(item)
+
+        collect(ast)
+        walk(ast)
+
+    def _type_category(self, type_name: str, local_kinds: Dict[str, set]):
+        """型の種別（_KIND_* のいずれか）。分からなければ None。"""
+        bare = type_name.split("::")[-1].strip("'")
+        if "::" not in type_name or not self._library_reference_verdict(type_name):
+            kinds = local_kinds.get(bare)
+            if kinds:
+                categories = {_LOCAL_DEF_CATEGORIES.get(kind) for kind in kinds}
+                return categories.pop() if len(categories) == 1 else None
+        if "::" in type_name:
+            if self._library_reference_verdict(type_name) is not True:
+                return None
+            kind = library_index.member_kind(type_name)
+        else:
+            kind = self.library_visible_names.get(bare)
+        return _library_kind_category(kind) if kind else None
+
+
+_KIND_ATTRIBUTE = "attribute"
+_KIND_PORT = "port"
+_KIND_ACTION = "action"
+_KIND_OCCURRENCE = "occurrence"  # port・action 以外の occurrence 系の定義
+_KIND_USAGE = "usage"
+
+_CATEGORY_LABELS = {
+    _KIND_ATTRIBUTE: " attribute の定義",
+    _KIND_PORT: " port の定義",
+    _KIND_ACTION: " action の定義",
+    _KIND_OCCURRENCE: " occurrence 系（part/item 等）の定義",
+    _KIND_USAGE: "定義ではなく usage",
+}
+
+# usage の型 → (許される種別, 参照実装のメッセージ)
+_USAGE_KIND_RULES = {
+    "attribute_usage": ({_KIND_ATTRIBUTE}, "An attribute must be typed by attribute definitions."),
+    "part_instance": (
+        {_KIND_OCCURRENCE, _KIND_PORT, _KIND_ACTION},
+        "An occurrence, item or part must be typed by occurrence definitions.",
+    ),
+    "item_usage": (
+        {_KIND_OCCURRENCE, _KIND_PORT, _KIND_ACTION},
+        "An occurrence, item or part must be typed by occurrence definitions.",
+    ),
+    "port_usage": ({_KIND_PORT}, "A port must be typed by port definitions."),
+    "action_usage": ({_KIND_ACTION}, "An action must be typed by action definitions."),
+}
+
+_LOCAL_DEF_CATEGORIES = {
+    "attribute_def": _KIND_ATTRIBUTE,
+    "enum_def": _KIND_ATTRIBUTE,
+    "port_def": _KIND_PORT,
+    "action_def": _KIND_ACTION,
+    "activity_def": _KIND_ACTION,
+    "state_def": _KIND_ACTION,
+    "calculation_def": _KIND_ACTION,
+    "case_def": _KIND_ACTION,
+    "analysis_case_def": _KIND_ACTION,
+    "verification_case_def": _KIND_ACTION,
+    "use_case_def": _KIND_ACTION,
+    "part_def": _KIND_OCCURRENCE,
+    "item_def": _KIND_OCCURRENCE,
+    "occurrence_def": _KIND_OCCURRENCE,
+    "individual_def": _KIND_OCCURRENCE,
+    "connection_def": _KIND_OCCURRENCE,
+    "interface_def": _KIND_OCCURRENCE,
+    "allocation_def": _KIND_OCCURRENCE,
+}
+
+
+def _library_kind_category(kind: str):
+    """索引の宣言の種別（`attribute def`・`datatype` 等）→ _KIND_*。分からなければ None。"""
+    words = kind.split()
+    if "def" not in words:
+        if words and words[-1] in ("datatype",):
+            return _KIND_ATTRIBUTE
+        if words and words[-1] in ("attribute", "part", "item", "port", "action", "occurrence"):
+            return _KIND_USAGE
+        return None  # KerML の class・struct・alias など
+    head = words[words.index("def") - 1] if words.index("def") > 0 else ""
+    if head in ("attribute", "enum"):
+        return _KIND_ATTRIBUTE
+    if head == "port":
+        return _KIND_PORT
+    if head in ("action", "calc", "state", "case", "analysis", "verification", "use"):
+        return _KIND_ACTION
+    if head in ("part", "item", "occurrence", "connection", "interface", "allocation", "flow"):
+        return _KIND_OCCURRENCE
+    return None

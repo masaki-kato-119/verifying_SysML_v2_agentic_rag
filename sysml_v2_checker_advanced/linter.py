@@ -265,6 +265,9 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         # しまうもの（2026-09-24）。詳細は _check_official_syntax_constraints。
         self._check_official_syntax_constraints(ast)
 
+        # 第14.52パス: usage の型の種別（2026-09-24）
+        self._check_usage_type_kinds(ast)
+
         # 第14.55パス: `event X;` の参照先（2026-09-24）
         self._check_event_references(ast)
 
@@ -277,7 +280,7 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         self._check_quantity_units(ast)
 
         # 最後に、import 漏れで解決できなかった名前へ import のヒントを付ける
-        self._add_library_import_hints()
+        self._add_library_import_hints(ast)
 
         return self.issues
     
@@ -1055,7 +1058,7 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         walk(ast)
         return names
 
-    def _add_library_import_hints(self) -> None:
+    def _add_library_import_hints(self, ast: Dict) -> None:
         """import 漏れで解決できなかった非修飾名に、import のヒントを付ける。
 
         `attribute enabled : Boolean;`（import 無し）は、名前は実在するが見えて
@@ -1067,6 +1070,8 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
 
         # feature の解決失敗（flow の端点など）は import 漏れではないので対象外
         pattern = re.compile(r"(?:存在しない型|Couldn't resolve reference to (?:Type|Element|Classifier)) '([^':]+)'")
+        # ファイル内で宣言されている名前（`attribute b` 等）の解決失敗は、import 漏れではない
+        declared = self._declared_names_anywhere(ast)
         for issue in self.issues:
             if issue.severity != SEVERITY_ERROR or "標準ライブラリの" in issue.message:
                 continue
@@ -1074,6 +1079,8 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
             if not m:
                 continue
             name = m.group(1)
+            if name.strip("'") in declared:
+                continue
             packages = library_index.packages_defining(name)
             if not packages:
                 continue

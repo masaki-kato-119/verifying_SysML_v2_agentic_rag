@@ -150,6 +150,31 @@ REFERENCE_HAS_ERROR = {
     "e08_event_in_part_def_refers_owned.sysml": False,
     "e09_event_refers_nested_chain.sysml": False,
     "e10_event_refers_item.sysml": False,
+    # e6（S3）の境界。usage の型の種別（2026-09-24 実測）
+    "k01_attribute_part_def.sysml": True,  # An attribute must be typed by attribute definitions.
+    "k02_attribute_item_def.sysml": True,  # An attribute must be typed by attribute definitions.
+    "k03_attribute_enum_def.sysml": False,
+    "k04_attribute_occurrence_def.sysml": True,  # An attribute must be typed by attribute definitions.
+    "k05_attribute_port_def.sysml": True,  # An attribute must be typed by attribute definitions.
+    "k06_attribute_library_attribute_def.sysml": False,
+    "k07_attribute_library_attribute_usage.sysml": True,  # An attribute must be typed by attribute definitions.
+    "k08_attribute_library_part_def.sysml": True,  # An attribute must be typed by attribute definitions.
+    "k09_attribute_local_attribute_usage.sysml": True,  # An attribute must be typed by attribute definitions.
+    "k10_part_attribute_def.sysml": True,  # An occurrence, item or part must be typed by occurrence definitions.
+    "k11_part_item_def.sysml": False,
+    "k12_part_part_usage.sysml": True,  # An occurrence, item or part must be typed by occurrence definitions.
+    "k13_item_part_def.sysml": False,
+    "k14_item_attribute_def.sysml": True,  # An occurrence, item or part must be typed by occurrence definitions.
+    "k15_port_part_def.sysml": True,  # A port must be typed by port definitions.
+    "k16_port_port_def_ok.sysml": False,
+    "k17_action_part_def.sysml": True,  # An action must be typed by action definitions.
+    "k18_calc_param_part_def.sysml": False,
+    "k19_action_param_attribute_def.sysml": False,
+    "k20_part_occurrence_def.sysml": False,
+    "k21_attribute_datatype_library.sysml": False,
+    "k22_part_library_item_def.sysml": False,
+    "k23_attribute_action_def.sysml": True,  # An attribute must be typed by attribute definitions.
+    "k24_state_action_def.sysml": False,
 }
 
 # まだ一致しないもの → 担当タスク（または一致させない理由）
