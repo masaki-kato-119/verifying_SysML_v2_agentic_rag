@@ -89,6 +89,14 @@ def main() -> int:
     parser.add_argument("--results-dir", type=Path, default=RESULTS_DIR,
                         help="逐次モードの結果ディレクトリ（既定 eval/sysml_results）")
     parser.add_argument("--limit", type=int, default=None, help="先頭N件のみ（動作確認用）")
+    parser.add_argument(
+        "--fresh-serial", action="store_true",
+        help="保存済みの結果を使わず、逐次モードを**その場で**走らせて比べる。"
+        "参照実装のjarを入れ替えた直後はこちらを使うこと――保存済みの結果は"
+        "古いjarで取ったものなので、そのまま比べると『バッチと逐次の差』と"
+        "『バージョンの差』が混ざって判定できない。1件あたり13秒前後かかるので"
+        "--limit と併用する",
+    )
     parser.add_argument("--canary-interval", type=int, default=50,
                         help="このサンプル数ごとにバッチ側のcanaryを挟む。0で無効化（非推奨）")
     parser.add_argument("--json", type=Path, help="差分をJSONで書き出す")
@@ -122,7 +130,13 @@ def main() -> int:
                 missing += 1
                 continue
 
-            serial = record["reference"]
+            if args.fresh_serial:
+                # 現在のjarで逐次モードを走らせる（JVMを1件ごとに起こすので遅い）。
+                serial = reference_module.run_reference_check(
+                    source.read_text(encoding="utf-8", errors="replace")
+                )
+            else:
+                serial = record["reference"]
             fresh = batch.check_file(str(source))
 
             same_crashed = bool(serial.get("crashed")) == bool(fresh.get("crashed"))

@@ -34,12 +34,19 @@ Two ways to call it:
   Re-run that verification if the jar or the sample corpus changes.
 
 Setup (already done once for this checkout; see eval/sysml_reference/):
-  - vendor/jupyter-sysml-kernel-0.61.0-pyhd8ed1ab_0.conda downloaded from
-    conda-forge (contains the fat jar with the parser/validator).
-  - vendor/_extracted/.../jupyter-sysml-kernel-0.61.0-all.jar extracted from
+  - vendor/jupyter-sysml-kernel-<version>-pyhd8ed1ab_0.conda downloaded from
+    conda-forge (contains the fat jar with the parser/validator). The version
+    in use is REFERENCE_VERSION below.
+  - vendor/_extracted/.../jupyter-sysml-kernel-<version>-all.jar extracted from
     that package (a plain ZIP containing zstd-compressed tarballs).
   - sysml.library/ checked out from the Systems-Modeling/SysML-v2-Release
     GitHub repo (sparse checkout of just the sysml.library/ subtree).
+    **The .conda ships the matching sysml.library too** (share/jupyter/kernels/
+    sysml/sysml.library/, 95 files), so the checkout is not the only source --
+    and it is the authoritative pairing if the two ever disagree. Verified
+    2026-09-24: the checkout matches the bundled copy byte for byte once CRLF
+    is normalised, and the bundled library is *identical* between 0.61.0 and
+    0.62.0, so that upgrade needed no library change.
   - vendor/RefDriver.java compiled to vendor/RefDriver.class with javac
     against the fat jar's classpath.
 
@@ -61,6 +68,17 @@ from typing import Any
 
 HERE = Path(__file__).resolve().parent
 VENDOR_DIR = HERE / "vendor"
+
+# 参照実装のバージョン。**ここを変えたら必ず以下をやり直すこと**:
+#   1. 対応する .conda を取得して jar を展開し直す（下の Setup 節の手順）
+#   2. RefDriver.class を新しい jar のクラスパスで再コンパイル
+#   3. バッチモードが逐次モードと一致するかを測り直す
+#      （scripts/compare_reference_runs_batch_vs_serial.py）
+#   4. 730件を流し直し、旧バージョンの結果と突き合わせる
+# 上げ忘れると「古い jar で測った数字を新しいバージョンのものとして報告する」
+# 形の静かな誤りになるため、パスに版を直書きして存在しなければ落ちるようにしてある
+# （glob で拾うと、古い jar が残っているときに黙ってそちらを使ってしまう）。
+REFERENCE_VERSION = "0.62.0"
 EXTRACTED_JAR = (
     VENDOR_DIR
     / "_extracted"
@@ -68,7 +86,7 @@ EXTRACTED_JAR = (
     / "jupyter"
     / "kernels"
     / "sysml"
-    / "jupyter-sysml-kernel-0.61.0-all.jar"
+    / f"jupyter-sysml-kernel-{REFERENCE_VERSION}-all.jar"
 )
 LIBRARY_DIR = HERE / "sysml.library"
 DRIVER_CLASS_DIR = VENDOR_DIR  # RefDriver.class lives directly in vendor/

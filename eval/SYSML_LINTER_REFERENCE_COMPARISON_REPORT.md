@@ -1,16 +1,98 @@
 # SysML v2 独自チェッカー vs OMG公式Pilot Implementation 比較評価レポート
 
 対象: `sysml_v2_checker_advanced/`（ANTLR4ベース、`sysml_v2_checker_advanced/antlr/SysMLMin.g4`という「最小」文法）
-比較対象: OMG公式 SysML v2 Pilot Implementation（`sysml-v2-pilot-implementation` 由来の Jupyter kernel jar 0.61.0 経由）
+比較対象: OMG公式 SysML v2 Pilot Implementation（`sysml-v2-pilot-implementation` 由来の
+Jupyter kernel jar **0.62.0** 経由。2026-09-24に 0.61.0 から更新。§v4 参照）
 
-このファイルは3つの測定を並記している。**新しい順**。
+このファイルは4つの測定を並記している。**新しい順**。
 
+- **v4（2026-09-24）** — 下記「v4」節。参照実装を 0.62.0 へ更新し、730件を取り直した。
+  **参照実装の出力は730件すべてで 0.61.0 と同一**だったため、v3までの数値はそのまま有効。
 - **v3（2026-09-07）** — 下記「v3」節。ルール別の一致率を初めて実測し、それを根拠に
   confidence が低い4ルールの偽陽性を潰した後の再測定。
 - **v2（2026-09-04）** — 「v2」節。8/28のレポートで挙げた問題を修正した後の再測定。
   v3から見ると途中のスナップショットだが、当時の判断根拠として残してある。
 - **v1（2026-08-28）** — 「v1」以降の節（旧レポート本文をそのまま残してある）。修正前の
   ベースライン。v2の差分表はこれを基準に取っている。
+
+---
+
+# v4（2026-09-24）: 参照実装を 0.62.0 へ更新（出力に変化なし）
+
+測定日: 2026-09-24
+参照実装: `jupyter-sysml-kernel-0.62.0`（conda-forge、2026-09-11公開）。従来は 0.61.0（2026-08-21公開）。
+実行: `scripts/run_reference_comparison_eval.py --force`（batchモード、730件・約19分）
+
+## v4-0. なぜ上げたか
+
+参照実装が1バージョン進んでいた。こちらの精度の主張はすべて参照実装を基準に
+測っているので、基準が動いたなら測り直さないと「古いオラクルに対する一致率」を
+現在の数値として提示することになる。
+
+## v4-1. 結論: **参照実装の出力は730件すべてで同一だった**
+
+0.61.0 と 0.62.0 の `reference` 出力（crashed と、診断の (severity, line, message)
+多重集合）をファイル単位で突き合わせた結果:
+
+| | 件数 |
+|---|---:|
+| 完全一致 | **730 / 730** |
+| 差異あり | **0** |
+
+したがって **v3までに出した数値はすべてそのまま有効**であり、更新による再解釈は要らない。
+agreement の集計もフル実行で v3以降の値を再現した:
+
+| agreement | 件数 | 割合 |
+|---|---:|---:|
+| both_clean | 484 | 66.3% |
+| both_error | 194 | 26.6% |
+| reference_only_error | 51 | 7.0% |
+| local_only_error | **1** | 0.1% |
+
+**副産物の確認**: これは 9/07〜9/14 に `recheck_local_only.py`（保存済みの参照結果を
+固定基準にしてローカル側だけ流し直す方式）で導いていた値と完全に一致する。
+省力化のための方式が、フル実行と同じ答えを返すことが裏取りできた。
+
+## v4-2. 標準ライブラリは更新不要だった（実測）
+
+当初は「jarと`sysml.library`はlockstepで動かす必要がある」と見積もっていたが、
+実測の結果**この更新に限っては不要**だった。
+
+- `.conda` パッケージは対応する `sysml.library` を同梱している
+  （`share/jupyter/kernels/sysml/sysml.library/`、95ファイル）。
+- **0.61.0 同梱版と 0.62.0 同梱版は1バイトも違わない。** 標準ライブラリはこの2版間で
+  変わっていない。
+- ディスク上の `sysml.library`（GitHubからのsparse checkout、117ファイル）も、
+  改行コードを正規化すれば同梱版と差分0。余分な23ファイルはEclipseのプロジェクト
+  メタデータで、カーネルは読まない。
+
+**次に上げるときは同梱版を正とすること。** GitHubのタグから別途取ってくると版の
+対応付けを推測する余地が生まれるが、`.conda` の中身なら対応は自明である。
+
+## v4-3. 手順と、その過程で直した2つの欠陥
+
+1. `.conda` を取得（124,003,090バイト）し fat jar を展開。
+2. `reference_driver.py` の `REFERENCE_VERSION` を `0.62.0` へ。パスに版を直書きして
+   存在しなければ落ちるようにしてある（globで拾うと、古いjarが残っているときに
+   黙ってそちらを使う）。
+3. `RefDriver.class` を新しいjarのクラスパスで再コンパイル。
+4. canary（`package P { part def }` を必ず拒否すること）を確認。
+5. **バッチモードが逐次モードと一致することを測り直し**（100件、100/100一致）。
+6. 730件フル実行。
+
+**欠陥(a): `compare_reference_runs_batch_vs_serial.py` が自分の指示を実行できなかった。**
+docstringは「jarが変わったら再検証せよ」と書いているのに、実装は保存済みの逐次結果
+（＝古いjarで取ったもの）とバッチを比べる作りだった。これでは「バッチと逐次の差」と
+「バージョンの差」が混ざる。`--fresh-serial` を追加し、逐次をその場で走らせて比べられる
+ようにした。上記5はこのモードでの結果。
+
+**欠陥(b): 長時間ジョブが最初の進捗行で即死していた。** 進捗表示に含まれる em dash が
+Windowsのcp932でエンコードできず、出力をパイプ/リダイレクトすると `UnicodeEncodeError`
+で落ちる。しかも**パイプ経由だと終了コードが後段コマンドのものになり、成功と区別が
+付かない**。実際に1回目の実行は「終了コード0」を返しながら書き込み0件で死んでいた
+（結果ファイル数を数えていなければ、そのまま「実行済み」として先へ進んでいた）。
+eval スクリプト3本で stdout/stderr を UTF-8 に固定した。3本目 `run_answer_eval.py` は
+実課金の評価で、途中で落ちると金銭的損失が出るため併せて直してある。
 
 ---
 
@@ -573,8 +655,11 @@ E1 修正後もこのファイルは26エラーセグメントを出す。全セ
 ### 1.1 参照実装の入手・実行方法
 
 - 参照実装は OMG公式リポジトリ `Systems-Modeling/SysML-v2-Pilot-Implementation` 由来。実体は
-  `eval/sysml_reference/vendor/_extracted/share/jupyter/kernels/sysml/jupyter-sysml-kernel-0.61.0-all.jar`
-  （Jupyter用SysMLカーネルのfat jar。**バージョン0.61.0に固定**）。
+  `eval/sysml_reference/vendor/_extracted/share/jupyter/kernels/sysml/jupyter-sysml-kernel-<版>-all.jar`
+  （Jupyter用SysMLカーネルのfat jar）。**使用中の版は
+  `eval/sysml_reference/reference_driver.py` の `REFERENCE_VERSION` が唯一の出どころ**で、
+  現在は `0.62.0`（v1〜v3の測定時は `0.61.0`。両者の出力が730件すべてで同一であることは
+  §v4-1 で確認済み）。版を上げるときの手順は同ファイルの `REFERENCE_VERSION` 上のコメントにある。
 - 呼び出しは `eval/sysml_reference/vendor/RefDriver.java`（本評価用に用意した薄いラッパー）経由。
   内部で `org.omg.sysml.interactive.SysMLInteractive`（Jupyterカーネルが内部で使うのと同じAPI）の
   `si.loadLibrary(libraryDir)` → `si.process(text, false)` を呼び、`Issue`（Xtextの構文/意味診断）を
@@ -1148,7 +1233,9 @@ E1 修正後もこのファイルは26エラーセグメントを出す。全セ
   **この点についてローカルの文法を「参照実装に合わせて修飾子必須にする」修正は推奨しない**
   （参照実装側の挙動の方が疑わしいため）。
 - 原因は次のいずれかと推測される（本調査では特定until至らず）:
-  (a) 評価に使っている `jupyter-sysml-kernel-0.61.0-all.jar` 固有の既知の不具合、
+  (a) 評価に使っている `jupyter-sysml-kernel-0.61.0-all.jar` 固有の既知の不具合
+  （**2026-09-24追記: 0.62.0 でも出力は同一だったので、少なくとも版を1つ上げただけでは
+  解消しない**。§v4-1）、
   (b) `SysMLInteractive`というJupyterカーネル向けAPI（`next()`/`counter`フィールドを持つ、
   対話的セッション/セル評価を想定した設計）を「1ファイルまるごとの静的解析」目的で流用していることに
   起因する使い方の不整合。
