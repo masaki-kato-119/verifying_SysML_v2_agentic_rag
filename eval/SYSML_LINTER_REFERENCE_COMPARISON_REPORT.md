@@ -4,8 +4,10 @@
 比較対象: OMG公式 SysML v2 Pilot Implementation（`sysml-v2-pilot-implementation` 由来の
 Jupyter kernel jar **0.62.0** 経由。2026-09-24に 0.61.0 から更新。§v4 参照）
 
-このファイルは4つの測定を並記している。**新しい順**。
+このファイルは5つの測定を並記している。**新しい順**。
 
+- **v5（2026-09-24）** — 下記「v5」節。LLM に書かせたモデルでの見逃し（偽陰性）を、
+  フェーズ2評価の改善仕様書に沿って潰した後の再測定。**v1 §4.3 の結論を訂正している**。
 - **v4（2026-09-24）** — 下記「v4」節。参照実装を 0.62.0 へ更新し、730件を取り直した。
   **参照実装の出力は730件すべてで 0.61.0 と同一**だったため、v3までの数値はそのまま有効。
 - **v3（2026-09-07）** — 下記「v3」節。ルール別の一致率を初めて実測し、それを根拠に
@@ -14,6 +16,149 @@ Jupyter kernel jar **0.62.0** 経由。2026-09-24に 0.61.0 から更新。§v4 
   v3から見ると途中のスナップショットだが、当時の判断根拠として残してある。
 - **v1（2026-08-28）** — 「v1」以降の節（旧レポート本文をそのまま残してある）。修正前の
   ベースライン。v2の差分表はこれを基準に取っている。
+
+---
+
+# v5（2026-09-24）: LLM が書くモデルでの見逃しを潰す
+
+測定日: 2026-09-24
+参照実装: 0.62.0（v4 と同じ。判定は `eval/sysml_results/` に保存済みのものを固定基準に使った）
+根拠: `SysMLv2_pilot/sysml-mcp-server/eval/phase2/SELF_CHECKER_IMPROVEMENT_SPEC.md`
+作業: Blackboard プラン `sysml_checker_false_negatives`（e0〜e8）
+
+## v5-0. なぜやったか
+
+フェーズ2評価（LLM に SysML v2 を書かせ、最終モデルを参照実装で判定）で、このチェッカーだけを
+渡した条件では **8回中5回、チェッカーが最後に「エラー0件」と返し、LLM はそれを信じて終えた**。
+参照実装ではその5回とも2〜21件のエラーがあった。LLM が書いた最終モデル24件のうち
+**10件で、チェッカーが0件・参照実装がエラーあり**だった。
+
+730件のコーパスでこれが目立たなかったのは、コーパスの大半が人の書いた正しいモデルで、
+LLM が典型的に犯す誤り（存在しないライブラリ名、import の省略、flow の端点の書き方）が
+少ないため。ただし種類としては、コーパスの `reference_only_error` 51件も同じ系統だった。
+
+## v5-1. 結論
+
+| 指標 | 着手前 | 完了後 |
+|---|---:|---:|
+| フェーズ2の24モデル: チェッカー0件・参照実装エラーあり | **10** | **0** |
+| フェーズ2の24モデル: チェッカーだけがエラー | 0 | 0 |
+| フェーズ2の24モデル: 正しい構文をパースエラーにした | 1 | 0 |
+| 最小再現12件（`check_repros.py`）の不一致 | 11 | **0** |
+| コーパス both_clean | 484 | **484** |
+| コーパス both_error | 194 | 214 |
+| コーパス reference_only_error | 51 | **31** |
+| コーパス local_only_error | 1 | **1** |
+
+誤検出（local_only_error）を1件も増やさずに、見逃しを 51 → 31 に減らした。
+LLM のモデルでは、ファイル単位の判定が24件すべてで参照実装と一致する。
+
+## v5-2. 項目ごとの効果
+
+仕様書の項目（S1〜S8）ごとに、1項目入れるたびに `recheck_local_only.py` で測った。
+
+| 項目 | コミット | 内容 | reference_only | 24モデルの不一致 |
+|---|---|---|---:|---:|
+| （着手前） | | | 51 | 11 |
+| S1 | 7885e13 | 標準ライブラリの公開名の索引（`library_index.json`）。`ISQ::Mass` 等の実在しない名前、attribute の型の不在を error に（初版から warning だった） | 49 | 9 |
+| S2 | 7c4a3df | import していない組み込み型（`Boolean`）と単位（`[kg]`）。item の型、calc の引数の型の存在も検査 | 39 | 4 |
+| S6+S7 | 113c8d4 | 可視性の無い import、置き場所の違う actor、結果の式の末尾の `;` を error に。遷移の本体を公式どおり ActionBody に | 32 | 2 |
+| S4 | a41490e | flow の端点を、flow の所有者からたどる feature の連鎖として解決 | 31 | 1 |
+| S5 | ec7f320 | accept のトリガーは型、`event X;` は occurrence への参照として解決 | 31 | 0 |
+| S3 | 052fb47 | usage の型の種別（attribute / part / item / port / action） | 29 | 0 |
+| S8 | 3add959 | sequence ビューに描かれない message を **warning** に（error ではない） | 29 | 0 |
+| 見直し | 8dd536e | 個々の指摘の誤り3種を修正（§v5-3） | **31** | 0 |
+
+最後の行で reference_only が 29 → 31 に戻っているのは、**誤った理由で both_error に
+数えていた2ファイルを正しく戻した**ため（§v5-3）。
+
+各項目の境界は、実装の前に参照実装へ同じ入力を与えて確かめた（`scripts/probe_reference.py`。
+1回の JVM で複数の入力を判定し、前後に canary を挟む）。確かめた入力は
+`tests/fixtures/reference_conformance/` の 152 件で、期待値（参照実装がエラーを出すか）を
+`tests/test_sysml_reference_conformance.py` に固定してある。
+
+S6（公式より緩い文法）は、仕様書の案どおり文法を締めるのではなく、**lint の規則として error を
+出す**形にした。構文エラーにするとそのファイルの他の指摘が1件も出なくなり、LLM は1件ずつしか
+直せない。規則なら他の指摘と一緒に、直し方（`private import X::*;` と書く）も返せる。
+判定（エラーの有無）は参照実装と同じになる。
+
+## v5-3. ファイル単位の一致だけでは足りなかった
+
+agreement はファイル単位の「エラーの有無」の一致なので、**参照実装が別の理由で拒否する
+ファイルの中で、こちらが誤った指摘をしていても一致に数えられる**。LLM にとっては誤った指摘も
+害になるので、今回足した規則の error を1件ずつ、参照実装のエラーと突き合わせた。
+こちらの指摘には行番号が無い（下記 v5-6）ので、指摘が引用している名前が参照実装のエラー
+メッセージかその行の本文に現れるかで照合した。
+
+最初の照合で、対応の無い指摘が3種見つかった:
+
+- **if の then/else の本体**（と while/for の本体）は独立した名前空間だが、単なる入れ物として
+  扱っていた。フェーズ2 t03 のモデルで、同じ then の中の action どうしの flow を「解決できない」
+  としていた（こちら7件、参照実装2件）。
+- if の分岐の中の `this.x` を分岐から解決していた。this は外側の定義を指す。
+- `private import SI::volt;` は membership ごと持ち込むので、短い名前 `V` も見える。
+  索引に「短い名前 ↔ 名前」の対応が無く、`[V]` を解決できないとしていた。この2ファイルは、
+  参照実装が別の箇所で拒否していたため both_error に数えられていた。
+
+修正後、24モデルとコーパスのどちらでも、対応の無い指摘は **0件**。
+
+## v5-4. 意図的に残した近似（すべて見逃す側）
+
+判定できない形は、誤検出を避けるため通している。理由はそれぞれコードのコメントに書いてある。
+参照実装と食い違うと分かっているものは、`tests/test_sysml_reference_conformance.py` に
+理由付きの strict xfail として固定した。
+
+| 形 | 参照実装 | こちら | 理由 |
+|---|---|---|---|
+| 兄弟パッケージの import で持ち込んだ名前（s2e） | エラー | 通す | import の置き場所を区別せず、ファイル全体で見えるとみなす |
+| 型がライブラリ由来の feature を通る flow の端点（f15） | エラー | 通す | ライブラリの型が持つ feature は索引に無い |
+| accept の `via p` のポート（t07） | エラー | 通す | via の解決は未実装 |
+| 再帰 import（`::**`） | — | 中身の見えない import として扱う | 定義のメンバーまで持ち込むので列挙しない |
+| ライブラリにも無い単位名（`[kmh]`） | エラー | 通す | 単位の角括弧には継承した feature（`[source]`）も書け、継承をたどらないと判定できない |
+
+## v5-5. 期待値を変えたテストと golden set
+
+どれも、**変更前の期待値が参照実装の判定と食い違っていた**もの。入力を参照実装にかけ直し、
+ケースの趣旨を保ったまま入力を正しい形に直した（golden set には `reference_note` に理由を記録）。
+
+| 対象 | 変更前の前提 | 参照実装 | 直し方 |
+|---|---|---|---|
+| golden sysml-clean-06 | `import Time::Instant;` はクリーン | 構文エラー（可視性なし）かつ Time に Instant は無い | `private import Time::TimeInstantValue;` |
+| golden sysml-broken-03 | 存在しない attribute の型は warning | error | severity を error に |
+| golden sysml-clean-05 / broken-04 | 可視性の無い import | 構文エラー | `private` を付けた |
+| golden sysml-clean-04 / broken-06 | 未定義のトリガー型 `TurnOn` | エラー | `item def TurnOn;` を足した |
+| テスト6件（MCP 往復・enum・semantic model・smoke・Viewer 2件） | import 無しの `Real` / `String` は有効 | エラー | `private import ScalarValues::*;` を足した |
+| テスト5件（linter_priority・smoke） | 可視性の無い import | 構文エラー | `private` を付けた |
+| テスト1件（antlr_pipeline） | 未定義のトリガー型 `Trig` | エラー | `item def Trig;` を足した |
+| テスト1件（antlr_pipeline） | `event occurrence A;` に warning が1件出る | 警告なし | 期待値を「指摘なし」に（下記） |
+
+あわせて、すべての event に出ていた「[8.2.2.9] 参照サブセッティングを持つことが推奨されます」
+という warning を削除した。AST の値が常に空で必ず出ていたうえ、勧めに従うと正しい
+`event occurrence sendM;` を、エラーになる `event sendM;` に書き換えることになる。
+
+golden set の通過数は変更前と同じ（clean 26/28、broken 24/25。残る失敗は今回より前からのもの）。
+`rule_confidence.json` も取り直した（算出可能な6ルールはすべて 1.000）。
+
+## v5-6. 残った課題
+
+- **reference_only_error 31件の内訳**: 最多は、今回扱わなかった usage の種別の規則
+  （connection / requirement / case / constraint / enumeration / metadata / individual の
+  「must be typed by ...」、計約10件）。次いで metadata の名前解決（`SourceFile` 等、4件）、
+  feature の参照先（`nonexistent`、`WeightRequirement` 等）。S3 の種別の表を広げれば、
+  前者の多くは同じ仕組みで扱える。
+- **`lint_sysml(parse_sysml(text))` の経路の指摘には行番号が無い**（source_range が None）。
+  MCP の `lint_sysml_text` もこの経路で、LLM はどの行の指摘か分からない。
+  `build_semantic_model` の経路には source_range がある。今回の範囲外。
+
+## v5-7. v1 §4.3 の訂正
+
+v1 §4.3 は、可視性の無い `import X::*;` を参照実装が一律に拒否することを「参照実装（比較
+ハーネス）側の不具合の疑い」とし、ローカルの文法を修飾子必須にする修正は推奨しないとしていた。
+**この判断は誤り。** 公式文法 `KerML.xtext` の `fragment ImportPrefix` は
+`visibility = VisibilityIndicator 'import' ...` で、可視性は省略できない（`?` が無い）。
+参照実装の拒否は文法どおりの挙動で、ハーネスの問題ではなかった。v1 §4.3 が挙げた37件
+（32件 both_error、5件 reference_only_error）は、こちらが見逃していた本物の誤り。
+v5 では lint の規則として error を出すようにした（§v5-2 の S6）。
 
 ---
 
@@ -1189,6 +1334,10 @@ E1 修正後もこのファイルは26エラーセグメントを出す。全セ
 `local_only_error`側での過剰な"Couldn't resolve"的誤検出があれば、それ）を減らせる可能性がある。
 
 ### 4.3 【重要・要フォローアップ】参照実装（比較ハーネス）が裸の `import` 文を一律で拒否する問題
+
+> **【2026-09-24 訂正】この節の結論は誤り。** 可視性の無い import を参照実装が拒否するのは
+> 公式文法（`KerML.xtext` の `ImportPrefix`、可視性は省略不可）どおりの挙動で、ハーネスの
+> 不具合ではない。ローカル側が見逃していた。詳細は §v5-7。以下は当時の記述のまま残す。
 
 `reference_only_error`のうち3件（`e3003_valid_import.sysml`, `Import_Visibility_Invalid.sysml`,
 `CalculationExample.sysml`）は、いずれも一見単純な `import X::*;`（ビジビリティ修飾子

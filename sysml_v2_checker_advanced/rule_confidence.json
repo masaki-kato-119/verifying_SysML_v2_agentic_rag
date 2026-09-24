@@ -1,8 +1,8 @@
 {
- "generated_at": "2026-09-07",
+ "generated_at": "2026-09-25",
  "generated_from": {
   "script": "scripts/recheck_local_only.py --rule-stats",
-  "commit": "630f4b8b03df3999136c460458d932f2dc675f67",
+  "commit": "8dd536ee1058d34209260da264dbf1554ebd2959",
   "corpus": "eval/sysml_samples",
   "corpus_files": 730,
   "reference": "OMG SysML v2 Pilot Implementation jar 0.61.0"
@@ -13,22 +13,32 @@
  "rules": {
   "_check_accessible_feature_paths": {
    "value": 1.0,
-   "sole_agree": 3,
+   "sole_agree": 4,
+   "sole_disagree": 0
+  },
+  "_check_attribute_def": {
+   "value": 1.0,
+   "sole_agree": 7,
    "sole_disagree": 0
   },
   "_check_import": {
-   "value": 0.886,
-   "sole_agree": 117,
-   "sole_disagree": 15
+   "value": 1.0,
+   "sole_agree": 94,
+   "sole_disagree": 0
+  },
+  "_check_official_syntax_constraints": {
+   "value": 1.0,
+   "sole_agree": 7,
+   "sole_disagree": 0
   },
   "_check_part_instance": {
-   "value": 0.667,
-   "sole_agree": 8,
-   "sole_disagree": 4
+   "value": 1.0,
+   "sole_agree": 5,
+   "sole_disagree": 0
   },
   "_check_requirement_subject": {
    "value": 1.0,
-   "sole_agree": 6,
+   "sole_agree": 7,
    "sole_disagree": 0
   }
  }
