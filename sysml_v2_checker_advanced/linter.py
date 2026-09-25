@@ -54,6 +54,17 @@ _SUBJECT_FIRST_NODE_TYPES = (
     "verification_case_def", "verification_case_usage",
 )
 
+# action の本体を持つノード → 報告での呼び方（_check_leading_then_in_action_bodies）
+_ACTION_BODY_OWNER_TYPES = {
+    "action_def": "action def の本体",
+    "action_usage": "action の本体",
+    "activity_def": "action def の本体",
+    "loop_stmt": "ループの本体",
+    "for_loop_stmt": "for の本体",
+}
+# 本体の先頭を探すときに飛ばすもの（succession の先行要素にならない）
+_NOT_A_PREDECESSOR_TYPES = {"documentation", "comment", "param", "calc_parameter"}
+
 # occurrence ではない usage の型（`event X;` の参照先にできない。_check_event_references）
 _NON_OCCURRENCE_USAGE_TYPES = {"attribute_usage", "enumeration_usage", "reference_usage"}
 
@@ -265,6 +276,9 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         # しまうもの（2026-09-24）。詳細は _check_official_syntax_constraints。
         self._check_official_syntax_constraints(ast)
 
+        # 第14.51パス: action の本体の先頭の `then`（2026-09-25）
+        self._check_leading_then_in_action_bodies(ast)
+
         # 第14.52パス: usage の型の種別（2026-09-24）
         self._check_usage_type_kinds(ast)
 
@@ -274,6 +288,9 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         # 第14.6パス: flow の端点（2026-09-24）。flow を所有する要素から端点を
         # たどる必要があるため、祖先をたどれる全木走査で行う。
         self._check_flow_ends(ast)
+
+        # 第14.65パス: succession の参照先が外側の要素を直接指していないか（2026-09-25）
+        self._check_succession_ends_accessible(ast)
 
         # 第14.7パス: sequence ビューに描かれない message（warning、2026-09-24）
         self._check_message_ends_for_sequence_view(ast)
@@ -903,6 +920,64 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
                     walk(item, owner_type)
 
         walk(ast, None)
+
+    def _check_leading_then_in_action_bodies(self, ast: Dict) -> None:
+        """action の本体が `then ...` で始まる形を報告する。
+
+        `then X;` は直前の要素からの succession の略記で、先行する要素が要る。
+        本体の最初の要素（doc コメントと引数は数えない）が `then X;` や
+        `then action a;` だと、参照実装は構文エラー（`no viable alternative at
+        input 'if'` など）か `Must have at least two related elements` を返す
+        （2026-09-25実測、tests/fixtures/reference_conformance/i*.sysml）。
+        if / else / while / for の本体、action def・action usage の本体のどれも同じ。
+        state の本体の `entry; then A;` は初期遷移で別物なので対象外。
+
+        フェーズ2の再評価で、LLM が `if c { then a; } else { then b; }` と書き、
+        チェッカーが0件と返したために誤って完了した（t03）。
+        """
+
+        def leading_item(items):
+            for item in items or []:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("type") in _NOT_A_PREDECESSOR_TYPES:
+                    continue
+                return item
+            return None
+
+        def report(item, where):
+            target = item.get("name") or ""
+            self.issues.append(LintIssue(
+                SEVERITY_ERROR,
+                f"{where}が `then {target}` で始まっています。`then` は直前の要素からの "
+                "succession の略記で、先行する要素が要る（公式文法では構文エラー）。"
+                f"本体には `action {target or 'x'};` や `perform {target or 'x'};` を書くか、"
+                "分岐なら `if c then a; else b;` の略記を使う",
+                item,
+            ))
+
+        def check_body(items, where):
+            item = leading_item(items)
+            if item is not None and (item.get("type") == "then_stmt" or item.get("isThen")):
+                report(item, where)
+
+        def walk(node):
+            if isinstance(node, dict):
+                node_type = node.get("type") or ""
+                if node_type == "if_stmt":
+                    for key, label in (("then", "if の本体"), ("else", "else の本体")):
+                        if isinstance(node.get(key), list):
+                            check_body(node[key], label)
+                elif node_type in _ACTION_BODY_OWNER_TYPES:
+                    check_body(node.get("children"), _ACTION_BODY_OWNER_TYPES[node_type])
+                for value in node.values():
+                    if isinstance(value, (dict, list)):
+                        walk(value)
+            elif isinstance(node, list):
+                for item in node:
+                    walk(item)
+
+        walk(ast)
 
     def _check_event_references(self, ast: Dict) -> None:
         """`event X;` の X が occurrence の feature として解決できるかを確かめる。

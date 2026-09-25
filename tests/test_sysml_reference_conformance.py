@@ -184,6 +184,23 @@ REFERENCE_HAS_ERROR = {
     "f31_else_refers_then_action.sysml": True,  # Couldn't resolve reference to Feature 'a'.
     "f32_outer_refers_into_branch.sysml": True,  # Couldn't resolve reference to Feature 'a'.
     "f33_while_body_owns_its_actions.sysml": False,
+    # e9。action の本体の先頭の `then` と、succession の参照先（2026-09-25 実測。フェーズ2再評価の t03 で見逃した形）
+    "i01_if_body_leading_then.sysml": True,  # no viable alternative at input 'if'
+    "i02_if_body_action_then_action.sysml": False,
+    "i03_if_body_action_then_ref.sysml": True,  # Must be an accessible feature (use dot notation for nesting)
+    "i04_if_body_first_then.sysml": True,  # Must be an accessible feature (use dot notation for nesting)
+    "i05_while_body_leading_then.sysml": True,  # no viable alternative at input 'while'
+    "i06_action_def_body_leading_then.sysml": False,
+    "i07_action_def_body_first_then.sysml": False,
+    "i08_else_only_leading_then.sysml": True,  # no viable alternative at input 'if'
+    "i09_if_body_then_action_decl.sysml": True,  # Must have at least two related elements
+    "i10_action_usage_body_leading_then.sysml": True,  # no viable alternative at input 'action'
+    "i11_if_body_perform_then_perform.sysml": False,
+    "i12_for_body_leading_then.sysml": True,  # no viable alternative at input 'for'
+    "i13_action_def_body_leading_then.sysml": True,  # no viable alternative at input 'then'
+    "i14_if_body_doc_then_leading.sysml": True,  # no viable alternative at input 'if'
+    "i15_state_def_leading_then_entry.sysml": False,
+    "i16_if_body_param_then.sysml": True,  # Must have at least two related elements
 }
 
 # まだ一致しないもの → 担当タスク（または一致させない理由）

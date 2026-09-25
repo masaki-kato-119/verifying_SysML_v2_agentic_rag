@@ -621,6 +621,62 @@ class ActionBehaviorRulesMixin:
 
         _walk_with_owners(ast, [], visit)
 
+    def _check_succession_ends_accessible(self, ast: Dict) -> None:
+        """succession の参照先が、外側の要素の feature を直接指していないかを確かめる。
+
+        if の本体の中で `then b;` / `first a then b;` と書き、b が if の外（囲む
+        action の本体）にあると、参照実装は
+        `Must be an accessible feature (use dot notation for nesting)` を返す
+        （2026-09-25実測、tests/fixtures/reference_conformance/i03・i04）。
+        flow の端点と同じ規則（_check_one_flow_end）で、所有者が中身を確かめられ、
+        名前がその所有者には無く、外側の要素には有るときだけ報告する。
+        所有者にも外側にも無い名前（`first start; then done;` の start/done は
+        ライブラリの Action が持つ暗黙の feature）は、ここでは判定しない。
+        対象は action の本体（if/else・while/for・action def・action usage）だけで、
+        state の本体（`then` が初期遷移になる）は見ない。
+        """
+        members = self._build_feature_member_resolver(ast)
+
+        def references(node):
+            node_type = node.get("type")
+            if node_type == "then_stmt" and isinstance(node.get("name"), str):
+                return [node["name"]]
+            if node_type in ("succession", "succession_usage") and not node.get("isFlow"):
+                ends = [node.get("firstEnd"), node.get("thenEnd")]
+                return [e["reference"] for e in ends if isinstance(e, dict) and isinstance(e.get("reference"), str)]
+            return []
+
+        def visit(node, owners):
+            refs = references(node)
+            if not refs or not owners:
+                return
+            owner_type = owners[-1].get("type") or ""
+            if owner_type not in _SUCCESSION_OWNER_TYPES:
+                return
+            owner_members = members(owners[-1])
+            if owner_members is None:
+                return
+            for ref in refs:
+                name = _flow_unquote(ref)
+                if "." in name or "::" in name or name in owner_members or name in _FLOW_CONTEXT_WORDS:
+                    continue
+                outer = False
+                for ancestor in owners[:-1]:
+                    found = members(ancestor)
+                    if found is not None and name in found:
+                        outer = True
+                        break
+                if outer:
+                    self.issues.append(LintIssue(
+                        SEVERITY_ERROR,
+                        f"Must be an accessible feature (use dot notation for nesting): '{name}' は "
+                        "この succession を含む本体（if/ループ等）の要素ではない。"
+                        f"'{name}' をこの本体の中に置くか、succession を '{name}' と同じ階層へ移す",
+                        node,
+                    ))
+
+        _walk_with_owners(ast, [], visit)
+
     def _check_one_flow_end(self, end: str, flow_node: Dict, owners: list, members) -> None:
         segments = [_flow_unquote(s) for s in re.split(r"\.|::", end) if s]
         if not segments or not owners:
@@ -676,6 +732,13 @@ class ActionBehaviorRulesMixin:
 
 
 _FLOW_CONTEXT_WORDS = ("this", "that", "self")
+# 名前を持つが宣言ではなく参照のノード（`then b;` / `first a;` 等の name は参照先）
+_SUCCESSION_REFERENCE_TYPES = {"then_stmt", "first_stmt", "else_stmt", "guarded_then_stmt"}
+# succession の参照先を調べる所有者（action の本体。state の本体は含めない）
+_SUCCESSION_OWNER_TYPES = {
+    "if_then_branch", "if_else_branch", "loop_stmt", "for_loop_stmt",
+    "action_def", "action_usage", "activity_def",
+}
 # `_stmt` で終わる型のうち、中身を包むだけの入れ物ではなく本体（名前空間）を持つもの。
 # if の then/else はそれぞれが別の本体（参照実装は、then の中の flow から外の
 # 兄弟を指すと `Must be an accessible feature` とし、同じ then の中の action は
@@ -765,6 +828,8 @@ def _flow_members(node: Dict, defs: Dict[str, list], members, depth: int):
     def add_member(child):
         if not isinstance(child, dict) or not child.get("type"):
             return
+        if child["type"] in _SUCCESSION_REFERENCE_TYPES:
+            return  # `then b;` の name は参照で、b を宣言しない
         if child["type"].endswith("_stmt") and not child.get("name"):
             for grand in child.get("children") or []:
                 add_member(grand)
