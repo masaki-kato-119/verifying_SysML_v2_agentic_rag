@@ -201,6 +201,19 @@ REFERENCE_HAS_ERROR = {
     "i14_if_body_doc_then_leading.sysml": True,  # no viable alternative at input 'if'
     "i15_state_def_leading_then_entry.sysml": False,
     "i16_if_body_param_then.sysml": True,  # Must have at least two related elements
+    # e10。subject を束縛済みの要求への `satisfy ... by`（2026-09-25 実測。フェーズ2再評価の t06 none で見逃した形）
+    "b01_bound_subject_satisfy_by.sysml": True,  # Cannot override a binding feature value
+    "b02_unbound_subject_satisfy_by.sysml": False,
+    "b03_bound_subject_redefines_form.sysml": True,  # Cannot override a binding feature value
+    "b04_bound_subject_assert_satisfy.sysml": True,  # Cannot override a binding feature value
+    "b05_bound_subject_satisfy_without_by.sysml": False,
+    "b06_subject_bound_in_definition.sysml": True,  # Cannot override a binding feature value
+    "b07_bound_subject_satisfy_in_part_body.sysml": False,
+    "b08_named_subject_bound.sysml": True,  # Cannot override a binding feature value
+    "b09_bound_subject_satisfy_by_other.sysml": True,  # Cannot override a binding feature value
+    "b10_untyped_requirement_bound_subject.sysml": True,  # Cannot override a binding feature value
+    "b11_not_satisfy_bound.sysml": True,  # Cannot override a binding feature value
+    "b12_satisfy_requirement_keyword.sysml": False,
 }
 
 # まだ一致しないもの → 担当タスク（または一致させない理由）

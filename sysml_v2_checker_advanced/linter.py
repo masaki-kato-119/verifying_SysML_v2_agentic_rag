@@ -279,6 +279,9 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         # 第14.51パス: action の本体の先頭の `then`（2026-09-25）
         self._check_leading_then_in_action_bodies(ast)
 
+        # 第14.515パス: subject を束縛済みの要求への `satisfy ... by`（2026-09-25）
+        self._check_satisfy_rebinds_subject(ast)
+
         # 第14.52パス: usage の型の種別（2026-09-24）
         self._check_usage_type_kinds(ast)
 
@@ -920,6 +923,74 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
                     walk(item, owner_type)
 
         walk(ast, None)
+
+    def _check_satisfy_rebinds_subject(self, ast: Dict) -> None:
+        """subject を値で束縛済みの要求に対する `satisfy r by x;` を報告する。
+
+        `by x` は r の subject を x に束縛する。r の subject がすでに値を持つ
+        （`requirement r : R { subject = d; }`、`subject :>> s = d;`、定義側の
+        `subject s : D = d;` など）と、束縛の上書きになり、参照実装は
+        `Cannot override a binding feature value` を返す。`assert satisfy`・
+        `not satisfy` も同じ。`by` の相手が何かは関係ない（2026-09-25実測、
+        tests/fixtures/reference_conformance/b*.sysml）。
+        `by` の無い `satisfy r;` と、r を新たに宣言する `satisfy requirement r by d;` は可。
+
+        フェーズ2の再評価で、LLM が `requirement maximumMass : ... { subject = drone; }`
+        のあとに `satisfy maximumMass by drone;` と書いていた（t06）。
+
+        r は同じファイルの requirement usage で、同名のものが1つだけのときに
+        判定する。型の定義は同じファイルにあって同名が1つだけのときだけ見る。
+        """
+        usages: Dict[str, List[Dict]] = {}
+        definitions: Dict[str, List[Dict]] = {}
+        satisfies: List[Dict] = []
+
+        def walk(node):
+            if isinstance(node, dict):
+                node_type = node.get("type")
+                name = node.get("name")
+                if node_type == "requirement_usage" and name:
+                    usages.setdefault(name.strip("'"), []).append(node)
+                elif node_type == "requirement_def" and name:
+                    definitions.setdefault(name.strip("'"), []).append(node)
+                elif node_type == "satisfy_requirement_usage":
+                    satisfies.append(node)
+                for value in node.values():
+                    if isinstance(value, (dict, list)):
+                        walk(value)
+            elif isinstance(node, list):
+                for item in node:
+                    walk(item)
+
+        def bound_subject(node):
+            return any(
+                isinstance(child, dict) and child.get("type") == "subject_usage"
+                and child.get("value") is not None
+                for child in node.get("children") or []
+            )
+
+        walk(ast)
+        for node in satisfies:
+            if not node.get("by") or node.get("declaresRequirement") or not node.get("name"):
+                continue
+            target = node["name"].split("::")[-1].strip("'")
+            candidates = usages.get(target) or []
+            if len(candidates) != 1:
+                continue
+            usage = candidates[0]
+            bound = bound_subject(usage)
+            if not bound and usage.get("type_name"):
+                defs = definitions.get(usage["type_name"].split("::")[-1].strip("'")) or []
+                bound = len(defs) == 1 and bound_subject(defs[0])
+            if bound:
+                self.issues.append(LintIssue(
+                    SEVERITY_ERROR,
+                    f"Cannot override a binding feature value: 要求 '{node['name']}' の subject は "
+                    f"すでに値で束縛されている。`satisfy {node['name']} by {node['by']};` の by は "
+                    "subject をもう一度束縛するので書けない。by を外して `satisfy "
+                    f"{node['name']};` とするか、要求側の `subject = ...` を外す",
+                    node,
+                ))
 
     def _check_leading_then_in_action_bodies(self, ast: Dict) -> None:
         """action の本体が `then ...` で始まる形を報告する。

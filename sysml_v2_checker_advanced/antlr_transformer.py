@@ -1649,6 +1649,15 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
                 "by": _namespace_path_text(by_ctx) if by_ctx is not None else None,
                 "children": [self.visit(el) for el in ctx.partBodyElement()],
+                # `satisfy requirement r by d;` は r を参照せず、新しい requirement usage を
+                # 宣言する（参照実装は、束縛済みの subject を持つ r に対しても通す）。
+                # `satisfy r by d;` と区別できるよう印を残す（2026-09-25）。既存の
+                # exact-equality 辞書テストを壊さないよう、無い場合はキー自体を省略する。
+                **(
+                    {"declaresRequirement": True}
+                    if any(child.getText() == "requirement" for child in ctx.getChildren())
+                    else {}
+                ),
             }
         type_ctx = ctx.ID()
         return {
