@@ -196,6 +196,16 @@ v5 の修正と、MCP の lint ツールの指摘に行番号を付けた修正�
 `Cannot override a binding feature value` を返す。コーパスの reference_only_error の中にも
 同じメッセージのファイルが3件ある。別の規則になるので未対応として残した（Blackboard に起票）。
 
+→ **【同日追記】直した（8713e97、Blackboard e10）。** subject を値で束縛済みの要求への
+`satisfy r by x;`（`assert satisfy` / `not satisfy` も）を error にした。束縛は usage の本体・
+型の定義・型の無い要求のどこにあってもよく、`by` の相手は関係ない。`by` の無い `satisfy r;` と、
+r を新たに宣言する `satisfy requirement r by d;` は可（境界は `b*.sysml` の12件）。
+これで**前回・今回の LLM のモデル47件がすべて参照実装と一致する**。コーパスの agreement は
+変わらず（この規則は `comprehensive_data_loss.sysml` の2件で発火し、どちらも参照実装のエラーと
+対応）。同じメッセージの残り2ファイルは別の形で、今回は扱っていない:
+何段もの特殊化を経た値の再定義（smart-home-complex2.sysml）と、標準ライブラリ自身の中の
+束縛（VerificationCases.sysml。索引は値の束縛を持たない）。
+
 ---
 
 # v4（2026-09-24）: 参照実装を 0.62.0 へ更新（出力に変化なし）
