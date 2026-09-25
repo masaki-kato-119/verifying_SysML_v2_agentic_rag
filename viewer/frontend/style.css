@@ -98,15 +98,75 @@ html, body {
    個別に枠線を持つボタンが並んでいると「押すたびに何かが起きる操作」に
    見えるが、実際は「今どのビューを見ているか」の表示なので、タブの方が
    振る舞いと合う。 */
-#view-type-tabs {
+/* タブ列と拡大/縮小を1行に並べる（2026-09-25）。下端の罫はこの行が持ち、
+   タブの下線はmargin-bottom:-1pxでこの罫に重なる。拡大/縮小はタブでは
+   ないのでtablistの外に置き、右端へ寄せる。 */
+#diagram-toolbar {
   display: flex;
-  gap: 2px;
+  align-items: flex-end;
+  gap: 8px;
   margin-bottom: 6px;
   border-bottom: 1px solid #ccc;
 }
 
+#view-type-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  min-width: 0;
+}
+
+#zoom-controls {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  padding-bottom: 3px;
+  flex-shrink: 0;
+}
+
+.zoom-button,
+.zoom-level {
+  font-size: 12px;
+  background: transparent;
+  color: #555;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.zoom-button {
+  font-size: 14px;
+  line-height: 1;
+  width: 22px;
+}
+
+/* 倍率の桁数が変わっても+/−の位置が動かないよう幅を固定する。 */
+.zoom-level {
+  min-width: 44px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.zoom-button:hover:not(:disabled),
+.zoom-level:hover {
+  color: #222;
+  background: #f0f0f0;
+}
+
+.zoom-button:disabled {
+  color: #bbb;
+  cursor: default;
+}
+
+.zoom-button:focus-visible,
+.zoom-level:focus-visible {
+  outline: 2px solid #1a73e8;
+  outline-offset: -2px;
+}
+
 .view-type-tab {
   font-size: 12px;
+  white-space: nowrap;
   padding: 4px 10px;
   cursor: pointer;
   background: transparent;

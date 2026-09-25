@@ -159,7 +159,8 @@ function startNodeDrag(startEvent, g, elementId) {
     const dx = moveEvent.clientX - startClientX;
     const dy = moveEvent.clientY - startClientY;
     if (Math.abs(dx) > DRAG_THRESHOLD_PX || Math.abs(dy) > DRAG_THRESHOLD_PX) moved = true;
-    if (moved) g.setAttribute("transform", `translate(${dx}, ${dy})`);
+    // 移動量は画面上のpx。拡大/縮小中はSVGの座標系と倍率分ずれるので戻す。
+    if (moved) g.setAttribute("transform", `translate(${dx / diagramZoom}, ${dy / diagramZoom})`);
   }
 
   function onMouseUp(upEvent) {
@@ -167,8 +168,8 @@ function startNodeDrag(startEvent, g, elementId) {
     document.removeEventListener("mouseup", onMouseUp);
     g.removeAttribute("transform");
     if (!moved) return;
-    const dx = upEvent.clientX - startClientX;
-    const dy = upEvent.clientY - startClientY;
+    const dx = (upEvent.clientX - startClientX) / diagramZoom;
+    const dy = (upEvent.clientY - startClientY) / diagramZoom;
     getPinnedPositionsForView(currentViewType)[elementId] = toPinnedPosition(elementId, startX + dx, startY + dy);
     saveViewState();
     updateModelNow();
@@ -217,8 +218,67 @@ function toPinnedPosition(elementId, absoluteX, absoluteY) {
   };
 }
 
+// Diagramの表示倍率（2026-09-25）。SVGのviewBoxはそのままにwidth/height属性
+// だけを倍率分変えるので、コンテナのスクロールも拡大後の大きさに追従する。
+// 図は編集のたびに描き直されるため、倍率はrenderDiagramのたびに当て直す。
+const ZOOM_STEPS = [0.25, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+let diagramZoom = 1;
+
+function applyDiagramZoom() {
+  const svgEl = document.querySelector("#diagram-container > svg");
+  if (svgEl) {
+    if (!svgEl.dataset.baseWidth) {
+      svgEl.dataset.baseWidth = svgEl.getAttribute("width");
+      svgEl.dataset.baseHeight = svgEl.getAttribute("height");
+    }
+    svgEl.setAttribute("width", parseFloat(svgEl.dataset.baseWidth) * diagramZoom);
+    svgEl.setAttribute("height", parseFloat(svgEl.dataset.baseHeight) * diagramZoom);
+  }
+  document.getElementById("zoom-level").textContent = `${Math.round(diagramZoom * 100)}%`;
+  document.getElementById("zoom-in").disabled = diagramZoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1];
+  document.getElementById("zoom-out").disabled = diagramZoom <= ZOOM_STEPS[0];
+}
+
+function stepDiagramZoom(direction) {
+  const next =
+    direction > 0
+      ? ZOOM_STEPS.find((z) => z > diagramZoom + 1e-9)
+      : [...ZOOM_STEPS].reverse().find((z) => z < diagramZoom - 1e-9);
+  if (next !== undefined) setDiagramZoom(next);
+}
+
+// 倍率を変えても、コンテナ中央に見えていた点が中央に残るようにスクロールを補正する。
+function setDiagramZoom(zoom) {
+  const container = document.getElementById("diagram-container");
+  const ratio = zoom / diagramZoom;
+  const centerX = container.scrollLeft + container.clientWidth / 2;
+  const centerY = container.scrollTop + container.clientHeight / 2;
+  diagramZoom = zoom;
+  applyDiagramZoom();
+  container.scrollLeft = centerX * ratio - container.clientWidth / 2;
+  container.scrollTop = centerY * ratio - container.clientHeight / 2;
+}
+
+function setupZoomControls() {
+  document.getElementById("zoom-in").addEventListener("click", () => stepDiagramZoom(1));
+  document.getElementById("zoom-out").addEventListener("click", () => stepDiagramZoom(-1));
+  document.getElementById("zoom-level").addEventListener("click", () => setDiagramZoom(1));
+  // Ctrl+ホイールはブラウザ全体のズームになってしまうので、Diagram上では奪う。
+  document.getElementById("diagram-container").addEventListener(
+    "wheel",
+    (event) => {
+      if (!event.ctrlKey) return;
+      event.preventDefault();
+      stepDiagramZoom(event.deltaY < 0 ? 1 : -1);
+    },
+    { passive: false }
+  );
+  applyDiagramZoom();
+}
+
 function renderDiagram(svg) {
   document.getElementById("diagram-container").innerHTML = svg;
+  applyDiagramZoom();
   document.querySelectorAll("#diagram-container .sysml-node").forEach((g) => {
     const elementId = g.getAttribute("data-element-id");
     g.classList.toggle("collapsed", collapsedIds.has(elementId));
@@ -1323,6 +1383,7 @@ require(["vs/editor/editor.main"], function () {
   editor.onDidChangeModelContent(scheduleModelUpdate);
 
   setupViewTypeTabs();
+  setupZoomControls();
 
   // 初回表示。
   scheduleModelUpdate();

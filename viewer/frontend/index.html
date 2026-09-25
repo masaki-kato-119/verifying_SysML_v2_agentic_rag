@@ -19,12 +19,19 @@
     <div id="col-splitter-2" class="splitter col-splitter" data-left-index="2"></div>
     <div id="diagram" class="pane">
       <h2>Diagram</h2>
-      <div id="view-type-tabs" role="tablist" aria-label="ビュー種別">
-        <button type="button" role="tab" aria-selected="false" class="view-type-tab" data-view-type="structure">構造</button>
-        <button type="button" role="tab" aria-selected="false" class="view-type-tab" data-view-type="requirement_traceability">要求トレーサビリティ</button>
-        <button type="button" role="tab" aria-selected="false" class="view-type-tab" data-view-type="verification">検証</button>
-        <button type="button" role="tab" aria-selected="false" class="view-type-tab" data-view-type="state_machine">状態遷移</button>
-        <button type="button" role="tab" aria-selected="false" class="view-type-tab" data-view-type="activity">アクティビティ</button>
+      <div id="diagram-toolbar">
+        <div id="view-type-tabs" role="tablist" aria-label="ビュー種別">
+          <button type="button" role="tab" aria-selected="false" class="view-type-tab" data-view-type="structure">構造</button>
+          <button type="button" role="tab" aria-selected="false" class="view-type-tab" data-view-type="requirement_traceability">要求トレーサビリティ</button>
+          <button type="button" role="tab" aria-selected="false" class="view-type-tab" data-view-type="verification">検証</button>
+          <button type="button" role="tab" aria-selected="false" class="view-type-tab" data-view-type="state_machine">状態遷移</button>
+          <button type="button" role="tab" aria-selected="false" class="view-type-tab" data-view-type="activity">アクティビティ</button>
+        </div>
+        <div id="zoom-controls" role="group" aria-label="表示倍率">
+          <button type="button" id="zoom-in" class="zoom-button" aria-label="拡大" title="拡大 (Ctrl+ホイール)">+</button>
+          <button type="button" id="zoom-level" class="zoom-level" title="クリックで100%に戻す">100%</button>
+          <button type="button" id="zoom-out" class="zoom-button" aria-label="縮小" title="縮小 (Ctrl+ホイール)">−</button>
+        </div>
       </div>
       <div id="stale-banner" role="status" hidden></div>
       <div id="filter-controls"></div>
