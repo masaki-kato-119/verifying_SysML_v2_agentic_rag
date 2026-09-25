@@ -65,9 +65,15 @@ html, body {
   min-height: 0;
 }
 
+/* 見出し・タブ・バナー・フィルタの高さはペイン幅で折り返して変わるので、
+   縦方向はflexで残りを#diagram-containerに渡す（2026-09-25）。以前は
+   calc(100% - 48px)と固定値で引いていたため、折り返すとコンテナがペインの
+   下へはみ出し、コンテナ自身のスクロールバーが見えなくなっていた。 */
 #diagram {
   grid-row: 1;
   grid-column: 5;
+  display: flex;
+  flex-direction: column;
 }
 
 #col-splitter-1 {
@@ -87,8 +93,8 @@ html, body {
 
 #diagram-container {
   overflow: auto;
-  width: 100%;
-  height: calc(100% - 48px);
+  flex: 1;
+  min-height: 0;
 }
 
 /* ビュー切り替えタブ（Group2 b7, V1-2）。 */

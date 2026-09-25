@@ -1266,6 +1266,12 @@ function setupViewTypeTabs() {
 // スクリプト実行時点でgetComputedStyleを読んで先に固定してしまうと、
 // このプレビュー環境ではまだビューポートが0×0を報告する瞬間があり、
 // 極端に小さいpx値でレイアウトが壊れる不具合があったため、この設計にした。
+//
+// ドラッグ結果はpxではなく、実測pxをそのまま比率に使ったfrで書き戻す
+// （2026-09-25）。書き戻した直後の見た目はpxと同じだが、ブラウザをリサイズ
+// するとペインが比率を保ったまま伸び縮みする。pxのままだとウィンドウを
+// 広げても右に空白が残り、狭めると右端・下端のペインが画面外へ押し出されて
+// スクロールバーごと見えなくなっていた。スプリッター自身は固定幅のまま。
 function setupSplitters() {
   const layout = document.getElementById("layout");
 
@@ -1277,6 +1283,11 @@ function setupSplitters() {
   }
 
   const MIN_TRACK_PX = 80;
+
+  // トラックのうち奇数番目（1, 3）はスプリッターで、固定pxのまま残す。
+  function toTemplate(tracks) {
+    return tracks.map((v, i) => (i % 2 === 1 ? `${v}px` : `minmax(0, ${v}fr)`)).join(" ");
+  }
 
   function setupColumnSplitter(splitterEl) {
     const leftIndex = Number(splitterEl.dataset.leftIndex); // 0始まり: 0=explorer, 2=text-editor
@@ -1294,7 +1305,7 @@ function setupSplitters() {
         const rightWidth = Math.max(MIN_TRACK_PX, startRightWidth - dx);
         columns[leftIndex] = leftWidth;
         columns[leftIndex + 2] = rightWidth;
-        layout.style.gridTemplateColumns = columns.map((w) => `${w}px`).join(" ");
+        layout.style.gridTemplateColumns = toTemplate(columns);
       }
       function onUp() {
         splitterEl.classList.remove("dragging");
@@ -1319,7 +1330,7 @@ function setupSplitters() {
         const dy = moveEvent.clientY - startY;
         rows[0] = Math.max(MIN_TRACK_PX, startTopHeight + dy);
         rows[2] = Math.max(MIN_TRACK_PX, startBottomHeight - dy);
-        layout.style.gridTemplateRows = rows.map((h) => `${h}px`).join(" ");
+        layout.style.gridTemplateRows = toTemplate(rows);
       }
       function onUp() {
         splitterEl.classList.remove("dragging");
