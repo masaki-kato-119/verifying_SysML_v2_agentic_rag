@@ -214,6 +214,9 @@ REFERENCE_HAS_ERROR = {
     "b10_untyped_requirement_bound_subject.sysml": True,  # Cannot override a binding feature value
     "b11_not_satisfy_bound.sysml": True,  # Cannot override a binding feature value
     "b12_satisfy_requirement_keyword.sysml": False,
+    # 定義の本体に入れ子にした定義（2026-09-25 実測。Viewerで報告された構文エラー）
+    "n01_port_def_nested_in_port_def.sysml": False,
+    "n02_port_def_nested_in_part_def.sysml": False,
 }
 
 # まだ一致しないもの → 担当タスク（または一致させない理由）

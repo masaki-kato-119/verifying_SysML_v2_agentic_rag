@@ -1638,6 +1638,11 @@ partBodyElement
     | flowUsage
     | connectUsage
     | connectionUsage
+    // `port def OilPort { port def OilIO { in oil : Oil; } port oilIn : OilIO; }`
+    // のように、定義の本体の中にも`port def`を入れ子で書ける（DefinitionBodyItem
+    // は任意のDefinitionElementを取る。参照実装で0件を確認。2026-09-25、
+    // Viewerで報告）。`def`はキーワードなのでportUsageの名前と衝突しない。
+    | portDef
     | portUsage
     | bindingConnector
     | successionStmt
