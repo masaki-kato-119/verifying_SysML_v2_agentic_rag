@@ -220,7 +220,7 @@ dependencyStmt
 eventOccurrenceUsageStmt
     : isThen='then'? direction? 'event' 'occurrence'? name=namespacePath?
       multiplicitySpec?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       (':' typeRef=namespacePath)?
       ( 'default' '='? defaultValue=expression | '=' value=expression )?
       ( '{' partBodyElement* '}' | ';' )
@@ -250,10 +250,10 @@ eventOccurrenceUsageStmt
 // 構文エラー0件＝この構文を受理することを確認済み）。
 exhibitStateUsageStmt
     : 'exhibit' 'state' simpleName (':' typeRef=namespacePath)?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       isParallel='parallel'? ( '{' stateBodyElement* '}' | ';' )
     | 'exhibit' ref=namespacePath
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       isParallel='parallel'?
       ( '{' stateBodyElement* '}' | ';' )
     ;
@@ -352,7 +352,7 @@ occurrenceUsage
     : prefixMetadataAnnotation* direction? isIndividual='individual'? isAbstract='abstract'? isConstant='constant'? isRef='ref'? 'occurrence' simpleName?
       (':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
       multiplicitySpec?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ('=' value=expression)?
       ('default' '='? defaultValue=expression)?
       ( '{' partBodyElement* '}' | ';' )
@@ -393,9 +393,9 @@ individualDef
 // ベースライン154件エラー要因分析で発見）。
 individualUsage
     : isAbstract='abstract'? isRef='ref'? 'individual' simpleName?
-      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       ( ':' typeRef=(ID | QUOTED_NAME) (',' extraTypeRefs+=(ID | QUOTED_NAME))* )?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )
     ;
 
@@ -537,10 +537,10 @@ caseDef
 // 730件パース失敗の要因分析で発見）。
 caseUsage
     : variability=('variation' | 'variant')? visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'case' simpleName?
-      (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' ID (',' extraTypeRefs+=ID)*)?
       multiplicitySpec?
-      (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )
     ;
 
@@ -573,10 +573,10 @@ analysisCaseDef
 // （2026-08-29、730件ベースライン154件エラー要因分析で発見）。
 analysisCaseUsage
     : variability=('variation' | 'variant')? visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? isRef='ref'? 'analysis' simpleName?
-      (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' ID (',' extraTypeRefs+=ID)*)?
       multiplicitySpec?
-      (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' calcBodyElement* '}' | ';' )
     ;
 
@@ -594,10 +594,10 @@ verificationCaseDef
 // 失敗の要因分析で発見）。
 verificationCaseUsage
     : variability=('variation' | 'variant')? visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'verification' simpleName?
-      (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' ID)?
       multiplicitySpec?
-      (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' calcBodyElement* '}' | ';' )
     ;
 
@@ -635,10 +635,10 @@ useCaseDef
 // 発見。同一ファイルの並列テストケースで発覚）。
 useCaseUsage
     : variability=('variation' | 'variant')? isThen='then'? visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'use' 'case' simpleName?
-      (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' typeRef=(ID | QUOTED_NAME) (',' extraTypeRefs+=(ID | QUOTED_NAME))*)?
       multiplicitySpec?
-      (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' actionBodyElement* '}' | ';' )
     ;
 
@@ -651,10 +651,10 @@ useCaseUsage
 // （2026-08-29、235件パース失敗の要因分析で発見）。
 includeUseCaseUsage
     : isThen='then'? 'include' 'use' 'case' simpleName?
-      (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' typeRef=(ID | QUOTED_NAME))?
       multiplicitySpec?
-      (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )
     ;
 
@@ -690,10 +690,10 @@ viewDef
 // add_viewusage_quoted_type_ref対応中に発見）。
 viewUsage
     : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'view' simpleName?
-      (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' typeRef=(ID | QUOTED_NAME))?
       multiplicitySpec?
-      (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )
     ;
 
@@ -703,10 +703,10 @@ viewpointDef
 
 viewpointUsage
     : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'viewpoint' simpleName?
-      (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' ID)?
       multiplicitySpec?
-      (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )
     ;
 
@@ -719,10 +719,10 @@ renderingDef
 // 代入する形もある（他のusage規則(attribute/item/ref等)と同じ`=`値代入）。
 renderingUsage
     : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'rendering' simpleName?
-      (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' ID)?
       multiplicitySpec?
-      (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ('=' value=expression)?
       ( '{' partBodyElement* '}' | ';' )
     ;
@@ -896,7 +896,7 @@ calcParameter
 assertConstraintUsage
     : visibilityIndicator? assertKind=('assert' | 'require' | 'assume') prefixMetadataAnnotation* ('not')? 'constraint' simpleName?
       ( ':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)* )?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' documentationStmt* resultExpr=expression '}' | '{' calcBodyElement* '}' | ';' )
     // `assert mc { in totalMass = m; ... }`・`assert not massLimitation
     // { :>> mass = vehicle3.mass; ... }`（MassConstraintExample.sysml、
@@ -933,7 +933,7 @@ assertConstraintUsage
 // 要因分析で発見）。
 calculationUsage
     : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'calc' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
-      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       // `calc 'Solve for Pressure1' : 'Ideal Gas Law';`（Turbojet Stage
       // Analysis.sysml）のように、型節がQUOTED_NAME型参照を取ることも
       // ある（従来`ID`決め打ちだった。2026-08-29、
@@ -944,7 +944,7 @@ calculationUsage
       // 参照実装比較レポートで発見）。
       (':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
       multiplicitySpec?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' calcBodyElement* '}' | ';' )
     ;
 
@@ -959,10 +959,10 @@ calculationUsage
 // 失敗の要因分析で発見）。
 constraintUsage
     : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'constraint' simpleName?
-      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' ID (',' extraTypeRefs+=ID)*)?
       multiplicitySpec?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' resultExpr=expression '}' | '{' calcBodyElement* '}' | ';' )
     ;
 
@@ -1014,10 +1014,10 @@ satisfyRequirementUsage
 // パース失敗の要因分析で発見）。
 verifyRequirementUsage
     : 'verify' 'requirement' simpleName? (':' typeRef=namespacePath)?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )
     | 'verify' nameRef=namespacePath ('by' by=namespacePath)?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )
     ;
 
@@ -1115,7 +1115,7 @@ interfaceUsage
     | isAbstract='abstract'? 'interface' simpleName?
       (':' ID)?
       usageMult=multiplicitySpec?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ('=' value=expression)?
       ( 'connect'? bareFromMult=multiplicitySpec? connectorEndPath 'to' bareToMult=multiplicitySpec? connectorEndPath
       | 'connect' '(' naryEnds+=connectorEndPath (',' naryEnds+=connectorEndPath)+ ')'
@@ -1151,7 +1151,7 @@ allocationUsage
     : isAbstract='abstract'? 'allocation' simpleName?
       ( ':' ID )?
       multiplicitySpec?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( 'allocate'
         ( connectorEndPath 'to' connectorEndPath
         | '(' naryEnds+=connectorEndPath (',' naryEnds+=connectorEndPath)+ ')'
@@ -1395,7 +1395,7 @@ itemDef
 itemUsage
     : visibilityIndicator? prefixMetadataAnnotation* isRefPre='ref'? isIndividual='individual'? isDerived='derived'? isAbstract='abstract'? isRef='ref'? 'item' simpleName?
       preMult=multiplicitySpec?
-      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       // `item boundingBox : ShapeItems::Box [1] :> boundingShapes { ... }`
       // （DontPanic-SysMLv2-Batmobile.sysml）のように、型節が`::`修飾型名を
       // 取ることがある（単一`ID`のままでは受理できない。2026-08-28、730件
@@ -1407,7 +1407,7 @@ itemUsage
       // 参照実装比較レポートで発見）。
       (':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
       postMult=multiplicitySpec?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( 'default' '='? defaultValue=expression | '=' value=expression )?
       ( '{' partBodyElement* '}' | ';' )
     ;
@@ -1441,7 +1441,7 @@ requirementUsage
       // add_requirementusage_references_form対応中に発見）。
       ('references' referenceTarget=namespacePath)?
       preMult=multiplicitySpec?
-      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>') preTarget+=namespacePathList)*
       // `typeRef`という専用ラベルを使う（無ラベルの`ID`のままだと、上のshortName
       // （ID|QUOTED_NAMEの代替）と合わせて`ctx.ID()`が2件のリストを返すように
       // なり、`_usage_keyword_node`側の単純な`ctx.ID()`呼び出しと衝突するため）。
@@ -1460,17 +1460,17 @@ requirementUsage
       // = obj.requirementVerifications { ... }`（VerificationCases.sysml）
       // のようにインライン値代入を伴う形も存在する（subjectUsageと同じ位置）。
       ('=' value=expression)?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ('default' '='? defaultValue=expression)?
       ( '{' partBodyElement* '}' | ';' )
     ;
 
 concernUsage
     : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'concern' simpleName?
-      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' ID)?
       multiplicitySpec?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ('default' '='? defaultValue=expression)?
       ( '{' partBodyElement* '}' | ';' )
     ;
@@ -1484,7 +1484,7 @@ concernUsage
 // attributeUsageと同じインライン`= expression`値代入も持つ。
 subjectUsage
     : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'subject' simpleName?
-      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       // `subject miningcorporation : Domain::MiningCorporation;`
       // （MiningCorporationRequirementsDecl.sysml等）のように、型節が`::`
       // 修飾型名を取ることがある（itemUsageと同じ理由で追加。2026-08-28、
@@ -1492,7 +1492,7 @@ subjectUsage
       (':' typeRef=namespacePath)?
       multiplicitySpec?
       ('=' value=expression)?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ('default' '='? defaultValue=expression)?
       ( '{' partBodyElement* '}' | ';' )
     ;
@@ -1503,11 +1503,11 @@ subjectUsage
 // 失敗の要因分析で発見）。
 stakeholderUsage
     : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'stakeholder' simpleName?
-      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' typeRef=namespacePath)?
       multiplicitySpec?
       ('=' value=expression)?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ('default' '='? defaultValue=expression)?
       ( '{' partBodyElement* '}' | ';' )
     ;
@@ -1527,22 +1527,22 @@ stakeholderUsage
 // 位置。2026-08-29、add_generic_tag_def_usage_shorthand対応中に発見）。
 actorUsage
     : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'actor' prefixMetadataAnnotation* simpleName?
-      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' typeRef=namespacePath)?
       multiplicitySpec?
       ('=' value=expression)?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ('default' '='? defaultValue=expression)?
       ( '{' partBodyElement* '}' | ';' )
     ;
 
 objectiveUsage
     : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'objective' simpleName?
-      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' ID)?
       multiplicitySpec?
       ('=' value=expression)?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ('default' '='? defaultValue=expression)?
       ( '{' partBodyElement* '}' | ';' )
     ;
@@ -1604,7 +1604,7 @@ enumLiteral
 enumUsage
     : prefixMetadataAnnotation* 'enum' simpleName
       (':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ('=' value=expression)?
       ( '{' enumBodyElement* '}' | ';' )
     ;
@@ -1906,7 +1906,7 @@ featureUsage
       // 規則と同型。2026-09、参照実装比較レポートで発見）。
       ('<' shortName=(ID | QUOTED_NAME) '>')?
       simpleName?
-      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>') preTarget+=namespacePathList)*
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       // `ref presidentOfCountry[0..1] : Person :> presidentOfCountry.asPresident;`
       // （JohnIndividualExample.sysml）のように、型節の前にも多重度が付く
       // ことがある（partUsage/actionUsageStmtと同型のpreMult/postMult順序、
@@ -1918,7 +1918,7 @@ featureUsage
       // add_ahfnorwaytopics_composite_gaps対応中に発見）。
       (':' conjugated='~'? typeList=namespacePathList)?
       postMult=multiplicitySpec?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ('=' value=expression)?
       ('default' '='? defaultValue=expression)?
       ( '{' partBodyElement* '}' | ';' )
@@ -1963,10 +1963,17 @@ featureUsage
 // この入力でpartDefの`part def`代替とのあいまい性に負け、`def`不足の
 // エラーになっていた。2026-08-29、
 // add_partusage_metadata_prefix_order対応中に発見）。
+// `part tgs1 ::> TGS[0];`のように、pre/postKindは`::>`とそのtextual形
+// `references`（ReferenceSubsetting）も取る。これはpartに限らず全usageに
+// 共通（FeatureSpecialization）なので、pre/postKindを持つusage規則すべてに
+// 同じ2つを足した（2026-09-25、参照実装で38規則とも0件を確認。Viewerで報告）。
+// 例外は2つ: requirementUsageは名前直後に専用の`references`分岐を持つので
+// 型節前のリストには`::>`だけ、connectionEndMemberは専用のdirectKindを
+// 持つので触らない。
 partUsage
     : visibilityIndicator? variability=('variation' | 'variant')? prefixMetadataAnnotation* isIndividual='individual'? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
       'part' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
-      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       preMult=multiplicitySpec?
       // `part crew[1..*] : Astronaut, LogicalComponentsPackage::Crew :>>
       // crew;`（MissionPackage.sysml）のように、型節がカンマ区切りの複数型を
@@ -1974,7 +1981,7 @@ partUsage
       // パース失敗の要因分析で発見）。
       (':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
       postMult=multiplicitySpec?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ('=' value=expression)?
       ('default' '='? defaultValue=expression)?
       ( '{' partBodyElement* '}' | ';' )
@@ -2041,7 +2048,7 @@ attributeUsage
       // redefineトークン一覧に`::>`（featureUsage/connectionEndMember等には
       // 既にある`references`の記号形同義語）が欠けていた（2026-08-29、
       // add_attributeusage_triple_colon_gt_redefine対応中に発見）。
-      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>') preTarget+=namespacePathList)*
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' (typeList=namespacePathList | typeQuoted=QUOTED_NAME))?
       postMult=multiplicitySpec?
       // `attribute i : ScalarValues::Integer := 0;`（StructuredControlTest.sysml、
@@ -2049,7 +2056,7 @@ attributeUsage
       // `:=`（初期値、下流で変更可能）という代入演算子も使われる
       // （2026-08-28、730件パース失敗の要因分析で発見）。
       (('=' | ':=') value=expression)?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       // `attribute m default = 10;`・`attribute mass redefines Vehicle::mass
       // default = 1750 [kg] { ... }`（DefaultValueTest.sysml、1c-Parts Tree
       // Redefinition.sysml）のように、`default`キーワードの直後に`=`を
@@ -2205,7 +2212,7 @@ connectionUsage
       preMult=multiplicitySpec?
       (':' namedTypeRef=namespacePath (',' namedExtraTypeRefs+=namespacePath)*)?
       postMult=multiplicitySpec?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       // `connection link : DataLink connect tx.txPort to rx.rxPort;`
       // （dfa-coverage-advanced.sysml）のように、名前と型節の両方を持つ
       // connectionUsageにもインライン（本体`{}`なし）の`connect...to...`が
@@ -2306,14 +2313,14 @@ qualifiedName
 // 154件エラー要因分析で発見）。
 flowUsage
     : 'flow' flowName=simpleName?
-      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       ( 'of' (ofName=simpleName ':')? ofType=ID ofMult=multiplicitySpec? )?
       ( 'from' fromEnd=namespacePath 'to' toEnd=namespacePath
       | fromEnd=namespacePath 'to' toEnd=namespacePath
       )?
       ( '{' partBodyElement* '}' | ';' )
     | isAbstract='abstract'? 'flow' flowName=simpleName?
-      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       // `flow :>> publish_message: Transfers::MessageTransfer { ... }`の
       // ように、型節が`::`修飾名を取ることもあるため`ID`単体ではなく
       // `namespacePath`を使う（同じ行の反例のため、preKind対応と同時に
@@ -2330,7 +2337,7 @@ flowUsage
       ( 'from' fromEnd=namespacePath 'to' toEnd=namespacePath
       | fromEnd=namespacePath 'to' toEnd=namespacePath
       )?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )
     ;
 
@@ -2464,7 +2471,7 @@ actionParameter
       // かった（2026-09、参照実装比較レポートで発見）。
       kind=('item' | 'attribute' | 'part' | 'calc' | 'action' | 'port')?
       simpleName?
-      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       preMult=multiplicitySpec?
       // `private in ref y: A, B;`（ItemTest.sysml）のように、型節が
       // カンマ区切りの複数型を取ることがある（caseUsage等と同じ
@@ -2472,7 +2479,7 @@ actionParameter
       // 発見）。
       (':' conjugated='~'? typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
       postMult=multiplicitySpec?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       // `in whileTest default {true} { doc ... }`（Actions.sysml、2件）
       // のように、`default`値が波括弧で囲まれた式（`{true}`）を取ることが
       // ある。直後のactionParameter自体のbody（同じく`{...}`）とは別物で、
@@ -2854,7 +2861,7 @@ defaultTargetSuccessionStmt
 // add_actionusagestmt_flowcontrolnode_prefix_metadata対応中に発見）。
 actionUsageStmt
     : prefixMetadataAnnotation* variability=('variation' | 'variant')? isThen='then'? visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? isRef='ref'? isLoop='loop'? 'action' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
-      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       preMult=multiplicitySpec?
       // `action 'provide power': 'Provide Power'{ ... }`（3a-Function-based
       // Behavior-1.sysml）のように、型節がQUOTED_NAMEを取ることがある
@@ -2870,7 +2877,7 @@ actionUsageStmt
       // のみだった。2026-09、参照実装比較レポートで発見）。
       (':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
       postMult=multiplicitySpec?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ('=' value=expression)?
       ( 'while' guard=expression )?
       // `then action aLoop while i > 0 { ... } until b;`
@@ -3021,10 +3028,10 @@ stateBodyElement
 // で非対称だった。2026-08-29、235件パース失敗の要因分析で発見）。
 stateUsage
     : isThen='then'? isAbstract='abstract'? isRef='ref'? 'state' simpleName?
-      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' typeRef=(ID | QUOTED_NAME))?
       multiplicitySpec?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       isParallel='parallel'?
       ( '{' stateBodyElement* '}' | ';' )
     ;
@@ -3191,7 +3198,7 @@ actionFlowStmt
 // パース失敗の要因分析で発見）。
 entryActionMember
     : 'entry' ('action')? qualifiedName? (':' ID)?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' actionBodyElement* '}' | ';' )
     | 'entry' assign=assignmentStmt
     // `entry send new CallGiveItems("All the items") via apisp.APIS_HTTP;`
@@ -3213,7 +3220,7 @@ entryActionMember
 // ある（2026-08-29、235件パース失敗の要因分析で発見）。
 doActionMember
     : 'do' ('action')? qualifiedName? (':' ID)?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' actionBodyElement* '}' | ';' )
     | 'do' 'send' payload=expression ( 'to' sendTarget=namespacePath | 'via' sendVia=namespacePath )? ';'
     | 'do' assign=assignmentStmt
@@ -3224,7 +3231,7 @@ doActionMember
 // ある（2026-08-29、235件パース失敗の要因分析で発見）。
 exitActionMember
     : 'exit' ('action')? qualifiedName? (':' ID)?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' actionBodyElement* '}' | ';' )
     ;
 
@@ -3612,15 +3619,19 @@ portDef
 // attributeUsageと同様、redefine節（`:>`/`:>>`等）の後に`= value`で
 // 値代入できる（従来portUsageには移植されていなかった。2026-08-29、
 // 730件ベースライン154件エラー要因分析で発見）。
+// `port acPowerPortFw ::> acPowerPort[0];`のように、pre/postKindは
+// `::>`とそのtextual形`references`（ReferenceSubsetting）も取る。featureUsage/
+// attributeUsageには既にあり、portUsageだけ漏れていた（参照実装で0件を確認。
+// 2026-09-25、Viewerで報告）。
 portUsage
     : variability=('variation' | 'variant')? prefixMetadataAnnotation* visibilityIndicator? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
       'port' simpleName?
-      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines') preTarget+=namespacePathList)*
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       ('=' value=expression)?
       preMult=multiplicitySpec?
       (':' conjugated='~'? typeRefs+=namespacePath (',' typeRefs+=namespacePath)*)?
       postMult=multiplicitySpec?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines') postTarget+=namespacePathList)*
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )
     ;
 

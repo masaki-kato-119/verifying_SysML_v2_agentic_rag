@@ -217,6 +217,17 @@ REFERENCE_HAS_ERROR = {
     # 定義の本体に入れ子にした定義（2026-09-25 実測。Viewerで報告された構文エラー）
     "n01_port_def_nested_in_port_def.sysml": False,
     "n02_port_def_nested_in_part_def.sysml": False,
+    # port usage の `::>`/`references`（ReferenceSubsetting）（2026-09-25 実測。Viewerで報告された構文エラー）
+    "p01_port_references_with_mult.sysml": False,
+    "p02_port_references_keyword.sysml": False,
+    "p03_port_typed_then_references.sysml": False,
+    "p04_port_references_unresolved.sysml": True,  # Couldn't resolve reference to Feature 'nope'.
+    # port 以外の全 usage の `::>`/`references`（2026-09-25 実測。領域ごとに1ファイル）
+    "x01_references_structure.sysml": False,
+    "x02_references_behavior.sysml": False,
+    "x03_references_requirements.sysml": False,
+    "x04_references_cases_views.sysml": False,
+    "x05_references_connections.sysml": False,
 }
 
 # まだ一致しないもの → 担当タスク（または一致させない理由）
@@ -233,6 +244,9 @@ PENDING = {
     # なければならない（参照実装は `Couldn't resolve reference to Element 'p'.`）。
     # via の解決は実装していない
     "t07_accept_via_port.sysml": "未対応: accept の via のポートを解決しない",
+    # 未対応: 定義の本体の中の usage が `:>`/`:>>`/`::>`/`references` で指す先の
+    # 名前を解決しない（port に限らず attribute/ref でも同じ。2026-09-25 確認）
+    "p04_port_references_unresolved.sysml": "未対応: usage の subsets/redefines/references 先を解決しない",
 }
 
 
