@@ -92,6 +92,49 @@ Pilot ソース（`C:\pilot_tmp`、2026-08-13）の `org.omg.sysml.xpect.tests` 
 
 構文の残り 7 件は、自作の文法が Pilot より緩いもの（`require` を requirement の外に書く、略記 `accept ... then` の置き場所、`interaction def`、`about` のドット経路、`decide` の分岐先でのその場の宣言など）。Pilot は閉じ括弧などに後続エラーを出すため、構文は「unit ごとの最初の 1 件」で測る（`compare.py` の `syntax_first_error`）。
 
+## 段階 B（途中）: スコープつき名前解決（2026-10-15）
+
+### コーパスの追加
+
+Pilot ソースの KerML の名前解決のテスト（`imports` / `scoping` / `visibility` / `linking`、105 件）を SysML に書き換えて加えた（計 519 件、`build_corpus.py` の `kerml_to_sysml`）。`classifier` / `class` / `type` → `part def`、`datatype` → `attribute def`、`metaclass` → `metadata def`、`feature` とキーワードの無い feature → `part`。テストが読み込む `/src/*.kerml` も書き換えて後ろに連結した。ラベルは書き換えたテキストに Pilot が付けるので、書き換えが元のテストの意図とずれても比較は正しい。書き換え後に Pilot が構文エラーを出すものは無い。
+
+段階 B の開始時点の結果は `results/sB_start`（指摘の種類の対応づけで、自作の汎用ルールの「存在しない型」をメッセージから未解決参照と見なすようにしたので、段階 A の数値とは少し違う）。
+
+### 作ったもの
+
+- `sysml_v2_checker_advanced/scope_resolver.py`: AST から名前空間の木を作り、KerML の規則で名前を解決する。結果は「見つかった / 無い / 不明」の 3 値で、**不明はエラーにしない**。
+  - 内側から見える名前: 所有メンバー、import したメンバー、継承したメンバー（private 以外）、外側の名前空間へ。修飾名の 2 番目以降は public なメンバーだけ。
+  - import: private / public、`::*`、`::**`（名前空間そのものも）、要素 import（短い名前も持ち込む）、`all`、`expose`、filter（`@X` とその and / or / not）。可視性の無い import は参照実装では構文エラーなので効かせない。import の対象は、同じ名前空間でそれより前の import までを使って解決する（Xtext と同じ。循環も起きない）。
+  - 種類: 定義の特化は定義だけ、型付けはパッケージ以外、再定義・部分集合は usage だけを候補にする（参照実装の `Couldn't resolve reference to Classifier` など）。usage で型付けしたものは `A usage must be typed by definitions` として別に出す。
+  - 式の中の名前（単位、`noSuch == true`、`a.b.c` の連鎖）。ラムダの引数・トリガーのペイロードは除く。列挙の値は型付けでは継承されない。
+  - 標準ライブラリ: パッケージ直下は索引（`library_index.json`）で引く。型の中身は持たないので、ライブラリの定義の本体で宣言されている名前（`scripts/build_library_feature_names.py` → `library_feature_names.json`）にあるときだけ「不明」にする。部品・動作などが暗黙に特化する型（Kernel Semantic Library と Systems Library の定義の直接のメンバー）の名前も同じ。
+- `linter.py` の `_check_scoped_references`: 平らな名前表による「存在しない型・パッケージ・要素・計算・PortDefinition」の指摘をこれで置き換え、参照実装と同じ文言（`Couldn't resolve reference to <種類> '<名前>'.`）で出す。接続の端点・遷移の状態など、名前解決がまだ見ない参照の既存の指摘は残し、同じ要素に重ねては出さない。
+
+### 結果
+
+未解決参照（行 + 種類）は、Pilot に構文エラーがある unit を分けて数える（`compare.py` の `unresolved_references`）。構文エラーがあると Pilot は回復で要素を失い、その先の参照まで未解決にするため（可視性の無い import、予約語の名前など）。
+
+| 指標 | 段階 B 開始時 | 現在 |
+| --- | --- | --- |
+| 未解決参照の再現率 / 適合率（Pilot に構文エラーの無い unit） | — | **87.4% / 98.8%**（395 / 5 / 57） |
+| 未解決参照の再現率（全体） | 17.4% | 70.6% |
+| 層 2（名前解決）の再現率（`analyze_gaps.py`） | 7.8% | 66.8% |
+| 正しいモデルの誤検出（verified 5 件） | 0 | 0 |
+| unit 単位: false_alarm / missed（519 件） | 18 / 117 | **1 / 46** |
+| 見逃し率 | 39.0% | **15.3%** |
+| 行 + 種類: 再現率 / 適合率 | 19.1% / 67.0% | 47.9% / 83.6% |
+| 変異体の検出（元の unit との差分） | 71 / 112 | **99 / 112** |
+| 構文: unit ごとの最初の構文エラー | 90% | 90% |
+
+テスト: 既存のテストはすべて通る。参照実装との一致のテスト（`test_sysml_reference_conformance.py`）は、xfail だった p04（usage の `::>` の先）と s2e（兄弟のパッケージの import）が一致するようになった。s2k（`[SI::m/s]` の `s`）は、ライブラリの型の中身を持たないため「不明」になり、xfail にした。名前解決の規則は `tests/test_scope_resolver.py` で固定した。
+
+### 残り（終了条件 90% まで）
+
+- 未解決参照の見逃し 57 件（構文エラーの無い unit）: メタデータの値で絞る filter（`[(as Safety).isMandatory]`、26 件）、ライブラリの型のメンバー（s2k など）、関数呼び出しの名前、`via` のポート。
+- アクセス範囲（`Must be an accessible feature`）は 11 / 43。名前解決の結果を使って作り直す。
+- 構文エラーのある unit は、Pilot の回復の仕方まで真似ないと一致しない。段階 B の到達判定からは外し、分けて報告する。
+- `rule_confidence.json` の `_check_import` / `_check_part_instance` の実測値は、未解決参照の指摘を `_check_scoped_references` に移したので古くなった（`scripts/recheck_local_only.py --rule-stats` で測り直す）。
+
 ## 再現手順
 
 ```

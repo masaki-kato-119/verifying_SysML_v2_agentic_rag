@@ -46,8 +46,8 @@ PILOT_CATEGORIES: list[tuple[str, re.Pattern[str]]] = [
 LOCAL_CATEGORIES: list[tuple[str, re.Pattern[str]]] = [
     ("syntax", re.compile(r"^parse$|official_syntax|leading_then")),  # 可視性の無い import は official_syntax
     ("accessible_feature", re.compile(r"accessible|feature_chain|succession_ends")),
-    ("unresolved", re.compile(r"type_exists|library_feature_references|annotation_reference|event_references|_check_import$")),
-    ("typing_kind", re.compile(r"type_kinds|conjugated_port_typing|port_usage_conjugated")),
+    ("unresolved", re.compile(r"type_exists|library_feature_references|annotation_reference|event_references|_check_import$|scoped_references")),
+    ("typing_kind", re.compile(r"type_kinds|conjugated_port_typing|port_usage_conjugated|typed_by_definitions")),
     ("binding_override", re.compile(r"binding_feature_override|satisfy_rebinds")),
     ("subject_first", re.compile(r"requirement_subject|include_use_case")),
     ("cardinality", re.compile(r"single_objective|return_parameter_count|state_action_duplicates|single_view_rendering")),
@@ -74,7 +74,14 @@ def category(issue: dict, side: str) -> str:
     for name, pattern in table:
         if pattern.search(text):
             return name
+    # 自作の汎用ルール（_check_part_def など）は、rule 名では種類が決まらない。
+    # 「存在しない型・要素を参照」はメッセージで未解決参照と見なす
+    if side == "local" and _LOCAL_UNRESOLVED_MESSAGE.search(issue.get("message") or ""):
+        return "unresolved"
     return "other"
+
+
+_LOCAL_UNRESOLVED_MESSAGE = re.compile(r"存在しない|Couldn't resolve reference")
 
 
 def is_error(issue: dict) -> bool:
@@ -258,7 +265,21 @@ def summarize(units: list[dict]) -> dict:
             first_hit += 1
         else:
             first_missed.append(r["id"])
+    # 段階 B の終了条件: 未解決参照（行 + 種類）の再現率・適合率。Pilot に構文エラーがある unit では、
+    # 構文エラーの回復で要素が消えた先の参照まで未解決になるので、分けて数える
+    resolution: dict[str, Counter] = {"no_pilot_syntax_error": Counter(), "pilot_syntax_error": Counter()}
+    for r in units:
+        pilot_keys = {tuple(k) for k in r["pilot_keys"]}
+        bucket = "pilot_syntax_error" if any(k[1] == "syntax" for k in pilot_keys) else "no_pilot_syntax_error"
+        pk = {k for k in pilot_keys if k[1] == "unresolved"}
+        lk = {tuple(k) for k in r["local_keys"] if k[1] == "unresolved"}
+        resolution[bucket].update(tp=len(pk & lk), fp=len(lk - pk), fn=len(pk - lk))
+    resolution_summary = {
+        bucket: {**dict(c), "recall": round(c["tp"] / (c["tp"] + c["fn"]), 3) if c["tp"] + c["fn"] else None,
+                 "precision": round(c["tp"] / (c["tp"] + c["fp"]), 3) if c["tp"] + c["fp"] else None}
+        for bucket, c in resolution.items()}
     return {"overall": block(units),
+            "unresolved_references": resolution_summary,
             "syntax_first_error": {"units": first_total, "hit": first_hit,
                                    "recall": round(first_hit / first_total, 3) if first_total else None,
                                    "missed": first_missed},

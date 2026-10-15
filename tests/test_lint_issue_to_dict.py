@@ -64,7 +64,8 @@ def test_rule_is_captured_from_the_actual_check_method_via_real_lint():
     ast = parse_sysml_with_semantic_model(text)[0]
     issues = lint_sysml(ast)
     assert issues
-    assert issues[0].to_dict()["rule"] == "_check_attribute_def"
+    # 存在しない型は、段階 B からスコープつき名前解決（_check_scoped_references）が出す
+    assert issues[0].to_dict()["rule"] == "_check_scoped_references"
 
 
 def test_rule_skips_local_helper_functions_inside_a_check_method():
@@ -97,10 +98,12 @@ def test_confidence_comes_with_its_basis_and_caveat_not_a_bare_number():
     呼び出し側が数値だけを切り出して提示できないよう basis/caveat/内訳を
     必ず添えて返す。
     """
-    text = "package P { import NoSuchPackage::NoSuchThing; }"
+    # 段階 B から import の解決は _check_scoped_references が出すので、実測のある
+    # _check_attribute_def（ライブラリの修飾名の誤り）で確かめる
+    text = "package P { private import ISQ::*; part def V { attribute m : ISQ::Mass; } }"
     ast = parse_sysml_with_semantic_model(text)[0]
-    issues = [i for i in lint_sysml(ast) if i.rule == "_check_import"]
-    assert issues, "このテストは_check_importが発火する前提"
+    issues = [i for i in lint_sysml(ast) if i.rule == "_check_attribute_def"]
+    assert issues, "このテストは_check_attribute_defが発火する前提"
 
     confidence = issues[0].to_dict()["confidence"]
     assert set(confidence) == {
@@ -163,6 +166,8 @@ def test_conjugated_port_typing_finding_points_at_the_port_usage():
     from sysml_v2_checker_advanced.semantic_model import lint_text_with_locations
 
     _, _, dicts = lint_text_with_locations("package P {\n    part def S { port p : ~Nope; }\n}\n")
-    conjugated = [d for d in dicts if d["rule"] == "_check_conjugated_port_typing"]
-    assert conjugated
-    assert all(d["element_id"] == "$root::S::p" and d["line"] == 2 for d in conjugated)
+    # 段階 B から、`~Nope` の解決失敗は名前解決（_check_scoped_references）が port usage に付ける
+    # （共役ポートのルールの「存在しない PortDefinition」は置き換え済み）
+    findings = [d for d in dicts if d["rule"] in ("_check_conjugated_port_typing", "_check_scoped_references")]
+    assert findings
+    assert all(d["element_id"] == "$root::S::p" and d["line"] == 2 for d in findings)

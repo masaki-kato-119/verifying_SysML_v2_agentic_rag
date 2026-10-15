@@ -903,7 +903,10 @@ def test_antlr_transition_omitted_source_initial_pseudostate_form():
 def test_antlr_transition_full_form_with_trigger_guard_effect():
     ast = parse_sysml_antlr(
         "state def S { state def A; state def B; "
-        "transition T1 first A accept Trig if x > 0 do action Y then B; }"
+        "transition T1 first A accept Trig if x > 0 do action Y then B; "
+        # 2026-10-15: guard の x も参照実装でエラー（Couldn't resolve reference to Element 'x'.）。
+        # 段階 B の名前解決で式の中の名前も確かめるので、宣言を足す
+        "attribute x : ScalarValues::Integer; }"
         # 2026-09-24: 未定義のトリガー型は参照実装0.62.0でエラー
         # （Couldn't resolve reference to Type 'Trig'.）。AST の形を見るテストなので定義を足す
         " item def Trig;"
@@ -971,7 +974,9 @@ def test_antlr_transition_accept_when_and_at_triggers():
     レポートP0-5で発見。`5-State-based Behavior-1a.sysml`で確認）。"""
     when_ast = parse_sysml_antlr(
         "state def S { state def A; state def B; "
-        "transition first A accept when x > 0 then B; }"
+        "transition first A accept when x > 0 then B; "
+        # guard と同じく x は宣言が要る（参照実装で Couldn't resolve reference to Element 'x'.）
+        "attribute x : ScalarValues::Integer; }"
     )
     when_transition = when_ast["children"][0]["children"][2]
     assert when_transition["trigger"] == {

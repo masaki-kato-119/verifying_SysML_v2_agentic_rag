@@ -128,7 +128,7 @@ def test_lint_sysml_action_def_param_undefined_type_reports_once():
     issues = lint_sysml(ast)
     assert len(issues) == 1
     assert issues[0].severity == "error"
-    assert "Act" in issues[0].message
+    # 段階 B から、参照実装と同じ文言（Couldn't resolve reference to Type 'NoSuchType'.）
     assert "NoSuchType" in issues[0].message
 
 

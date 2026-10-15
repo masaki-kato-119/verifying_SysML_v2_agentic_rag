@@ -232,10 +232,6 @@ REFERENCE_HAS_ERROR = {
 
 # まだ一致しないもの → 担当タスク（または一致させない理由）
 PENDING = {
-    # 既知の近似（直す予定は無い）: import の置き場所を区別せず、ファイル内の
-    # どこかで import した名前はファイル全体で見えるとみなす。参照実装は兄弟の
-    # パッケージの import を見せない。linter._collect_library_visible_names 参照
-    "s2e_sibling_import_not_visible.sysml": "近似: import の名前空間を区別しない",
     # 既知の近似: flow の端点の feature の型がライブラリ由来（`action a : Action;`）
     # だと、その feature が何を持つか確かめられないので判定しない
     # （action_behavior_rules._check_flow_ends 参照）
@@ -244,9 +240,10 @@ PENDING = {
     # なければならない（参照実装は `Couldn't resolve reference to Element 'p'.`）。
     # via の解決は実装していない
     "t07_accept_via_port.sysml": "未対応: accept の via のポートを解決しない",
-    # 未対応: 定義の本体の中の usage が `:>`/`:>>`/`::>`/`references` で指す先の
-    # 名前を解決しない（port に限らず attribute/ref でも同じ。2026-09-25 確認）
-    "p04_port_references_unresolved.sysml": "未対応: usage の subsets/redefines/references 先を解決しない",
+    # 段階 B（scope_resolver）: 式の中の名前は、所有する feature の型がライブラリの型
+    # （`v : SpeedValue`）だと、その型が持つかもしれないので判定しない。ライブラリの型ごとの
+    # メンバー表が無い（eval/pilot_parity/ROADMAP.md の段階 B）
+    "s2k_unit_partly_qualified.sysml": "近似: ライブラリの型のメンバーは確かめない",
 }
 
 

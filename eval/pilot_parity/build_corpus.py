@@ -11,6 +11,9 @@ Pilot も自作チェッカーも 1 テキストとして扱える。
   mutant   verified の各 unit に、LLM がやりがちな誤りを 1 か所だけ入れたもの
   xpect    Pilot ソースの org.omg.sysml.xpect.tests（*.sysml.xt）。期待（XPECT errors /
            warnings）を manifest の expected に入れる。オラクルの確認と、検証ルールの網羅度に使う
+  kerml    Pilot ソースの org.omg.kerml.xpect.tests の名前解決のテスト（imports / scoping /
+           visibility / linking）を SysML に書き換えたもの（kerml_to_sysml）。ラベルは書き換えた
+           テキストに Pilot が付けるので、書き換えが元のテストの意図とずれても比較は正しい
 
 出力: corpus/units/<id>.sysml と corpus/manifest.json
 （id, source, origin, operator, line）。ラベル（正解）は label_pilot.py が付ける。
@@ -28,6 +31,9 @@ from typing import Callable, Iterator
 HERE = Path(__file__).resolve().parent
 DEFAULT_MODELS = Path(r"C:\test\sysml_models")
 DEFAULT_XPECT = Path(r"C:\pilot_tmp\SysML-v2-Pilot-Implementation\org.omg.sysml.xpect.tests\src")
+DEFAULT_KERML_XPECT = Path(r"C:\pilot_tmp\SysML-v2-Pilot-Implementation\org.omg.kerml.xpect.tests")
+# 名前解決（段階 B）に関わる KerML のテストのフォルダ
+KERML_DIRS = ("imports", "scoping", "visibility", "linking")
 
 
 def read(path: Path) -> str:
@@ -39,6 +45,54 @@ def concat(files: list[Path], root: Path) -> str:
     for f in sorted(files):
         parts.append(f"// ---- {f.relative_to(root).as_posix()}\n{read(f).rstrip()}\n")
     return "\n".join(parts)
+
+
+# --- KerML のテストを SysML に書き換える ---------------------------------------------------
+
+# 定義のキーワード（KerML → SysML）。名前解決のテストは種類の違いを問わないので part def に寄せる
+_KERML_DEFS = [(re.compile(r"\b(?:classifier|class|struct|type)\b(?=\s+[\w'<])"), "part def"),
+               (re.compile(r"\bdatatype\b(?=\s+[\w'<])"), "attribute def"),
+               (re.compile(r"\bmetaclass\b(?=\s+[\w'<])"), "metadata def"),
+               (re.compile(r"\bfeature\b(?=\s+[\w'<:~])"), "part")]
+# キーワード無しの feature 宣言（`x : A;`、`public y :> z;`）。行頭の名前のあとに型付け・特化が続く
+_KERML_BARE_FEATURE = re.compile(
+    r"^(\s*(?:(?:public|private|protected)\s+)?)(?=[A-Za-z_]\w*\s*(?::|:>|:>>|\bsubsets\b|\bredefines\b|\[))")
+_KERML_NOT_FEATURE = re.compile(r"^\s*(?:(?:public|private|protected)\s+)?(?:import|alias|package|part|attribute|"
+                                r"doc|comment|filter|dependency)\b")
+
+
+def kerml_to_sysml(text: str) -> str:
+    """KerML の名前解決テストを、Pilot と自作の両方が読める SysML に書き換える（行数は変えない）。"""
+    out = []
+    for line in text.split("\n"):
+        code, sep, comment = line.partition("//")
+        for pattern, repl in _KERML_DEFS:
+            code = pattern.sub(repl, code)
+        if not _KERML_NOT_FEATURE.match(code):
+            code = _KERML_BARE_FEATURE.sub(r"\1part ", code, count=1)
+        out.append(code + sep + comment)
+    return "\n".join(out)
+
+
+_SETUP_FILE = re.compile(r'File\s*\{\s*from\s*=\s*"([^"]+)"')
+
+
+def kerml_unit(test: Path, project: Path) -> str:
+    """テスト本体（設定部分は空行）に、設定が読み込む /src の KerML ファイルを後ろへ連結する。"""
+    raw = read(test)
+    setup = _XPECT_SETUP.search(raw)
+    deps: list[Path] = []
+    for ref in _SETUP_FILE.findall(setup.group(0) if setup else ""):
+        if ref.startswith("/library/"):
+            continue  # KerML の Base ライブラリ。SysML の標準ライブラリにもある
+        path = project / ref.lstrip("/") if ref.startswith("/") else test.parent / ref
+        if path.is_file() and path not in deps:
+            deps.append(path)
+    body = _XPECT_SETUP.sub(lambda m: "\n" * m.group(0).count("\n"), raw, count=1)
+    parts = [kerml_to_sysml(body).rstrip()]
+    for dep in deps:
+        parts.append(f"// ---- {dep.name}\n{kerml_to_sysml(read(dep)).rstrip()}")
+    return "\n".join(parts) + "\n"
 
 
 # --- 変異の種類（LLM の生成で実際に見た誤り。sysmlv2-bp-antipatterns より） ----------------
@@ -126,7 +180,8 @@ def xpect_expectations(text: str) -> list[dict]:
     return found
 
 
-def build(models: Path, out: Path, per_operator: int, xpect: Path | None = None) -> list[dict]:
+def build(models: Path, out: Path, per_operator: int, xpect: Path | None = None,
+          kerml: Path | None = None) -> list[dict]:
     units_dir = out / "units"
     units_dir.mkdir(parents=True, exist_ok=True)
     for old in units_dir.glob("*.sysml"):
@@ -174,6 +229,13 @@ def build(models: Path, out: Path, per_operator: int, xpect: Path | None = None)
         add("xpect-" + re.sub(r"[^\w.-]+", "_", rel[:-len(".sysml.xt")]), body, "xpect", rel,
             expected=xpect_expectations(raw))
 
+    # KerML の名前解決のテスト（SysML に書き換え）
+    kerml_tests = kerml / "src" / "org" / "omg" / "kerml" / "xpect" / "tests" if kerml else None
+    for folder in KERML_DIRS if kerml_tests and kerml_tests.is_dir() else ():
+        for f in sorted((kerml_tests / folder).rglob("*.kerml.xt")):
+            rel = f.relative_to(kerml_tests).as_posix()
+            add("kerml-" + re.sub(r"[^\w.-]+", "_", rel[:-len(".kerml.xt")]), kerml_unit(f, kerml), "kerml", rel)
+
     (out / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
     return manifest
 
@@ -185,8 +247,10 @@ def main() -> None:
     ap.add_argument("--per-operator", type=int, default=4)
     ap.add_argument("--xpect", type=Path, default=DEFAULT_XPECT,
                     help="Pilot ソースの org.omg.sysml.xpect.tests/src（無ければ xpect は入れない）")
+    ap.add_argument("--kerml-xpect", type=Path, default=DEFAULT_KERML_XPECT,
+                    help="Pilot ソースの org.omg.kerml.xpect.tests（無ければ kerml は入れない）")
     args = ap.parse_args()
-    manifest = build(args.models, args.out, args.per_operator, args.xpect)
+    manifest = build(args.models, args.out, args.per_operator, args.xpect, args.kerml_xpect)
     counts: dict[str, int] = {}
     for m in manifest:
         key = m["source"] if m["source"] != "mutant" else f"mutant:{m['operator']}"

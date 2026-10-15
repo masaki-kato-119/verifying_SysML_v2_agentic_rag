@@ -114,19 +114,20 @@ LOCATED_ERRORS_TEXT = """package P {
 }
 """
 
-# ルール → そのエラーがある行
+# (ルール, そのエラーがある行)
 EXPECTED_ERROR_LINES = {
-    "_check_attribute_def": 4,  # ISQ::Mass は存在しない
-    "_check_quantity_units": 5,  # SI を import していない kg
-    "_check_one_flow_end": 10,  # 名前1つの flow の端点
-    "_check_event_references": 12,  # `event X;` は参照で、X が無い
-    "_check_port_usage": 13,  # 存在しない port def
-    "_check_conjugated_port_typing": 13,  # 合成ノードの指摘も元の port usage の行に付く
+    ("_check_attribute_def", 4),  # ISQ::Mass は存在しない
+    ("_check_scoped_references", 5),  # SI を import していない kg（段階 B の名前解決）
+    ("_check_one_flow_end", 10),  # 名前1つの flow の端点
+    ("_check_event_references", 12),  # `event X;` は参照で、X が無い
+    # 存在しない port def（`~Nope`）。段階 B から共役ポートのルールの「存在しない
+    # PortDefinition」も名前解決の指摘に置き換えた
+    ("_check_scoped_references", 13),
 }
 
 
 def _error_lines(issues):
-    return {i["rule"]: i["line"] for i in issues if i["severity"] == "error"}
+    return {(i["rule"], i["line"]) for i in issues if i["severity"] == "error"}
 
 
 async def test_lint_sysml_text_reports_the_line_of_each_error(sysml_client):

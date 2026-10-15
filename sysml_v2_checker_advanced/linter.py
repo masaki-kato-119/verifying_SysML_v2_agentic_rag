@@ -4,9 +4,10 @@ SysML v2 Advanced Checker Linter
 高度なルールチェッカー
 """
 
+import re
 from typing import Dict, List, Set
 
-from . import library_index
+from . import library_index, scope_resolver
 from .constants import (
     BUILTIN_TYPES,
     ELEMENT_REFERENCE_ONLY_USAGE_TYPES,
@@ -307,10 +308,73 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         # 単位は式の中にあり _check_rules の再帰では届かないため、全木走査で行う。
         self._check_quantity_units(ast)
 
+        # 第16パス: スコープつき名前解決（段階 B、eval/pilot_parity/ROADMAP.md）。
+        # 平らな名前表による「存在しない型」系の判定を、名前空間・import・可視性・継承を
+        # たどる判定（scope_resolver）に置き換える。
+        self._check_scoped_references(ast, known_external_types)
+
         # 最後に、import 漏れで解決できなかった名前へ import のヒントを付ける
         self._add_library_import_hints(ast)
 
         return self.issues
+
+    # 平らな名前表で型・特化・import・単位の参照先の有無を判定していた指摘。
+    # _check_scoped_references が置き換える（接続の端点など、名前解決が見ない参照の指摘は残す）
+    _FLAT_TYPE_MESSAGE = re.compile(r"存在しない\s*(?:型|計算|制約|PortDefinition)")
+    _FLAT_TYPE_RULES = frozenset({
+        "lint", "_check_part_def", "_check_part_instance", "_check_attribute_def", "_check_attribute_definition",
+        "_check_item_def", "_check_port_def", "_check_port_usage", "_check_type_def", "_check_action_def",
+        "_check_activity_def", "_check_calculation_def", "_check_calculation_usage", "_check_constraint_def",
+        "_check_constraint_usage", "_check_assert_constraint_usage", "_check_usage_type_exists",
+        "_check_connection_def", "_check_interface_def", "_check_allocation_def", "_check_state_def",
+        "_check_conjugated_port_typing",
+    })
+    _FLAT_NAMESPACE_RULES = frozenset({"_check_import", "_check_expose", "_check_quantity_units"})
+
+    def _check_scoped_references(self, ast: Dict, known_external_types: Set[str] | None = None) -> None:
+        """型付け・特化・再定義・import・alias・式の中の名前を、スコープつきで解決する。
+
+        参照実装と同じく、名前空間の木（所有メンバー・import・可視性・継承）をたどる
+        （scope_resolver.py）。確かめられない参照（ライブラリの型の中身など）はエラーに
+        しない。メッセージは参照実装と同じ `Couldn't resolve reference to <種類> '<名前>'.`。
+        """
+        unresolved = scope_resolver.unresolved_references(ast, external_names=known_external_types)
+
+        def replaced(issue: LintIssue) -> bool:
+            if issue.severity != SEVERITY_ERROR:
+                return False
+            if issue.rule in self._FLAT_TYPE_RULES:
+                return bool(self._FLAT_TYPE_MESSAGE.search(issue.message))
+            if issue.rule in self._FLAT_NAMESPACE_RULES:
+                return "存在しない" in issue.message or "Couldn't resolve reference" in issue.message
+            return False
+
+        self.issues = [issue for issue in self.issues if not replaced(issue)]
+        # 残った指摘（接続の端点・遷移の状態など）と同じ要素には重ねて出さない
+        already = {id(issue.node) for issue in self.issues if issue.severity == SEVERITY_ERROR and issue.node}
+        for node, reference, kind in unresolved:
+            if id(node) in already:
+                continue
+            message = f"Couldn't resolve reference to {kind} '{reference}'."
+            root = scope_resolver.split_qualified(reference)[0] if reference else ""
+            if "::" in reference and library_index.is_library_package(root):
+                message += self._library_suggestion_suffix(reference)
+            self.issues.append(LintIssue(SEVERITY_ERROR, message, node))
+        self._check_usage_typed_by_definitions(ast, known_external_types)
+
+    def _check_usage_typed_by_definitions(self, ast: Dict, known_external_types: Set[str] | None = None) -> None:
+        """usage を定義ではなく別の usage で型付けしていないか（`attribute a : b;` の b が usage）。
+
+        参照実装は usage の種類ごとに `An attribute must be typed by attribute definitions.` など
+        を返す。平らな名前表では usage 名が型として引けず「存在しない型」になっていたもの。
+        """
+        for node, type_name in scope_resolver.typed_by_usages(ast, external_names=known_external_types):
+            self.issues.append(LintIssue(
+                SEVERITY_ERROR,
+                f"A usage must be typed by definitions: '{type_name}' は定義（def）ではなく usage。"
+                f"型には `{type_name}` の定義を書く（usage の特化なら `:>` を使う）",
+                node,
+            ))
     
     def _collect_symbols(self, node: Dict, namespace: str = "") -> None:
         """
