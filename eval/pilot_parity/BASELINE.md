@@ -51,6 +51,19 @@ Pilot のエラーの種類別の再現率（同じ行・同じ種類）: 構文
 - 型の種類・アクセス範囲・`Must reference` は、KerML の派生プロパティ（継承メンバー、フィーチャの種類）を持つ名前解決層が前提になる。Pilot 側の規模は、名前解決 1.1 千行、アダプタ 9.8 千行、派生プロパティ 17.8 千行、検証ルール `@Check` 115 個（約 3 千行）。
 - 次の P3 で Pilot 自身の xpect テスト（`XPECT errors` 489 件）を加え、構文以外の検証ルールの網羅度を測る。
 
+## P3: Pilot 自身の xpect テストで測った検証ルールの網羅度（2026-10-15）
+
+Pilot ソース（`C:\pilot_tmp`、2026-08-13）の `org.omg.sysml.xpect.tests` の SysML テスト 126 件（期待エラー 164 件・期待警告 40 件）をコーパスに加えた（計 414 件）。設定部分だけを空行に置き換え、XPECT の注釈は SysML のコメントなので残した。
+
+- **オラクルの確認**: 期待エラー 164 件のうち、Pilot 0.62.0 が同じメッセージを出したのは 161 件、同じ行まで一致は 132 件（行のずれは、`at "..."` が複数行にまたがるテストで行を特定しきれないため）。テストの版と jar の版の差による食い違いはほぼ無い。
+- **自作の網羅度**: 期待エラーのうち、自作が同じ行・同じ種類で出したのは **51 / 164（31%）**、同じ行に何らかのエラーを出したのは 68（41%）。
+- 期待メッセージ 66 種類のうち、自作が 1 件も一致しないのは **46 種類（期待エラー 87 件）**。
+  - 全件一致: subject の個数・位置、objective の外の verify、state の entry/do/exit の個数、variant / variation の所有、return の個数、view rendering の個数、parallel state の遷移。**構造の数え上げで判定できる規則は実装済み**。
+  - 一致しない主なもの: 「X must be typed by Y definitions」系（occurrence / usage / calculation / state / use case / analysis / constraint / connection / flow / enumeration / requirement / case など、計 50 件超）、`Must be model-level evaluable`、`Must have a concrete type`、再定義の制約（nonunique、方向、所有型、パッケージ直下）、`Must reference a …`。**どれも「参照先が何の種類か」を知る名前解決が前提**。
+- xpect だけで見た unit 単位: 見逃し率 27.9%、行 + 種類の再現率 32.4%・適合率 74.2%（自作が出したエラーはおおむね正しいが、出せていないものが多い）。
+
+種類の対応づけ（`compare.py` の `PILOT_CATEGORIES` / `LOCAL_CATEGORIES`）は、P3 で「個数の制約（cardinality）」「置き場所（placement）」を足して細かくした。そのため全体の数値は P2 の初回と少し違う（全体: 見逃し率 25.9%、行 + 種類の再現率 15.2%・適合率 23.1%、414 件）。
+
 ## 再現手順
 
 ```

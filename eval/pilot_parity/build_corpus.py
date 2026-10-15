@@ -9,6 +9,8 @@ Pilot も自作チェッカーも 1 テキストとして扱える。
   verified verified/<テーマ>/                Pilot で 0 エラー・0 警告を確かめた最小例
   probe    verified/_probe/**/*.sysml        誤りをわざと入れた負例（1 ファイル 1 件）
   mutant   verified の各 unit に、LLM がやりがちな誤りを 1 か所だけ入れたもの
+  xpect    Pilot ソースの org.omg.sysml.xpect.tests（*.sysml.xt）。期待（XPECT errors /
+           warnings）を manifest の expected に入れる。オラクルの確認と、検証ルールの網羅度に使う
 
 出力: corpus/units/<id>.sysml と corpus/manifest.json
 （id, source, origin, operator, line）。ラベル（正解）は label_pilot.py が付ける。
@@ -25,6 +27,7 @@ from typing import Callable, Iterator
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_MODELS = Path(r"C:\test\sysml_models")
+DEFAULT_XPECT = Path(r"C:\pilot_tmp\SysML-v2-Pilot-Implementation\org.omg.sysml.xpect.tests\src")
 
 
 def read(path: Path) -> str:
@@ -106,16 +109,34 @@ def mutants(text: str, per_operator: int) -> Iterator[tuple[str, str, int]]:
             yield op.name, "\n".join(new_lines), i + 1
 
 
-def build(models: Path, out: Path, per_operator: int) -> list[dict]:
+# --- Pilot 自身の xpect テスト（*.sysml.xt） ----------------------------------------
+
+_XPECT_SETUP = re.compile(r"\A\s*//\*\s*XPECT_SETUP.*?END_SETUP\s*\*/", re.S)
+# `// XPECT errors --> "msg" at "snippet"`（1 行）と `//* XPECT errors --- "msg" at "..." ... --- */`（複数行）
+_XPECT_BLOCK = re.compile(r"XPECT (errors|warnings)\s*(?:-->|---)(.*?)(?:---\s*\*/|$)", re.S | re.M)
+_XPECT_ITEM = re.compile(r'"((?:[^"\\]|\\.)*)"\s+at\s+"((?:[^"\\]|\\.)*)"')
+
+
+def xpect_expectations(text: str) -> list[dict]:
+    """XPECT errors / warnings に書かれた期待（kind, message, at）。"""
+    found = []
+    for m in _XPECT_BLOCK.finditer(text):
+        for item in _XPECT_ITEM.finditer(m.group(2)):
+            found.append({"kind": m.group(1)[:-1], "message": item.group(1), "at": item.group(2)})
+    return found
+
+
+def build(models: Path, out: Path, per_operator: int, xpect: Path | None = None) -> list[dict]:
     units_dir = out / "units"
     units_dir.mkdir(parents=True, exist_ok=True)
     for old in units_dir.glob("*.sysml"):
         old.unlink()
     manifest: list[dict] = []
 
-    def add(uid: str, text: str, source: str, origin: str, operator: str | None = None, line: int | None = None) -> None:
+    def add(uid: str, text: str, source: str, origin: str, operator: str | None = None, line: int | None = None,
+            **extra: object) -> None:
         (units_dir / f"{uid}.sysml").write_text(text, encoding="utf-8")
-        manifest.append({"id": uid, "source": source, "origin": origin, "operator": operator, "line": line})
+        manifest.append({"id": uid, "source": source, "origin": origin, "operator": operator, "line": line, **extra})
 
     # LLM が書いたモデル（フォルダごとに 1 件）
     for group in ("runs", "runs_sonnet"):
@@ -144,6 +165,15 @@ def build(models: Path, out: Path, per_operator: int) -> list[dict]:
         rel = f.relative_to(probe).as_posix()
         add("probe-" + re.sub(r"[^\w.-]+", "_", rel[:-len(".sysml")]), read(f), "probe", f"verified/_probe/{rel}")
 
+    # Pilot の xpect テスト（SysML のものだけ）。設定部分を空行に置き換え、行番号を保つ。
+    # XPECT の注釈は SysML のコメント（// と //* */）なので、残したまま検証できる。
+    for f in sorted(xpect.rglob("*.sysml.xt")) if xpect and xpect.is_dir() else []:
+        raw = read(f)
+        body = _XPECT_SETUP.sub(lambda m: "\n" * m.group(0).count("\n"), raw, count=1)
+        rel = f.relative_to(xpect).as_posix()
+        add("xpect-" + re.sub(r"[^\w.-]+", "_", rel[:-len(".sysml.xt")]), body, "xpect", rel,
+            expected=xpect_expectations(raw))
+
     (out / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
     return manifest
 
@@ -153,8 +183,10 @@ def main() -> None:
     ap.add_argument("--models", type=Path, default=DEFAULT_MODELS)
     ap.add_argument("--out", type=Path, default=HERE / "corpus")
     ap.add_argument("--per-operator", type=int, default=4)
+    ap.add_argument("--xpect", type=Path, default=DEFAULT_XPECT,
+                    help="Pilot ソースの org.omg.sysml.xpect.tests/src（無ければ xpect は入れない）")
     args = ap.parse_args()
-    manifest = build(args.models, args.out, args.per_operator)
+    manifest = build(args.models, args.out, args.per_operator, args.xpect)
     counts: dict[str, int] = {}
     for m in manifest:
         key = m["source"] if m["source"] != "mutant" else f"mutant:{m['operator']}"

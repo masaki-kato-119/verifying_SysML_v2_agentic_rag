@@ -28,14 +28,16 @@ PILOT_CATEGORIES: list[tuple[str, re.Pattern[str]]] = [
     ("unresolved", re.compile(r"Couldn't resolve reference")),
     ("typing_kind", re.compile(r"must be typed by|Must have a concrete type")),
     ("binding_override", re.compile(r"Cannot override a binding feature value|must be constant if")),
-    ("subject_first", re.compile(r"Subject must be first")),
+    ("subject_first", re.compile(r"Subject must be first|Only one subject")),
+    ("cardinality", re.compile(r"Only one (?:objective|return)|at most one|at most two ends|cannot have more than one")),
+    ("placement", re.compile(r"must be in the objective|parallel state cannot|Must be owned by")),
     ("must_reference", re.compile(r"^Must reference an? ")),
     ("related_elements", re.compile(r"at least two related elements")),
     ("flow_end", re.compile(r"Cannot identify flow end")),
     ("direction", re.compile(r"compatible direction")),
     ("individual", re.compile(r"individual")),
     ("variant", re.compile(r"[Vv]ariant|variation")),
-    ("ownership", re.compile(r"Must be owned by|Owned usages of a port definition")),
+    ("ownership", re.compile(r"Owned usages of a port definition|Nested usages in a port usage")),
     ("invocation", re.compile(r"Must invoke|model-level evaluable|input parameter of the invoked")),
     ("annotation", re.compile(r"Cannot annotate|metadata")),
 ]
@@ -48,13 +50,15 @@ LOCAL_CATEGORIES: list[tuple[str, re.Pattern[str]]] = [
     ("typing_kind", re.compile(r"type_kinds|conjugated_port_typing|port_usage_conjugated")),
     ("binding_override", re.compile(r"binding_feature_override|satisfy_rebinds")),
     ("subject_first", re.compile(r"requirement_subject|include_use_case")),
+    ("cardinality", re.compile(r"single_objective|return_parameter_count|state_action_duplicates|single_view_rendering")),
+    ("placement", re.compile(r"verify_requirement_placement|parallel_state_has_no_transitions|portion_usage_owner")),
     ("must_reference", re.compile(r"satisfy_requirement_usage|verify_requirement_placement")),
     ("related_elements", re.compile(r"at_least_two_related")),
     ("flow_end", re.compile(r"flow_end")),
     ("direction", re.compile(r"direction")),
     ("individual", re.compile(r"individual")),
     ("variant", re.compile(r"variation_variant")),
-    ("ownership", re.compile(r"portion_usage_owner|port_def$")),
+    ("ownership", re.compile(r"port_def$|port_usage$")),
 ]
 
 
@@ -158,6 +162,65 @@ def delta_table(rows: list[dict]) -> dict:
     return out
 
 
+def _snippet_line(text: str, snippet: str) -> int | None:
+    """XPECT の `at "..."` が指す行。XPECT の注釈の行は飛ばし、最初に現れる行を返す。"""
+    target = snippet.replace('\\"', '"').strip()
+    for n, line in enumerate(text.split("\n"), 1):
+        if "XPECT" in line or line.lstrip().startswith(('"', "---")):
+            continue
+        if target and target in line:
+            return n
+    first = target.split("\n")[0].strip() if target else ""
+    for n, line in enumerate(text.split("\n"), 1):
+        if first and first in line and "XPECT" not in line:
+            return n
+    return None
+
+
+def xpect_rows(corpus: Path, labels: Path) -> list[dict]:
+    """xpect の期待エラー 1 件ずつに、Pilot（オラクル）と自作が同じ箇所で出したかを付ける。"""
+    manifest = json.loads((corpus / "manifest.json").read_text(encoding="utf-8"))
+    rows = []
+    for entry in manifest:
+        if entry["source"] != "xpect":
+            continue
+        pilot, local = load(labels / "pilot", entry["id"]), load(labels / "local", entry["id"])
+        if pilot is None or local is None:
+            continue
+        text = (corpus / "units" / f"{entry['id']}.sysml").read_text(encoding="utf-8")
+        p_err = [i for i in pilot["issues"] if is_error(i)]
+        l_keys = {(i.get("line"), category(i, "local")) for i in local["issues"] if is_error(i)}
+        for exp in entry.get("expected", []):
+            if exp["kind"] != "error":
+                continue
+            line = _snippet_line(text, exp["at"])
+            cat = category({"message": exp["message"]}, "pilot")
+            rows.append({"id": entry["id"], "message": exp["message"], "line": line, "category": cat,
+                         "pilot_same_message": any(i.get("message") == exp["message"] for i in p_err),
+                         "pilot_same_place": any(i.get("message") == exp["message"] and i.get("line") == line for i in p_err),
+                         "local_same_kind_line": cat != "other" and (line, cat) in l_keys,
+                         "local_any_error_line": any(k[0] == line for k in l_keys)})
+    return rows
+
+
+def xpect_summary(rows: list[dict]) -> dict:
+    by_msg: dict[str, Counter] = defaultdict(Counter)
+    for r in rows:
+        key = re.sub(r"'[^']*'", "'…'", r["message"])
+        c = by_msg[key]
+        c["n"] += 1
+        c["pilot"] += r["pilot_same_place"]
+        c["local_kind"] += r["local_same_kind_line"]
+        c["local_any"] += r["local_any_error_line"]
+    total = len(rows)
+    return {"expected_errors": total,
+            "pilot_same_message": sum(r["pilot_same_message"] for r in rows),
+            "pilot_same_place": sum(r["pilot_same_place"] for r in rows),
+            "local_same_kind_line": sum(r["local_same_kind_line"] for r in rows),
+            "local_any_error_line": sum(r["local_any_error_line"] for r in rows),
+            "by_message": {k: dict(v) for k, v in sorted(by_msg.items(), key=lambda kv: -kv[1]["n"])}}
+
+
 def summarize(units: list[dict]) -> dict:
     def block(rows: list[dict]) -> dict:
         v = Counter(r["verdict"] for r in rows)
@@ -212,6 +275,17 @@ def markdown(summary: dict, units: list[dict]) -> str:
     out += ["## Pilot のエラーの種類別の再現率", "", "| 種類 | Pilot 件数 | 自作が同じ行・同じ種類で出した | 再現率 |", "|---|---|---|---|"]
     for c, b in summary["recall_by_pilot_category"].items():
         out.append(f"| {c} | {b['pilot']} | {b['hit']} | {b['recall']} |")
+    if "xpect" in summary:
+        x = summary["xpect"]
+        out += ["", "## Pilot の xpect テストの期待エラー", "",
+                f"- 期待エラー {x['expected_errors']} 件。オラクル（Pilot 0.62.0）が同じ行・同じメッセージで出した: "
+                f"{x['pilot_same_place']}（メッセージだけ一致: {x['pilot_same_message']}）",
+                f"- 自作が同じ行・同じ種類で出した: {x['local_same_kind_line']}（同じ行に何かのエラー: {x['local_any_error_line']}）",
+                "", "| 期待メッセージ（名前は …） | 件数 | Pilot 同じ箇所 | 自作 同じ行・種類 | 自作 同じ行に何か |",
+                "|---|---|---|---|---|"]
+        for msg, c in x["by_message"].items():
+            out.append(f"| {msg.replace('|', '/')} | {c.get('n', 0)} | {c.get('pilot', 0)} | {c.get('local_kind', 0)} | "
+                       f"{c.get('local_any', 0)} |")
     missed = [u for u in units if u["verdict"] == "missed"]
     out += ["", f"## 見逃した unit（{len(missed)} 件）", "", "| id | Pilot のエラーの種類 |", "|---|---|"]
     out += [f"| {u['id']} | {', '.join(u['pilot_categories'])} |" for u in missed]
@@ -226,6 +300,11 @@ def main() -> None:
     args = ap.parse_args()
     result = compare(args.corpus, args.labels)
     summary = summarize(result["units"])
+    xrows = xpect_rows(args.corpus, args.labels)
+    if xrows:
+        summary["xpect"] = xpect_summary(xrows)
+        (args.out.mkdir(parents=True, exist_ok=True))
+        (args.out / "xpect_rows.json").write_text(json.dumps(xrows, ensure_ascii=False, indent=1), encoding="utf-8")
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "units.json").write_text(json.dumps(result["units"], ensure_ascii=False, indent=1), encoding="utf-8")
     (args.out / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1), encoding="utf-8")

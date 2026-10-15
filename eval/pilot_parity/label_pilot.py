@@ -21,6 +21,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--corpus", type=Path, default=HERE / "corpus")
     ap.add_argument("--out", type=Path, default=HERE / "labels" / "pilot")
+    ap.add_argument("--force", action="store_true",
+                    help="ラベルがある unit も付け直す（既定は、無い unit だけ。unit の中身が変わったら付ける）")
     args = ap.parse_args()
 
     from sysml_mcp.backend import Config, SysMLDaemon, SysMLService
@@ -33,6 +35,8 @@ def main() -> None:
     service = SysMLService(daemon)
     try:
         for n, entry in enumerate(manifest, 1):
+            if not args.force and (args.out / f"{entry['id']}.json").exists():
+                continue
             text = (args.corpus / "units" / f"{entry['id']}.sysml").read_text(encoding="utf-8")
             r = service.validate(text)
             issues = [{k: i.get(k) for k in ("severity", "line", "column", "syntax_error", "message")}
