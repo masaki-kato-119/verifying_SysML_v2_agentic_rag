@@ -64,6 +64,34 @@ Pilot ソース（`C:\pilot_tmp`、2026-08-13）の `org.omg.sysml.xpect.tests` 
 
 種類の対応づけ（`compare.py` の `PILOT_CATEGORIES` / `LOCAL_CATEGORIES`）は、P3 で「個数の制約（cardinality）」「置き場所（placement）」を足して細かくした。そのため全体の数値は P2 の初回と少し違う（全体: 見逃し率 25.9%、行 + 種類の再現率 15.2%・適合率 23.1%、414 件）。
 
+## 段階 A: 文法の穴とパース停止（2026-10-15）
+
+変更（`ROADMAP.md` の段階 A）:
+
+- 文法（`SysMLMin.g4`）: 値の `:=`（初期値）と `default :=`、`perform` の `::>` / `references`、state の本体の `port` / `item`。
+- パースエラーがあっても、読めた部分を lint する（`lint_text_with_locations(..., recover=True)`。`run_local.py` は既定で有効）。
+- 正しいモデルでの誤検出 2 件: 短い名前（`<'SN-R001'>`）の import・修飾名を解決する。型なしの `interface ... connect` の中の flow は、end 名（source / target）がライブラリ由来なので確かめない。
+
+| 指標 | P3（段階 A 前） | 段階 A 後 |
+| --- | --- | --- |
+| 正しいモデルの誤検出（verified 5 件） | 4 | **0** |
+| xpect の valid（34 件） | both_clean 33 / both_error 1 | 同じ（both_error は Pilot も同じエラーを出すテスト） |
+| 構文: unit ごとの最初の構文エラーを同じ行で | — | **63 / 70（90%）** |
+| 構文: Pilot の構文エラー全件（後続エラー込み） | 62 / 115 | 71 / 115 |
+| 層 1（文法）の再現率（`analyze_gaps.py`） | 63% | 72.9% |
+| 変異体の検出（元の unit との差分） | 52 / 112 | **71 / 112** |
+| unit 単位: false_alarm / missed | 29 / 65 | **0** / 97 |
+| 行 + 種類: 再現率 / 適合率 | 15.2% / 23.1% | 16.4% / **67.1%** |
+
+**見逃し（missed）が 65 から 97 に増えたのは、測り方の上での見かけの悪化**。増えた 32 件はどれも、P3 では Pilot のエラーと関係の無い場所に自作がエラーを出していたため「両方エラー」と数えられていた unit だった。
+
+- 16 件: 文法の穴による構文エラー（例: Pilot は 35 行目の未解決参照、自作は 448 行目の `:=` で構文エラー）。
+- 16 件: 元のモデルの誤検出（structure の 54・59 行目、connections の 162 行目）を、変異体が引き継いでいたもの。
+
+穴が埋まったので、本当の検出漏れ（主に層 2 の名前解決）が見えるようになった。変異体の差分評価は元のモデルの雑音を差し引くので、52 から 71 への改善を正しく示している。
+
+構文の残り 7 件は、自作の文法が Pilot より緩いもの（`require` を requirement の外に書く、略記 `accept ... then` の置き場所、`interaction def`、`about` のドット経路、`decide` の分岐先でのその場の宣言など）。Pilot は閉じ括弧などに後続エラーを出すため、構文は「unit ごとの最初の 1 件」で測る（`compare.py` の `syntax_first_error`）。
+
 ## 再現手順
 
 ```

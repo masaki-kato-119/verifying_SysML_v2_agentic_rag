@@ -3987,3 +3987,32 @@ def parse_sysml_with_semantic_model(text: str):
     _assign_semantic_ids(ast, visitor._ctx_by_node_id, None, {}, nodes, is_root=True)
 
     return ast, {"nodes": nodes, "root_id": "$root"}
+
+
+def parse_sysml_with_semantic_model_recovering(text: str):
+    """parse_sysml_with_semantic_model() と同じだが、パースエラーがあっても読めた部分の AST を返す。
+
+    戻り値は (ast, semantic_model, errors)。errors はパースエラーのメッセージ一覧
+    （無ければ空）。ANTLR はエラー回復で木を作り続けるので、その木を Visitor に
+    通す。回復後の木が Visitor の想定から外れて例外になったときは、ast を
+    {"type": "error", ...}、semantic_model を空にして返す（読めなかったとみなす）。
+
+    構文エラーが 1 つあるだけでファイル全体の lint が止まると、ほかの規則の指摘が
+    すべて消える（Pilot は構文エラーの後も検証を続ける）。lint を止めないための入口で、
+    既存の parse_sysml_with_semantic_model() の挙動は変えない（2026-10-15、Pilot との
+    差分評価 eval/pilot_parity の段階 A）。
+    """
+    tree, errors = _parse_to_tree(text)
+    error_ast = {"type": "error", "message": "; ".join(errors)}
+    visitor = SysMLMinASTVisitor()
+    try:
+        ast = visitor.visit(tree)
+        if not isinstance(ast, dict):
+            raise TypeError(f"recovered tree produced {type(ast).__name__}")
+        nodes: Dict[str, Dict] = {}
+        _assign_semantic_ids(ast, visitor._ctx_by_node_id, None, {}, nodes, is_root=True)
+    except Exception:  # noqa: BLE001 -- 回復後の木は形が崩れうる。読めなかったとみなす
+        if not errors:
+            raise
+        return error_ast, {"nodes": {}, "root_id": None}, errors
+    return ast, {"nodes": nodes, "root_id": "$root"}, errors

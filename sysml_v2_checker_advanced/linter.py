@@ -99,6 +99,7 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         # `package Outer { package Inner {...} import Inner::*; }`のような
         # 同一ファイル内のネストpackage参照も正しく解決できる。
         self.packages: Dict[str, Dict] = {}  # 名前 -> packageノード（パッケージ参照専用）
+        self.short_names: set = set()  # 短い名前（引用符なし）。lint() で作り直す
         # import文で明示的に持ち込まれたが、このファイル単体では中身を確認できない
         # 名前（例: `private import Collections::KeyValuePair;`の`KeyValuePair`）。
         self.opaque_import_names: Set[str] = set()
@@ -152,6 +153,10 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         self.issues = []
         self.symbols = {}
         self.element_refs = {}
+        # 短い名前（`requirement def <'SN-R001'> MassLimitRequirement;` の SN-R001）。
+        # 参照実装は短い名前でも参照・import を解決する（ShortNameSpecification の
+        # 検証済みモデルで実測）。引用符を外した名前で持つ。
+        self.short_names: set = set()
         # 組み込み型（Boolean・Real 等、ScalarValues の型）は、import か修飾で
         # 見えているときだけ有効にする。参照実装は import 無しの `Boolean` を
         # `Couldn't resolve reference to Type 'Boolean'.` とする（2026-09-24実測）。
@@ -319,6 +324,9 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         """
         node_type = node.get("type")
         full_name = f"{namespace}::{node.get('name')}" if namespace else node.get("name", "")
+        short_name = node.get("shortName")
+        if short_name:
+            self.short_names.add(short_name.strip("'"))
         
         if node_type == "package":
             # packageの完全修飾名を構築して、子要素の名前空間として使用
@@ -828,6 +836,17 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         if "::" not in type_name and type_name.strip("'") in self.library_visible_names:
             return True
 
+        # 短い名前を含む修飾名（`ShortNameSpecification::SNSUB::InnerPart` の SNSUB は
+        # package の短い名前）。平坦な表では正式名の経路と突き合わせられないので、
+        # 末尾が型として（または短い名前として）実在すれば有効とする（検出漏れ側に倒す）。
+        segments = [seg.strip("'") for seg in type_name.split("::")]
+        if len(segments) > 1 and any(seg in self.short_names for seg in segments):
+            last = segments[-1]
+            if last in self.short_names or any(
+                sym_name.split("::")[-1].strip("'") == last for sym_name in self.symbols
+            ):
+                return True
+
         # 解決できなかった参照のうち、「単一ファイルlintの範囲では検証不能」な
         # ものは存在しないと断定できないため有効扱いにする（誤検出の回避）。
         if self._is_unverifiable_reference(type_name):
@@ -1279,6 +1298,8 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
                     sym_name == element_name or
                     sym_name.split("::")[-1] == element_name):
                     return True
+        if element_name.split("::")[-1].strip("'") in self.short_names:
+            return True
 
         # 注意: 「検証不能なら存在扱い」とする緩和ルールをここに入れてはならない。
         # `import NoSuchPackage::*;`自身が「中身の見えないワイルドカード

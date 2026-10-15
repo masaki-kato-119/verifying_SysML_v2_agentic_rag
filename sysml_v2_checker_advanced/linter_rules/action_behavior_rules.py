@@ -784,6 +784,8 @@ _FLOW_NAME_KEYS = ("name", "shortName", "actionName", "declared_name", "endName"
 # ActionTest.sysml の `flow aa.target to snd.receiver;`（snd は send アクション）が
 # 正しい形なので、中身は確かめられないものとして扱う
 _FLOW_IMPLICIT_MEMBER_TYPES = {"accept_action", "send_action", "assignment_stmt"}
+# 型を書かないとライブラリの型（end を持つ）に型付けされる接続系の usage
+_FLOW_LIBRARY_TYPED_WHEN_UNTYPED = {"interface_usage", "connection_usage", "allocation_usage"}
 # 同じ名前のノードが複数ある（`then braking;` の後続参照と `action braking { ... }`
 # の宣言など）。どれが宣言か判別できないので、その先の判定をやめる印
 _FLOW_AMBIGUOUS = object()
@@ -815,6 +817,11 @@ def _flow_members(node: Dict, defs: Dict[str, list], members, depth: int):
         return None
     node_type = node.get("type") or ""
     if node_type in _FLOW_IMPLICIT_MEMBER_TYPES:
+        return None
+    if node_type in _FLOW_LIBRARY_TYPED_WHEN_UNTYPED and not node.get("type_name"):
+        # 型なしの `interface i connect a.p to b.p { ... }` は Interfaces::BinaryInterface
+        # に型付けされ、end 名 source / target をライブラリから持つ（検証済みモデル
+        # Q5 で参照実装がクリーン）。中身をこのファイルで確かめられない
         return None
     result: Dict[str, object] = {}
 

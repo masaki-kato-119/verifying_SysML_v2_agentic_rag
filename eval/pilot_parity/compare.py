@@ -44,7 +44,7 @@ PILOT_CATEGORIES: list[tuple[str, re.Pattern[str]]] = [
 
 # 自作のルール名 → 種類（ルール名の一部で判定。上から順）
 LOCAL_CATEGORIES: list[tuple[str, re.Pattern[str]]] = [
-    ("syntax", re.compile(r"^parse$|official_syntax|leading_then")),
+    ("syntax", re.compile(r"^parse$|official_syntax|leading_then")),  # 可視性の無い import は official_syntax
     ("accessible_feature", re.compile(r"accessible|feature_chain|succession_ends")),
     ("unresolved", re.compile(r"type_exists|library_feature_references|annotation_reference|event_references|_check_import$")),
     ("typing_kind", re.compile(r"type_kinds|conjugated_port_typing|port_usage_conjugated")),
@@ -245,7 +245,23 @@ def summarize(units: list[dict]) -> dict:
             cat_total[k[1]] += 1
             if tuple(k) in local and k[1] != "other":
                 cat_hit[k[1]] += 1
+    # 構文エラーは unit ごとの最初の 1 件で見る。Pilot は最初の誤りのあと、閉じ括弧に
+    # `missing EOF at '}'` などの後続エラーを出すことが多く、件数で数えるとそれに引っ張られる
+    first_total = first_hit = 0
+    first_missed = []
+    for r in units:
+        pilot_syntax = sorted(k[0] for k in r["pilot_keys"] if k[1] == "syntax" and k[0] is not None)
+        if not pilot_syntax:
+            continue
+        first_total += 1
+        if (pilot_syntax[0], "syntax") in {tuple(k) for k in r["local_keys"]}:
+            first_hit += 1
+        else:
+            first_missed.append(r["id"])
     return {"overall": block(units),
+            "syntax_first_error": {"units": first_total, "hit": first_hit,
+                                   "recall": round(first_hit / first_total, 3) if first_total else None,
+                                   "missed": first_missed},
             "mutant_delta": delta_table(mutant_deltas(units)),
             "by_source": {k: block(v) for k, v in sorted(by_source.items())},
             "by_operator": {k: block(v) for k, v in sorted(by_operator.items())},
@@ -275,6 +291,9 @@ def markdown(summary: dict, units: list[dict]) -> str:
     out += ["## Pilot のエラーの種類別の再現率", "", "| 種類 | Pilot 件数 | 自作が同じ行・同じ種類で出した | 再現率 |", "|---|---|---|---|"]
     for c, b in summary["recall_by_pilot_category"].items():
         out.append(f"| {c} | {b['pilot']} | {b['hit']} | {b['recall']} |")
+    f = summary["syntax_first_error"]
+    out += ["", f"構文エラーの最初の 1 件（unit ごと）: {f['hit']}/{f['units']}（再現率 {f['recall']}）。"
+            f"見逃し: {', '.join(f['missed']) or 'なし'}"]
     if "xpect" in summary:
         x = summary["xpect"]
         out += ["", "## Pilot の xpect テストの期待エラー", "",
