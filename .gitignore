@@ -94,3 +94,4 @@ eval/remaining_local_only.json
 eval/pilot_parity/corpus/
 eval/pilot_parity/labels/
 eval/pilot_parity/results/
+eval/pilot_parity/heldout/

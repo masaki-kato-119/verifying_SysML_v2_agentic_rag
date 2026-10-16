@@ -383,21 +383,24 @@ class ScopeResolver:
 
     def _memo(self, key: tuple, compute) -> Result:
         """循環を止めつつ結果を記憶する。import どうしが互いの対象を解決し合うと、
-        記憶しなければ指数的に遅くなる。循環で打ち切った途中の結果は不完全なので記憶しない。"""
+        記憶しなければ指数的に遅くなる。
+
+        循環で打ち切ったところは「不明」を返す（誤ったエラーを出さない）。途中に打ち切りを
+        含む結果も記憶する。打ち切りを含む結果を記憶しない作りでは、大きなモデル
+        （held-out の sysml-v2-lsp/examples、146 KB）で指数的に遅くなった（2026-10-16）。
+        """
         cached = self._memo_cache.get(key)
         if cached is not None:
             return cached
         if key in self._active:
             self._cycle_cuts += 1
-            return NOT_FOUND, []
+            return UNKNOWN, []
         self._active.add(key)
-        cuts = self._cycle_cuts
         try:
             result = compute()
         finally:
             self._active.discard(key)
-        if self._cycle_cuts == cuts:
-            self._memo_cache[key] = result
+        self._memo_cache[key] = result
         return result
 
     def _visible_inside(self, scope: Scope, name: str, exclude: Optional[Scope] = None,

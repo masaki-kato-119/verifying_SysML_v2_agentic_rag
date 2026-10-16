@@ -224,7 +224,7 @@ ROADMAP の「xpect の期待エラー ≥ 95%」は、期待エラー 164 件�
 ### 残した課題
 
 - xpect の残り 6 件: message の型（`message :A from b to c;` の `:A` と `of A` が AST で区別できない）、`Cannot annotate ItemUsage`（メタデータ定義の annotatedElement の制約）、`event a.areal;` の参照先の種類、accept を持つ遷移の始点、閉じ括弧の構文エラー。
-- 見逃し率の目標（≤ 2%）は、Pilot に構文エラーがある unit（LLM の誤りの多くはここに入る）と probe の残りで届いていない。構文エラーのある unit は、Pilot のエラー回復の仕方まで真似ないと一致しない。
+- 見逃し率の目標（≤ 2%）には届いていない（5.7%、17 件）。12 件は Pilot に構文エラーの無い unit で、未実装の個別ルール（束縛した値の上書き 4、constant の再定義、方向の食い違う再定義、subject の位置、invoke の引数、メタデータの annotatedElement の制約など）。5 件は Pilot に構文エラーがある unit（Pilot のエラー回復の仕方まで真似ないと一致しない）。
 
 ## 再現手順
 
