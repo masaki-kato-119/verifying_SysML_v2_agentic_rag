@@ -9,7 +9,7 @@ import pytest
 from sysml_v2_checker_advanced.antlr_transformer import parse_sysml_with_semantic_model_recovering
 from sysml_v2_checker_advanced.scope_resolver import (
     inaccessible_features,
-    typed_by_usages,
+    kind_violations,
     unresolved_references,
 )
 
@@ -116,7 +116,8 @@ def test_usage_typed_by_another_usage():
     # reference_conformance k09: `An attribute must be typed by attribute definitions.`
     ast, _model, _errors = parse_sysml_with_semantic_model_recovering(
         "package Q { part def V { attribute b : ScalarValues::Real; attribute a : b; } }")
-    assert [type_name for _node, type_name in typed_by_usages(ast)] == ["b"]
+    assert [message for _node, message in kind_violations(ast)] == [
+        "An attribute must be typed by attribute definitions."]
 
 
 @pytest.mark.parametrize("text, expected", [
@@ -172,3 +173,51 @@ def _inaccessible(text: str) -> list:
 ])
 def test_accessible_features(text, expected):
     assert _inaccessible(text) == sorted(expected)
+
+
+def _kinds(text: str) -> list:
+    ast, _model, errors = parse_sysml_with_semantic_model_recovering(text)
+    assert errors == []
+    return sorted(message for _node, message in kind_violations(ast))
+
+
+@pytest.mark.parametrize("text, expected", [
+    # 種類の違う定義・usage を型にする（参照実装で確認、2026-10-16）
+    ("package Q { private import ISQ::*; attribute def AD; part def PD; port def Pt; "
+     "part x : AD; attribute z : PD; attribute m : ISQ::mass; port q : PD; port q2 : ~Pt; }",
+     ["A port must be typed by port definitions.", "An attribute must be typed by attribute definitions.",
+      "An attribute must be typed by attribute definitions.",
+      "An occurrence, item or part must be typed by occurrence definitions."]),
+    # 型が解決できないときは種類のエラーを重ねない（原因の未解決参照だけを出す）
+    ("package Q { part y : Typo; attribute w : Typo2; }", []),
+    # state / action の型は Behavior（action def で型付けした state も通る。k24）
+    ("package Q { action def D; state def S { state s : D; } }", []),
+    # 型がちょうど 1 つでなければならない usage
+    ("package Q { requirement def R1; requirement def R2; requirement r : R1, R2; }",
+     ["A requirement must be typed by one requirement definition."]),
+    # 再定義の先から継承した型が解決できない（行の違う連鎖は出す）
+    ("package Q { part def V { port pp : PortDefTypo; } part v2 : V { port :>> pp; } }",
+     ["A port must be typed by port definitions."]),
+    # 参照先の種類と、参照先から継承する型
+    ("package Q { action def A; part pp; part def Sys; part sys : Sys; requirement r; "
+     "perform pp; action a1 : A; perform a1; satisfy sys by r; }",
+     ["A requirement must be typed by one requirement definition.", "Must reference a requirement.",
+      "Must reference an action."]),
+    # 前置メタデータが metadata def でない・抽象
+    ("package Q { part def NotMeta; abstract metadata def AbsMeta; #NotMeta part a; @AbsMeta; }",
+     ["A metadata usage must be typed by one metadata definition.", "Must have a concrete type"]),
+    # individual は individual def がちょうど 1 つ（ほかの型が混ざってもよい）
+    ("package Q { part def Wheel; individual part def Wheel1 :> Wheel; part def Car { part w : Wheel; } "
+     "part c : Car { individual w1 : Wheel1 :>> w; individual w2 : Wheel :>> w; } }",
+     ["An individual must be typed by one individual definition."]),
+    # 継承した型が分からなくても、明示の型が種類違いなら誤り
+    ("package Q { item def Heat; abstract flow def F { attribute heat : Heat :>> payload; } }",
+     ["An attribute must be typed by attribute definitions."]),
+    # 型付きの接続は、型の定義の端の型も持つ
+    ("package Q { part def Tire { part bead; } part def Wheel { part rim; } "
+     "connection def Seat { end part bead : BeadTypo; end part rim : Wheel; } "
+     "part def W { part t : Tire; part w : Wheel; connection seat : Seat connect t.bead to w.rim; } }",
+     ["A usage must be typed by definitions."]),
+])
+def test_kind_violations(text, expected):
+    assert _kinds(text) == sorted(expected)

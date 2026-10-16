@@ -1002,14 +1002,366 @@ def inaccessible_features(ast: dict, external_names: Optional[Iterable[str]] = N
 _FLOW_CONTEXT_NAMES = frozenset({"this", "that", "self"})
 
 
-def typed_by_usages(ast: dict, external_names: Optional[Iterable[str]] = None) -> List[Tuple[dict, str]]:
-    """usage の型（`attribute a : b;`）が、定義ではなく usage に解決するもの: (ノード, 型の参照)。
+# --- 段階 C: 解決結果を使う種類の判定 ---------------------------------------------------
+#
+# 参照実装の SysMLValidator.checkAllTypes / checkOneType を写す。usage の「すべての型」
+# （明示の型付けと、部分集合・再定義の先から継承した型）が、usage の種類ごとに決まった
+# メタクラスのインスタンスであること。解決できない型は代理（proxy）として残り、どの
+# メタクラスにも当たらないので、型が未解決なら種類のエラーも連鎖して出る（実測どおり）。
 
-    参照実装は `An attribute must be typed by attribute definitions.` などを返す
-    （tests/fixtures/reference_conformance/k09・k12）。解決できない型は unresolved_references が扱う。
-    """
+# 定義の種類 → その定義が当たるメタクラス（参照実装の型階層のうち、判定に使うもの）。
+# KerML の階層: Behavior は Class、Function は Behavior、Predicate は Function。
+# action def は Behavior、calc def は Function、constraint def・requirement def は Predicate。
+_CLASS = frozenset({"Classifier", "Class"})
+_BEHAVIOR = _CLASS | {"Behavior", "ActionDef"}
+_FUNCTION = _BEHAVIOR | {"Function", "CalcDef"}
+_PREDICATE = _FUNCTION | {"Predicate", "ConstraintDef"}
+_PART = _CLASS | {"ItemDef", "PartDef"}
+_CONNECTION = _PART | {"Association", "ConnectionDef"}
+_CASE = _FUNCTION | {"CaseDef"}
+_DEF_CLASSES: Dict[str, frozenset] = {
+    "attribute_def": frozenset({"Classifier", "DataType"}),
+    "enum_def": frozenset({"Classifier", "DataType", "Enumeration"}),
+    "occurrence_def": _CLASS,
+    "individual_def": _CLASS | {"IndividualDef"},
+    "item_def": _CLASS | {"ItemDef"},
+    "part_def": _PART,
+    "port_def": _CLASS | {"PortDef"},
+    "metadata_def": _CLASS | {"ItemDef", "Metaclass"},
+    "connection_def": _CONNECTION,
+    "interface_def": _CONNECTION | {"InterfaceDef"},
+    "allocation_def": _CONNECTION | {"AllocationDef"},
+    "flow_def": _CONNECTION | _BEHAVIOR | {"Interaction"},
+    "action_def": _BEHAVIOR,
+    "activity_def": _BEHAVIOR,
+    "state_def": _BEHAVIOR | {"StateDef"},
+    "calculation_def": _FUNCTION,
+    "constraint_def": _PREDICATE,
+    "requirement_def": _PREDICATE | {"RequirementDef"},
+    "concern_def": _PREDICATE | {"RequirementDef"},
+    "viewpoint_def": _PREDICATE | {"RequirementDef", "ViewpointDef"},
+    "case_def": _CASE,
+    "analysis_case_def": _CASE | {"AnalysisCaseDef"},
+    "verification_case_def": _CASE | {"VerificationCaseDef"},
+    "use_case_def": _CASE | {"UseCaseDef"},
+    "view_def": _PART | {"ViewDef"},
+    "rendering_def": _PART | {"RenderingDef"},
+}
+
+# 標準ライブラリの宣言の種類（索引の `attribute def` など）→ 上の定義の種類。KerML の
+# 宣言は分かるものだけ（datatype・struct・metaclass）。それ以外（function・behavior・
+# assoc・alias など）は種類が分からないので判定しない
+_LIBRARY_DEF_KINDS = {
+    "attribute": "attribute_def", "enum": "enum_def", "occurrence": "occurrence_def", "item": "item_def",
+    "part": "part_def", "port": "port_def", "metadata": "metadata_def", "connection": "connection_def",
+    "interface": "interface_def", "allocation": "allocation_def", "flow": "flow_def", "action": "action_def",
+    "state": "state_def", "calc": "calculation_def", "constraint": "constraint_def",
+    "requirement": "requirement_def", "concern": "concern_def", "case": "case_def",
+    "analysis": "analysis_case_def", "verification": "verification_case_def", "use": "use_case_def",
+    "view": "view_def", "viewpoint": "viewpoint_def", "rendering": "rendering_def",
+}
+# KerML の宣言（索引の種類の最後の語）→ メタクラス
+_LIBRARY_KERML_CLASSES: Dict[str, frozenset] = {
+    "datatype": _DEF_CLASSES["attribute_def"],
+    "classifier": frozenset({"Classifier"}),
+    "class": _CLASS,
+    "struct": _CLASS,
+    "behavior": _CLASS | {"Behavior"},
+    "function": _CLASS | {"Behavior", "Function"},
+    "predicate": _CLASS | {"Behavior", "Function", "Predicate"},
+    "interaction": _CLASS | {"Behavior", "Association", "Interaction"},
+    "assoc": frozenset({"Classifier", "Association"}),
+    "metaclass": _CLASS | {"Metaclass"},
+}
+_LIBRARY_USAGE_WORDS = frozenset({
+    "attribute", "part", "item", "port", "action", "occurrence", "calc", "constraint", "requirement",
+    "connection", "interface", "allocation", "flow", "state", "view", "rendering", "feature", "step", "expr",
+})
+
+# usage の種類 → (求めるメタクラス, 参照実装のメッセージ, 型はちょうど 1 つか)
+_USAGE_TYPE_RULES: Dict[str, Tuple[str, str, bool]] = {}
+
+
+def _usage_rule(types: Iterable[str], required: str, message: str, one: bool = False) -> None:
+    for usage_type in types:
+        _USAGE_TYPE_RULES[usage_type] = (required, message, one)
+
+
+_usage_rule(["attribute_usage"], "DataType", "An attribute must be typed by attribute definitions.")
+_usage_rule(["enum_usage"], "Enumeration", "An enumeration must be typed by one enumeration definition.", True)
+_usage_rule(["part_instance", "item_usage", "occurrence_usage", "portion_usage",
+             "event_occurrence_usage"], "Class",
+            "An occurrence, item or part must be typed by occurrence definitions.")
+_usage_rule(["port_usage"], "PortDef", "A port must be typed by port definitions.")
+_usage_rule(["connection_usage"], "Association", "A connection must be typed by connection definitions.")
+_usage_rule(["interface_usage"], "InterfaceDef", "An interface must be typed by interface definitions.")
+_usage_rule(["allocation_usage"], "AllocationDef", "An allocation must be typed by allocation definitions.")
+# message の `of E` は運ぶものの型（AST では type_name）で、message 自身の型ではないので見ない
+_usage_rule(["flow_usage"], "Interaction",
+            "A flow connection must be typed by flow connection definitions.")
+_usage_rule(["individual_usage"], "IndividualDef", "An individual must be typed by one individual definition.", True)
+_usage_rule(["action_usage", "perform_action"], "Behavior", "An action must be typed by action definitions.")
+_usage_rule(["state_usage", "exhibit_state_usage"], "Behavior", "A state must be typed by state definitions.")
+_usage_rule(["calculation_usage"], "Function", "A calculation must be typed by one calculation definition.", True)
+_usage_rule(["constraint_usage", "assert_constraint_usage"], "Predicate",
+            "A constraint must be typed by one constraint definition.", True)
+_usage_rule(["requirement_usage", "concern_usage", "satisfy_requirement_usage", "verify_requirement_usage"],
+            "RequirementDef",
+            "A requirement must be typed by one requirement definition.", True)
+_usage_rule(["case_usage"], "CaseDef", "A case must be typed by one case definition.", True)
+_usage_rule(["analysis_case_usage"], "AnalysisCaseDef",
+            "An analysis case must be typed by one analysis case definition.", True)
+_usage_rule(["verification_case_usage"], "VerificationCaseDef",
+            "A verification case must be typed by one verification case definition.", True)
+_usage_rule(["use_case_usage", "include_use_case_usage"], "UseCaseDef",
+            "A use case must be typed by one use case definition.", True)
+_usage_rule(["view_usage"], "ViewDef", "A view must be typed by one view definition.", True)
+_usage_rule(["viewpoint_usage"], "ViewpointDef", "A viewpoint must be typed by one viewpoint definition.", True)
+_usage_rule(["rendering_usage"], "RenderingDef", "A rendering must be typed by one rendering definition.", True)
+_usage_rule(["metadata_usage"], "Metaclass", "A metadata usage must be typed by one metadata definition.", True)
+_usage_rule(["feature_usage", "subject_usage", "actor_usage", "stakeholder_usage"], "Classifier",
+            "A usage must be typed by definitions.")
+# 引数（`in item x : T`）は書いたキーワードで決まる
+_PARAM_KIND_TYPES = {"attribute": "attribute_usage", "item": "item_usage", "part": "part_instance",
+                     "port": "port_usage", "action": "action_usage", "occurrence": "occurrence_usage"}
+
+_PROXY = "proxy"  # 解決できない型（参照実装では代理のまま残り、どのメタクラスにも当たらない）
+
+
+def _classes_of(scope: Scope) -> Optional[frozenset]:
+    """定義が当たるメタクラスの集合。usage なら空集合、分からなければ None。"""
+    if scope.library is not None:
+        if library_index.is_library_package(scope.library):
+            return frozenset()
+        kind = library_index.member_kind(scope.library)
+        if not kind:
+            return None
+        words = kind.split()
+        if "def" in words:
+            index = words.index("def")
+            return _DEF_CLASSES.get(_LIBRARY_DEF_KINDS.get(words[index - 1] if index else "", ""))
+        kerml = [w for w in words if w in _LIBRARY_KERML_CLASSES]
+        if kerml:  # `assoc struct` は両方
+            return frozenset().union(*(_LIBRARY_KERML_CLASSES[w] for w in kerml))
+        last = words[-1] if words else ""
+        if last in _LIBRARY_USAGE_WORDS:
+            return frozenset()
+        return None
+    node_type = (scope.node or {}).get("type") or ""
+    if node_type.endswith("_def"):
+        classes = _DEF_CLASSES.get(node_type)
+        if classes is not None and (scope.node or {}).get("isIndividual"):
+            classes = classes | {"IndividualDef"}  # `individual part def Thing;`
+        return classes
+    return frozenset()  # usage・パッケージは定義ではない
+
+
+def _usage_rule_of(node: dict) -> Optional[Tuple[str, str, bool]]:
+    node_type = node.get("type") or ""
+    if node_type in ("param", "calc_parameter"):
+        kind = node.get("kind")
+        node_type = _PARAM_KIND_TYPES.get(kind, "feature_usage") if isinstance(kind, str) or kind is None \
+            else "feature_usage"
+    return _USAGE_TYPE_RULES.get(node_type)
+
+
+def kind_violations(ast: dict, external_names: Optional[Iterable[str]] = None) -> List[Tuple[dict, str]]:
+    """usage の型の種類と、perform / exhibit / satisfy の参照先の種類の誤り: (ノード, 参照実装のメッセージ)。"""
     resolver = ScopeResolver(ast, external_names)
     out: List[Tuple[dict, str]] = []
+    cache: Dict[int, Optional[List[object]]] = {}
+
+    def all_types(node: dict, owner: Scope, depth: int = 0) -> Optional[List[object]]:
+        """usage のすべての型（Scope か _PROXY）。分からない型が混ざれば None。"""
+        key = id(node)
+        if key in cache:
+            return cache[key]
+        cache[key] = None  # 循環への備え
+        types: List[object] = []
+        explicit = [t for t in [node.get("type_name")] + list(node.get("type_names") or [])
+                    if isinstance(t, str) and t]
+        for reference in dict.fromkeys(explicit):
+            status, found = resolver.resolve(reference.lstrip("~"), owner)
+            if status == NOT_FOUND:
+                types.append(_PROXY)
+            elif status == FOUND:
+                types.extend(resolver._dealias(f) for f in found)
+            else:
+                return None
+        element = resolver.element_of.get(id(node))
+        inherited_from = [entry["target"] for entry in node.get("redefines") or []
+                          if isinstance(entry, dict) and entry.get("kind") in ("redefines", "subsets")
+                          and isinstance(entry.get("target"), str)]
+        referenced = _referenced_feature(node) or (
+            node.get("name") if node.get("type") == "event_occurrence_usage" and node.get("isReference") else None)
+        if referenced and not inherited_from:
+            inherited_from.append(referenced)  # 参照する usage は参照先の型を持つ
+        for target in inherited_from:
+            if depth > 5:
+                return None
+            status, found = resolve_path(target, owner, element)
+            if status != FOUND:
+                return None
+            for feature in found:
+                feature = resolver._dealias(feature)
+                if feature.library is not None or feature.node is None:
+                    return None
+                inherited = all_types(feature.node, feature.parent or resolver.root, depth + 1)
+                if inherited is None:
+                    return None
+                types.extend(inherited)
+        cache[key] = types
+        return types
+
+    def resolve_path(text: str, owner: Scope, exclude: Optional[Scope]) -> Result:
+        """`a`・`a.b.c`・`P::a` を最後の要素まで解決する（feature の位置）。"""
+        segments = _path_segments(text)
+        if not segments:
+            return UNKNOWN, []
+        head = segments[0][1]
+        index = 1
+        while index < len(segments) and segments[index][0] == "::":
+            head = f"{head}::{segments[index][1]}"
+            index += 1
+        status, found = resolver.resolve(head, owner, feature=True, exclude=exclude)
+        for _sep, name in segments[index:]:
+            if status != FOUND:
+                return status, []
+            status, found = _merge(resolver._chain_member(resolver._dealias(f), name) for f in found)
+        if status == FOUND and not all(is_feature_scope(resolver._dealias(f)) for f in found):
+            return UNKNOWN, []  # 定義などを指す誤りは未解決参照・参照先の種類の規則が扱う
+        return status, found
+
+    def is_feature_scope(scope: Scope) -> bool:
+        return scope.library is None and scope.node is not None and not _is_definition(scope) \
+            and not _is_package(scope)
+
+    def check_ends(node: dict, owner: Scope) -> None:
+        """接続・束縛・flow の端の feature の型が解決できない（参照実装は端の行にも出す）。"""
+        if node.get("type") in ("binary_interface_part", "binary_connector_part", "satisfy_requirement_usage",
+                                "verify_requirement_usage"):
+            return  # satisfy / verify の by は接続の端ではない
+        if node.get("type") in ("connection_usage", "interface_usage", "allocation_usage") \
+                and isinstance(node.get("type_name"), str):
+            # 型付きの接続は型の定義の端（`end bead : TireBead;`）を暗黙に再定義する
+            status, found = resolver.resolve(node["type_name"].lstrip("~"), owner)
+            for definition in (resolver._dealias(f) for f in found) if status == FOUND else []:
+                for end in definition.members:
+                    if (end.node or {}).get("type") == "connection_end_member":
+                        types = all_types(end.node, definition)
+                        if types and any(t is _PROXY for t in types):
+                            out.append((node, "A usage must be typed by definitions."))
+                            return
+        for text in _end_paths(node):
+            status, found = resolve_path(text, owner, None)
+            if status != FOUND:
+                continue
+            for feature in found:
+                feature = resolver._dealias(feature)
+                types = all_types(feature.node, feature.parent or resolver.root)
+                if types and any(t is _PROXY for t in types):
+                    out.append((node, "A usage must be typed by definitions."))
+                    return
+
+    def explicit_types(node: dict) -> int:
+        return len(dict.fromkeys(t for t in [node.get("type_name")] + list(node.get("type_names") or [])
+                                 if isinstance(t, str) and t))
+
+    def check_usage(node: dict, owner: Scope) -> None:
+        rule = _usage_rule_of(node)
+        if rule is None or node.get("type") == "metadata_usage" and not node.get("type_name"):
+            return
+        required, message, one = rule
+        types = all_types(node, owner)
+        if types is None and required != "IndividualDef":
+            # 継承した型が分からなくても、明示の型が 1 つでも種類違いなら checkAllTypes は満たされない
+            # （`attribute heat : Heat :>> payload;` の Heat が item def）
+            for reference in dict.fromkeys(t for t in [node.get("type_name")] + list(node.get("type_names") or [])
+                                           if isinstance(t, str) and t):
+                status, found = resolver.resolve(reference.lstrip("~"), owner)
+                classes = [_classes_of(resolver._dealias(f)) for f in found] if status == FOUND else []
+                if classes and all(c is not None and required not in c for c in classes):
+                    out.append((node, message))
+                    return
+            return
+        if not types:
+            return  # 型が無い（暗黙の型）
+        if any(t is _PROXY for t in types[:explicit_types(node)]):
+            # 自分の型が解決できない。参照実装はここでも種類のエラーを重ねて出すが、原因は同じ
+            # 要素の未解決参照（_check_scoped_references）なので重ねない（compare.py は連鎖として数える）
+            return
+        if required == "IndividualDef":
+            # individual は「型のうち individual def がちょうど 1 つ」（ほかの型が混ざってもよい。
+            # 2 つ以上は参照実装が別のメッセージ `At most one individual definition` を出す）
+            known = [_classes_of(t) for t in types if t is not _PROXY]
+            if any(c is None for c in known):
+                return
+            if not any(required in c for c in known):
+                out.append((node, message))
+            return
+        verdicts = []
+        for t in types:
+            classes = None if t is _PROXY else _classes_of(t)
+            if t is _PROXY:
+                verdicts.append(False)
+            elif classes is None:
+                return  # 種類の分からない型が混ざれば判定しない
+            else:
+                verdicts.append(required in classes)
+        if not all(verdicts) or (one and explicit_types(node) > 1):
+            out.append((node, message))
+
+    def check_metadata(node: dict, owner: Scope) -> None:
+        if (node.get("type") or "").endswith("_stmt"):
+            return  # 包みの文（special_stmt など）は中の要素と同じ前置メタデータを持つ
+        names = [m for m in node.get("prefixMetadata") or [] if isinstance(m, str)]
+        if node.get("type") == "metadata_usage" and not node.get("type_name") and isinstance(node.get("name"), str):
+            names.append(node["name"])
+        for name in names:
+            status, found = resolver.resolve(name, owner)
+            targets = [resolver._dealias(f) for f in found] if status == FOUND else []
+            if targets and all(is_abstract(t) for t in targets):
+                out.append((node, "Must have a concrete type"))
+                return
+            if (status == FOUND and all(
+                    (_classes_of(resolver._dealias(f)) is not None
+                     and "Metaclass" not in (_classes_of(resolver._dealias(f)) or ())) for f in found)):
+                out.append((node, "A metadata usage must be typed by one metadata definition."))
+                return
+
+    def check_reference(node: dict, owner: Scope, element: Optional[Scope]) -> None:
+        node_type = node.get("type")
+        referenced = _referenced_feature(node)
+        if not referenced or node_type not in ("perform_action", "exhibit_state_usage", "satisfy_requirement_usage"):
+            return
+        if node_type != "satisfy_requirement_usage" and not (node.get("reference") or extra_of(node, "referenceForm")):
+            return
+        required, message = {
+            "perform_action": ("action_usage", "Must reference an action."),
+            "exhibit_state_usage": ("state_usage", "Must reference a state."),
+            "satisfy_requirement_usage": ("requirement_usage", "Must reference a requirement."),
+        }[node_type]
+        if _chain_head(referenced) != referenced:
+            return  # 連鎖の先の種類はここでは見ない
+        status, found = resolver.resolve(referenced, owner, feature=True, exclude=element)
+        if status != FOUND:  # 解決できないものは未解決参照の指摘が出る（参照実装の連鎖は compare.py で数える）
+            return
+        kinds = {(resolver._dealias(f).node or {}).get("type") for f in found}
+        allowed = {
+            "action_usage": {"action_usage", "perform_action", "accept_action", "send_action", "calculation_usage",
+                             "state_usage", "exhibit_state_usage", "case_usage", "analysis_case_usage",
+                             "verification_case_usage", "use_case_usage", "include_use_case_usage"},
+            "state_usage": {"state_usage", "exhibit_state_usage"},
+            "requirement_usage": {"requirement_usage", "concern_usage", "satisfy_requirement_usage",
+                                  "viewpoint_usage", "objective_usage"},
+        }[required]
+        if all(resolver._dealias(f).library is None for f in found) and not kinds & allowed and None not in kinds:
+            out.append((node, message))
+
+    def is_abstract(scope: Scope) -> bool:
+        if scope.library is not None:
+            return "abstract" in (library_index.member_kind(scope.library) or "").split()
+        return bool((scope.node or {}).get("isAbstract"))
 
     def visit(node, owner: Scope):
         if isinstance(node, list):
@@ -1019,16 +1371,11 @@ def typed_by_usages(ast: dict, external_names: Optional[Iterable[str]] = None) -
         if not isinstance(node, dict):
             return
         element = resolver.element_of.get(id(node))
-        node_type = node.get("type") or ""
-        type_name = node.get("type_name")
-        if (element is not None and not node_type.endswith("_def") and isinstance(type_name, str) and type_name
-                and "." not in type_name and node_type not in _REFERENCE_TYPES):
-            status, found = resolver.resolve(type_name, owner)
-            if status == FOUND:
-                targets = [resolver._dealias(f) for f in found]
-                if all(t.library is None and t.node is not None and not _is_definition(t)
-                       and not _is_package(t) for t in targets):
-                    out.append((node, type_name))
+        if element is not None or node.get("type") in ("param", "calc_parameter"):
+            check_usage(node, owner)
+        check_metadata(node, owner)
+        check_reference(node, owner, element)
+        check_ends(node, owner)
         inner = element or owner
         for key, value in node.items():
             if key != "type" and isinstance(value, (dict, list)):

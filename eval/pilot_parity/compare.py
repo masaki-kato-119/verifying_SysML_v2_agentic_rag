@@ -62,6 +62,10 @@ LOCAL_CATEGORIES: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 
+# 未解決参照に連鎖して参照実装が重ねて出す種類（compare() の cascade）
+CASCADE_CATEGORIES = frozenset({"typing_kind", "must_reference"})
+
+
 def category(issue: dict, side: str) -> str:
     if side == "pilot":
         if issue.get("syntax_error"):
@@ -71,8 +75,13 @@ def category(issue: dict, side: str) -> str:
     else:
         # 参照実装と同じ文言の指摘は、出したルールにかかわらずその種類（flow の端点のルールも
         # `Must be an accessible feature` を出す）
-        if (issue.get("message") or "").startswith("Must be an accessible feature"):
+        local_message = issue.get("message") or ""
+        if local_message.startswith("Must be an accessible feature"):
             return "accessible_feature"
+        if local_message.startswith("Must reference a"):
+            return "must_reference"
+        if "must be typed by" in local_message or local_message.startswith("Must have a concrete type"):
+            return "typing_kind"
         text = issue.get("rule") or ""
         table = LOCAL_CATEGORIES
     for name, pattern in table:
@@ -108,6 +117,12 @@ def compare(corpus: Path, labels: Path) -> dict:
         l_err = [i for i in local["issues"] if is_error(i)]
         p_keys = {(i.get("line"), category(i, "pilot")) for i in p_err}
         l_keys = {(i.get("line"), category(i, "local")) for i in l_err}
+        # 連鎖: 型や参照先が解決できないと、参照実装は同じ行に種類のエラー（must be typed by /
+        # Must reference / concrete type）も重ねて出す。自作は原因の未解決参照だけを出す方針なので、
+        # その行に未解決参照を出していれば種類のエラーも当たったと数える（cascade に件数を残す）
+        cascade = {(line, cat) for line, cat in p_keys if cat in CASCADE_CATEGORIES
+                   and (line, "unresolved") in p_keys and (line, "unresolved") in l_keys and (line, cat) not in l_keys}
+        l_keys |= cascade
         matched = {k for k in p_keys & l_keys if k[1] != "other"}
         p_lines = {i.get("line") for i in p_err}
         l_lines = {i.get("line") for i in l_err}
@@ -121,7 +136,7 @@ def compare(corpus: Path, labels: Path) -> dict:
             verdict = "false_alarm"      # 誤検出: Pilot は問題なし、自作はエラー
         else:
             verdict = "both_clean"
-        units.append({**entry, "verdict": verdict,
+        units.append({**entry, "verdict": verdict, "cascade": len(cascade),
                       "pilot_keys": sorted(p_keys, key=str), "local_keys": sorted(l_keys, key=str),
                       "matched": len(matched), "pilot_n": len(p_keys), "local_n": len(l_keys),
                       "same_line_any_kind": len(p_lines & l_lines),
@@ -271,19 +286,26 @@ def summarize(units: list[dict]) -> dict:
             first_missed.append(r["id"])
     # 段階 B の終了条件: 未解決参照（行 + 種類）の再現率・適合率。Pilot に構文エラーがある unit では、
     # 構文エラーの回復で要素が消えた先の参照まで未解決になるので、分けて数える
-    resolution: dict[str, Counter] = {"no_pilot_syntax_error": Counter(), "pilot_syntax_error": Counter()}
-    for r in units:
-        pilot_keys = {tuple(k) for k in r["pilot_keys"]}
-        bucket = "pilot_syntax_error" if any(k[1] == "syntax" for k in pilot_keys) else "no_pilot_syntax_error"
-        pk = {k for k in pilot_keys if k[1] == "unresolved"}
-        lk = {tuple(k) for k in r["local_keys"] if k[1] == "unresolved"}
-        resolution[bucket].update(tp=len(pk & lk), fp=len(lk - pk), fn=len(pk - lk))
-    resolution_summary = {
-        bucket: {**dict(c), "recall": round(c["tp"] / (c["tp"] + c["fn"]), 3) if c["tp"] + c["fn"] else None,
-                 "precision": round(c["tp"] / (c["tp"] + c["fp"]), 3) if c["tp"] + c["fp"] else None}
-        for bucket, c in resolution.items()}
+    def by_category(cat: str) -> dict:
+        counts: dict[str, Counter] = {"no_pilot_syntax_error": Counter(), "pilot_syntax_error": Counter()}
+        for r in units:
+            pilot_keys = {tuple(k) for k in r["pilot_keys"]}
+            bucket = "pilot_syntax_error" if any(k[1] == "syntax" for k in pilot_keys) else "no_pilot_syntax_error"
+            pk = {k for k in pilot_keys if k[1] == cat}
+            lk = {tuple(k) for k in r["local_keys"] if k[1] == cat}
+            counts[bucket].update(tp=len(pk & lk), fp=len(lk - pk), fn=len(pk - lk))
+        return {bucket: {**dict(c), "recall": round(c["tp"] / (c["tp"] + c["fn"]), 3) if c["tp"] + c["fn"] else None,
+                         "precision": round(c["tp"] / (c["tp"] + c["fp"]), 3) if c["tp"] + c["fp"] else None}
+                for bucket, c in counts.items()}
+
+    resolution_summary = by_category("unresolved")
+    # 段階 B・C の終了条件に使う種類（Pilot に構文エラーの無い unit とある unit に分けて）
+    stage_categories = {cat: by_category(cat) for cat in ("unresolved", "accessible_feature", "typing_kind",
+                                                          "must_reference")}
     return {"overall": block(units),
+            "cascade_credit": sum(r.get("cascade", 0) for r in units),
             "unresolved_references": resolution_summary,
+            "stage_categories": stage_categories,
             "syntax_first_error": {"units": first_total, "hit": first_hit,
                                    "recall": round(first_hit / first_total, 3) if first_total else None,
                                    "missed": first_missed},

@@ -151,6 +151,45 @@ Pilot ソースの KerML の名前解決のテスト（`imports` / `scoping` / `
 - 構文エラーのある unit（再現率 28%）は、Pilot のエラー回復の仕方まで真似ないと一致しない。到達判定からは外し、分けて報告する。
 - `rule_confidence.json` の `_check_import` / `_check_part_instance` の実測値は、未解決参照の指摘を `_check_scoped_references` に移したので古い（`scripts/recheck_local_only.py --rule-stats` で測り直す）。
 
+## 段階 C: 解決結果を使う種類の判定（2026-10-16、終了）
+
+### 作ったもの
+
+- `scope_resolver.kind_violations`（リンターの `_check_usage_kinds_scoped`）: 参照実装の `SysMLValidator.checkAllTypes` / `checkOneType` を、名前解決の結果の上で写した。平らな表による `_check_usage_type_kinds` と、段階 B で入れた汎用の「usage で型付け」の判定はこれで置き換えた。
+  - usage の「すべての型」は、明示の型付けと、部分集合・再定義の先から継承した型（参照する usage〈satisfy / perform / exhibit / include / `event x`〉は参照先の型）。型付きの接続は、型の定義の端の型も持つ。
+  - 定義の種類は KerML のメタクラスの集合で持つ（Behavior は Class、Function は Behavior、Predicate は Function。action def は Behavior、calc def は Function、constraint def・requirement def は Predicate）。action と state の usage の型は Behavior でよい（`state s : D;` で D が action def でも通る。k24）。ライブラリは索引の宣言の種類（`attribute def`、KerML の `datatype` / `behavior` / `function` / `predicate` / `assoc` / `metaclass` など）から引き、分からないもの（`alias` など）は判定しない。
+  - 型がちょうど 1 つでなければならない usage（requirement・calc・case など）、individual（individual def がちょうど 1 つ）、前置メタデータ（metadata def でない・抽象なら `Must have a concrete type`）、参照先の種類（`Must reference an action / a state / a requirement`）。
+  - 接続・束縛・flow の端の feature の型が解決できない場合（参照実装は端の行にも `A usage must be typed by definitions.` を出す）。
+- **連鎖の扱い**: 型や参照先が解決できないと、参照実装は同じ行に種類のエラーも重ねて出す（解決できない型は代理〈proxy〉として残り、どのメタクラスにも当たらないため）。自作は原因の未解決参照だけを出す（既存のテストも「1 回だけ報告する」ことを固めている）。`compare.py` は、Pilot が同じ行に未解決参照と種類のエラーを出し、自作がその行に未解決参照を出していれば、種類のエラーも当たったと数える（`cascade_credit`、180 件）。行の違う連鎖（再定義の先・接続の端）は自作も出す。
+- `compare.py`: 種類ごとの再現率・適合率を、Pilot に構文エラーの無い unit とある unit に分けて出す（`stage_categories`）。自作のメッセージが参照実装と同じ文言（`must be typed by` / `Must reference` / `Must be an accessible feature`）なら、出したルールにかかわらずその種類として数える。
+
+### 結果
+
+| 指標（Pilot に構文エラーの無い unit） | 段階 C 開始時 | 段階 C 終了 |
+| --- | --- | --- |
+| **種類の判定（typing_kind）の再現率 / 適合率** | —（全体で 15.8%、60 / 380） | **95.1% / 99.2%**（250 / 2 / 13） |
+| **参照先の種類（must_reference）の再現率 / 適合率** | —（全体で 0%） | **93.3% / 100%**（28 / 0 / 2） |
+| 未解決参照の再現率 / 適合率 | 90.3% / 98.1% | 90.3% / 98.1% |
+| アクセス範囲の再現率 / 適合率 | 95.3% / 100% | 95.3% / 100% |
+
+| 指標（519 件全体） | 段階 C 開始時 | 段階 C 終了 |
+| --- | --- | --- |
+| 正しいモデルの誤検出（verified 5 件） | 0 | 0 |
+| unit 単位: false_alarm / missed | 1 / 26 | **1 / 19** |
+| 見逃し率 | 8.7% | **6.3%** |
+| 行 + 種類: 再現率 / 適合率 | 51.4% / 84.7% | **70.5% / 87.0%** |
+| 変異体の検出 | 110 / 112 | 110 / 112 |
+| xpect の期待エラー（同じ行・同じ種類） | 78 / 164 | **110 / 164** |
+
+Pilot に構文エラーがある unit での種類の判定の再現率は 28%（Pilot はエラー回復で要素を失い、その先の型をすべて種類のエラーにする）。段階 B と同じく到達判定からは外し、分けて報告する。
+
+テスト: 既存のテストはすべて通る。種類の判定の規則は `tests/test_scope_resolver.py`（45 件）で固定した。
+
+### 残した課題
+
+- 種類の判定の見逃し 13 件: 参照先の暗黙の型（`perform pp;` の pp が型なしの part なら Parts::Part を持つので action でない）、意味的メタデータの基底型の制約（`#g3 attribute a3;`）、action の本体の引数が型の引数を名前で暗黙に再定義する形、`return` が結果の引数を暗黙に再定義して継承を隠す形。
+- 誤検出 2 件は、暗黙の再定義で継承が隠れる形（`calc c2 : C { return r1 : T; }` の T が C の結果の引数でなく attribute def T に解決する）。
+
 ## 再現手順
 
 ```

@@ -288,9 +288,6 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         # 第14.515パス: subject を束縛済みの要求への `satisfy ... by`（2026-09-25）
         self._check_satisfy_rebinds_subject(ast)
 
-        # 第14.52パス: usage の型の種別（2026-09-24）
-        self._check_usage_type_kinds(ast)
-
         # 第14.55パス: `event X;` の参照先（2026-09-24）
         self._check_event_references(ast)
 
@@ -360,8 +357,27 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
             if "::" in reference and library_index.is_library_package(root):
                 message += self._library_suggestion_suffix(reference)
             self.issues.append(LintIssue(SEVERITY_ERROR, message, node))
-        self._check_usage_typed_by_definitions(ast, known_external_types)
+        self._check_usage_kinds_scoped(ast, known_external_types)
         self._check_accessible_features_scoped(ast, known_external_types)
+
+    def _check_usage_kinds_scoped(self, ast: Dict, known_external_types: Set[str] | None = None) -> None:
+        """usage の型の種類と、perform / exhibit / satisfy の参照先の種類（段階 C）。
+
+        参照実装の checkAllTypes / checkOneType を名前解決の結果の上で写す
+        （scope_resolver.kind_violations）。型が解決できないときも、参照実装と同じく種類の
+        エラーを出す（同じ要素の未解決参照と重なる連鎖は出さない）。平らな表による旧
+        `_check_usage_type_kinds`（段階 C で削除）を置き換えた。
+        """
+        hints = {
+            "Must reference": "参照先が、その種類の usage ではない（または解決できない）",
+            "metadata usage": "メタデータの型（metadata def）を import するか修飾名で書く"
+                              "（`#refinement` には `private import ModelingMetadata::*;`）",
+        }
+        for node, message in scope_resolver.kind_violations(ast, external_names=known_external_types):
+            hint = next((h for key, h in hints.items() if key in message),
+                        "型の種類が違う（part → part def、attribute → attribute def / ScalarValues::Real など）"
+                        "か、型そのものが解決できていない（先にそちらを直す）")
+            self.issues.append(LintIssue(SEVERITY_ERROR, f"{message} {hint}", node))
 
     def _check_accessible_features_scoped(self, ast: Dict, known_external_types: Set[str] | None = None) -> None:
         """接続の端などが、`::` で feature の中をたどったり、外側の型の feature を指したりしていないか。
@@ -385,20 +401,6 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
                 node,
             ))
 
-    def _check_usage_typed_by_definitions(self, ast: Dict, known_external_types: Set[str] | None = None) -> None:
-        """usage を定義ではなく別の usage で型付けしていないか（`attribute a : b;` の b が usage）。
-
-        参照実装は usage の種類ごとに `An attribute must be typed by attribute definitions.` など
-        を返す。平らな名前表では usage 名が型として引けず「存在しない型」になっていたもの。
-        """
-        for node, type_name in scope_resolver.typed_by_usages(ast, external_names=known_external_types):
-            self.issues.append(LintIssue(
-                SEVERITY_ERROR,
-                f"A usage must be typed by definitions: '{type_name}' は定義（def）ではなく usage。"
-                f"型には `{type_name}` の定義を書く（usage の特化なら `:>` を使う）",
-                node,
-            ))
-    
     def _collect_symbols(self, node: Dict, namespace: str = "") -> None:
         """
         シンボルテーブルを構築
