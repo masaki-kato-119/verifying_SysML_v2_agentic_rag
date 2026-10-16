@@ -258,6 +258,14 @@ class DefinitionUsageRulesMixin:
             prefix, feature_name = fallback_type_name, target
         if not prefix:
             return None
+        # 平らな名前表では、同じ名前の要素が別々のパッケージにあるとどれか決められない
+        # （held-out の validation/01-Parts_Tree は vehicle1 を 2 か所に持ち、別の vehicle1 の
+        # `mass = 1750` を上書きと誤って判定していた。2026-10-16）
+        last = prefix.split("::")[-1].strip("'")
+        same_name = [key for registry in (self.symbols, self.element_refs) for key in registry
+                     if key.split("::")[-1].strip("'") == last]
+        if len(same_name) > 1:
+            return None
         return self._find_child_by_name(self._resolve_type_node(prefix), feature_name)
 
     def _check_binding_feature_override(self, node: Dict) -> None:

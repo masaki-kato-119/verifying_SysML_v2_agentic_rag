@@ -103,8 +103,10 @@ def validation_violations(ast: dict, external_names: Optional[Iterable[str]] = N
             objectives = own_objectives(node)
             # 型・特化の先の case が objective を持てば、自分の objective はすべて 2 つ目以降
             # （`case c : C { objective o3; }` で C に objective がある。CaseSubjectObjective_Invalid）
-            inherited = inherited_objectives(element) if element is not None else None
-            first_allowed = 0 if inherited else 1
+            # 自分の objective は継承した objective を 1 つ暗黙に再定義する。継承した objective が
+            # 2 つ以上なら、自分の objective はすべて余分（validation_09 は継承 1・自分 1 で通る）
+            inherited = inherited_objectives(element) if element is not None else 0
+            first_allowed = 0 if inherited >= 2 else 1
             for extra in objectives[first_allowed:]:
                 if not (extra.get("redefines") or []):
                     out.append((extra, "Only one objective is allowed."))

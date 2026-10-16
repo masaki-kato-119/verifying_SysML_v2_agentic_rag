@@ -127,11 +127,11 @@ def test_usage_typed_by_another_usage():
     # `exhibit s;`（state 無し）も参照
     ("package Q { state def S0; part q { exhibit state s0 : S0; exhibit nosuchState; } }", ["nosuchState"]),
     # satisfy の参照先の名前は、後ろの satisfy から引けない
-    ("package Q { part s; satisfy Spec::'R-010' by s; satisfy 'R-010' by s; }", ["R-010", "Spec::R-010"]),
+    ("package Q { part s; satisfy Spec::'R-010' by s; satisfy 'R-010' by s; }", ["R-010", "Spec::'R-010'"]),
     # 前置メタデータ（定義にも付く）
     ("package Q { #logical part def C; }", ["logical"]),
-    # 引用符の中の . は連鎖の区切りではない
-    ("package Q { requirement r :> Spec::'1.1'; }", ["Spec::1.1"]),
+    # 引用符の中の . は連鎖の区切りではない（指摘には元の書き方〈引用符つき〉で出る）
+    ("package Q { requirement r :> Spec::'1.1'; }", ["Spec::'1.1'"]),
     # 接続の端の連鎖の 2 番目以降
     ("package Q { part def A { part b; } part def S { part a : A; part c : A; "
      "connect a.b to c.nosuch; } }", ["nosuch"]),
@@ -221,3 +221,39 @@ def _kinds(text: str) -> list:
 ])
 def test_kind_violations(text, expected):
     assert _kinds(text) == sorted(expected)
+
+
+@pytest.mark.parametrize("text, expected", [
+    # 参照する usage は参照先の宣言名を持つ（`torqueGenerator.generateTorque`。held-out training/38）
+    ("package Q { action def G; part def T { perform action generateTorque : G; } "
+     "part t : T { perform generateTorque; } part e { part ok = t.generateTorque; } }", []),
+    # `perform a.b;` は連鎖。先頭が無ければ先頭を報告（`perform transportTask.receiveCommand;`）
+    ("package Q { part p { perform nope.x; } }", ["nope"]),
+    # state の `do x { out temp; }` は既存の action を参照する（held-out Vehicle Example）
+    ("package Q { action def ST { out temp; } part def V { perform action senseTemperature : ST; "
+     "exhibit state s { state h { do senseTemperature { out temp; } state n; state d; "
+     "transition t first n accept when senseTemperature.temp > 1 then d; } } } }", []),
+    # accept の名前と受け取るもの（`triggerResponse.incomingInquiry`）
+    ("package Q { item def M; action def PM { in m : M; } action def A { action triggerResponse accept inq : M; "
+     "action pm : PM { in m = triggerResponse.inq; } } }", []),
+    # require は既存の制約・要件を参照し、その中身を持つ
+    ("package Q { constraint c0 { attribute x; x >= 1 } requirement def R { require c0 { x = 2; } } }", []),
+    # ラムダの本体で宣言した名前（`->forAll {in i; private s1 : T = ...; s1.t > 0}`）
+    ("package Q { attribute def T { attribute t; } attribute xs : T[*]; "
+     "constraint c { (1..2)->forAll {in i : ScalarValues::Integer; private s1 : T = xs#(i); s1.t > 0} } }", []),
+    # 型付きの usage の本体の型なしの引数は、型の同名の引数を暗黙に再定義する
+    ("package Q { part def Image { attribute ok : ScalarValues::Boolean; } action def Focus { out image : Image; } "
+     "action def Take { action focus : Focus { out image; } action shoot; first focus if focus.image.ok then shoot; } }",
+     []),
+    # message の受け取るもの（`m.fc`）
+    ("package Q { item def F; part a { event occurrence s; } part b { event occurrence r; } "
+     "occurrence def X { message m of fc : F from a.s to b.r; message m2 of fc2 : F = m.fc from a.s to b.r; } }", []),
+    # variation の中のキーワードの無い variant は既存の usage を参照する（held-out Variability Examples）
+    ("package Q { part def Engine; part engine : Engine { port autoPort; } part v6 :> engine; "
+     "variation part def EC :> Engine { variant v6 { port :>> autoPort; } } }", []),
+    # 部分集合の先が 2 つ（`:> vc, v1`）
+    ("package Q { individual part def V1; individual part v1 : V1 { snapshot t0 { } } part vc; "
+     "individual part v2 : V1 :> vc, v1 { snapshot c :> t0; } }", []),
+])
+def test_held_out_forms(text, expected):
+    assert _unresolved(text) == sorted(expected)

@@ -123,6 +123,9 @@ class Scope:
     supertypes: List[str] = field(default_factory=list)
     alias_target: Optional[str] = None
     library: Optional[str] = None  # 標準ライブラリの要素なら修飾名
+    referenced: Optional[str] = None  # 参照する usage（`perform x;`）の参照先
+    # 名前を介さない継承元（variation の中の variant は、外側の variation を暗黙に特化する）
+    super_scopes: List["Scope"] = field(default_factory=list)
     filters: List[dict] = field(default_factory=list)  # パッケージの `filter @Safety;`（import に効く）
     metadata: List[str] = field(default_factory=list)  # 付いているメタデータの型（`@Safety;`、`#g1`）
     # メタデータの値（`@Safety { isMandatory = true; }` → {"Safety": {"isMandatory": True}}）
@@ -167,6 +170,28 @@ class ScopeResolver:
         self._memo_cache: Dict[tuple, Result] = {}
         self._cycle_cuts = 0  # 循環で打ち切った回数（打ち切りを含む結果は記憶しない）
         self._build(ast, self.root)
+        self._name_referencing_usages()
+
+    def _name_referencing_usages(self) -> None:
+        """参照する usage（`perform generateTorque;`）は、参照先の宣言名を自分の名前として持つ
+        （`torqueGenerator.generateTorque` で引ける。参照実装の effective name）。短い名前は持たない
+        （`satisfy P::'R-010' by s;` のあとの `satisfy 'R-010' by s;` は解決しない）。"""
+        pending = []
+
+        def walk(scope: Scope) -> None:
+            for member in scope.members:
+                if member.referenced and not member.name:
+                    pending.append(member)
+                walk(member)
+
+        walk(self.root)
+        for scope in pending:
+            status, found = self.resolve(scope.referenced, scope.parent or self.root, feature=True, exclude=scope)
+            names = {self._dealias(f).name for f in found} if status == FOUND else set()
+            if len(names) == 1 and None not in names:
+                scope.name = names.pop()
+        if pending:
+            self._memo_cache.clear()  # 名前を付ける前の探索結果は古い
 
     # --- 木を作る -----------------------------------------------------------------------
 
@@ -220,6 +245,8 @@ class ScopeResolver:
                                             node=node))
             return
         name = node.get("name") if isinstance(node.get("name"), str) else None
+        if node_type == "accept_action" and isinstance(node.get("actionName"), str):
+            name = node["actionName"]  # `action triggerResponse accept incomingInquiry : M;`
         identification = node.get("identification")
         if node_type in ("comment", "documentation", "doc") and isinstance(identification, dict):
             # `comment cmt /* ... */` の名前は identification の中（`comment c2 about cmt` で参照される）
@@ -251,7 +278,27 @@ class ScopeResolver:
                         visibility=node.get("visibility") or _DEFAULT_VISIBILITY, parent=owner)
         if node_type == "alias":
             element.alias_target = node.get("target")
+        if node_type == "param" and name and not node.get("type_name") and not node.get("redefines")                 and owner.supertypes and node.get("direction"):
+            # 型付きの usage の本体の型なしの引数（`action focus : Focus { out item image; }`）は、
+            # 型の同名の引数を暗黙に再定義し、その型を持つ（`focus.image.isWellFocused`）
+            supertypes.append(name)
         element.supertypes = supertypes
+        element.referenced = referenced
+        if node.get("variability") == "variant" and (owner.node or {}).get("variability") == "variation":
+            element.super_scopes.append(owner)  # `variation part def EC :> Engine { variant 'v6' { ... } }`
+        if node_type == "message_usage" and isinstance(node.get("payload_name"), str):
+            # `message m of fc : F` の fc は message のメンバー（`m.fc`）
+            element.members.append(Scope(node=node, name=_unquote(node["payload_name"]), parent=element,
+                                         supertypes=[node["type_name"]] if isinstance(node.get("type_name"), str) else []))
+        if node_type == "accept_action" and isinstance(node.get("message"), str):
+            # 受け取るもの（`accept incomingInquiry : M`）は accept のメンバー（`triggerResponse.incomingInquiry`）
+            payload = Scope(node=node, name=_unquote(node["message"]), parent=element,
+                            supertypes=[node["message_type"]] if isinstance(node.get("message_type"), str) else [])
+            element.members.append(payload)
+        if node_type == "objective_usage" and owner.supertypes:
+            # 自分の objective は継承した objective を暗黙に再定義する（中で継承した objective の
+            # メンバーを再定義できる。validation_09 の `verify x :>> massRequirement;`）
+            element.supertypes.append(_OPAQUE_SUPERTYPE)
         if node.get("prefixMetadata"):
             element.supertypes.append(_OPAQUE_SUPERTYPE)
             element.metadata.extend(split_qualified(m)[-1] for m in node["prefixMetadata"] if isinstance(m, str))
@@ -317,6 +364,15 @@ class ScopeResolver:
         """
         if reference == _OPAQUE_SUPERTYPE:
             return UNKNOWN, []
+        head = _chain_head(reference)
+        if head != reference:
+            # `a.b.c`（feature の連鎖）: 先頭を解決し、残りは型から外に見えるメンバーとしてたどる
+            status, scopes = self.resolve(head, context, feature=feature, exclude=exclude)
+            for name in _chain_tail(reference):
+                if status != FOUND:
+                    return status, []
+                status, scopes = _merge(self._chain_member(self._dealias(s), name) for s in scopes)
+            return status, scopes
         segments = split_qualified(reference.lstrip("~"))
         if not segments:
             return UNKNOWN, []
@@ -343,7 +399,9 @@ class ScopeResolver:
         unknown = False
         while scope is not None:
             status, found = self._visible_inside(scope, name, exclude)
-            if status == FOUND:
+            # 自分自身は import の経路からも見つかりうる（参照する usage に参照先の名前を付けたため）
+            found = [f for f in found if f is not exclude]
+            if status == FOUND and found:
                 return status, found
             unknown = unknown or status == UNKNOWN
             scope = scope.parent
@@ -517,7 +575,20 @@ class ScopeResolver:
         return _merge(nested)
 
     def _inherited(self, scope: Scope, name: str, *, outside: bool) -> Result:
+        if scope.super_scopes:
+            direct = [self._visible_to_subtype(sup, name) for sup in scope.super_scopes]
+            rest = self._inherited_by_name(scope, name, outside=outside)
+            return _merge(direct + [rest])
+        return self._inherited_by_name(scope, name, outside=outside)
+
+    def _inherited_by_name(self, scope: Scope, name: str, *, outside: bool) -> Result:
         if not scope.supertypes:
+            # 型（定義・usage）は暗黙にライブラリの型を特化する（Part・Action・Calculation など）。
+            # その直接のメンバー（`result`・`start` など）は修飾名の先でも見えうる
+            node_type = (scope.node or {}).get("type") or ""
+            if scope.node is not None and node_type not in ("package", "root") \
+                    and may_be_inherited_from_library(name, implicit=True):
+                return UNKNOWN, []
             return NOT_FOUND, []
         context = scope.parent or self.root
         results: List[Result] = []
@@ -643,26 +714,36 @@ def _apply_filters(result: Result, conditions: List[dict]) -> Result:
 
 
 _REFERENCING_USAGE_TYPES = {"satisfy_requirement_usage", "verify_requirement_usage", "perform_action",
-                            "exhibit_state_usage", "include_use_case_usage"}
+                            "exhibit_state_usage", "include_use_case_usage", "require_usage"}
 
 
 def _referenced_feature(node: dict) -> Optional[str]:
     """`satisfy r by d;`・`verify r;`・`perform x;`・`exhibit s;`・`include u;` が参照する先。"""
     node_type = node.get("type")
+    if node_type == "feature_usage" and node.get("variability") == "variant" and isinstance(node.get("name"), str)             and not node.get("type_name") and not node.get("redefines"):
+        # variation の中の `variant '6cylEngine';`（キーワードも型も無い形）は既存の usage を参照する
+        return node["name"]
+    if node_type in ("do_action", "entry_action", "exit_action") and isinstance(node.get("action_reference"), str)             and node["action_reference"] and not node.get("type_name"):
+        # state の `do senseTemperature { out temp; }` は既存の action を参照する（`senseTemperature.temp`）
+        return node["action_reference"]
     if node_type not in _REFERENCING_USAGE_TYPES:
         return None
     if isinstance(node.get("reference"), str) and node["reference"]:
-        return node["reference"]
+        return _normalized_text(node, "reference")
     name = node.get("name")
     if not isinstance(name, str) or not name:
         return None
+    # `exhibit a.b;`・`satisfy a.b by c;` の `.` は正規化で `::` になっている。元の区切りに戻す
+    name = _normalized_text(node, "name") or name
     if node_type == "satisfy_requirement_usage" and node.get("declaresRequirement"):
         return None
-    if extra_of(node, "referenceForm"):
-        return name  # `verify r;`・`exhibit s;`（キーワード無しの形）は必ず参照
+    if extra_of(node, "referenceForm") or node_type == "require_usage":
+        return name  # `verify r;`・`exhibit s;`・`require c;`（キーワード無しの形）は必ず参照
     if node.get("redefines"):
         return None  # `exhibit state s2 ::> s0;` の s2 は自分の名前
-    if node_type == "satisfy_requirement_usage" or (not node.get("type_name") and node_type != "perform_action"):
+    # exhibit / verify は参照形かどうかが AST に残る（referenceForm）。include だけは区別できないので、
+    # 型が無ければ参照とみなす
+    if node_type == "satisfy_requirement_usage" or (node_type == "include_use_case_usage" and not node.get("type_name")):
         return name
     return None
 
@@ -683,7 +764,9 @@ def _supertype_references(node: dict) -> Iterable[str]:
                 seen.append(base)
     for entry in node.get("redefines") or []:
         if isinstance(entry, dict) and isinstance(entry.get("target"), str):
-            seen.append(entry["target"])
+            seen.append(_normalized_text(entry, "target") or entry["target"])
+            # `part c :> a, b;` の 2 つ目以降（targets）
+            seen.extend(t for t in entry.get("targets") or [] if isinstance(t, str) and t)
     out: List[str] = []
     for ref in seen:
         ref = ref.lstrip("~").strip()
@@ -718,8 +801,9 @@ def kind_matches(scope: Scope, kind: str) -> Optional[bool]:
     参照実装は、種類の合わない要素を候補にしない（`part def b :> seatBelt;` で seatBelt が
     usage なら `Couldn't resolve reference to Classifier 'seatBelt'.`）。
     """
-    if scope.library is not None and library_index.member_kind(scope.library) is None and not _is_package(scope):
-        return None  # ライブラリの入れ子の要素など、種類が分からない
+    if scope.library is not None and (library_index.member_kind(scope.library) or "alias") == "alias" \
+            and not _is_package(scope):
+        return None  # ライブラリの入れ子の要素・alias など、種類が分からない
     if kind == "Classifier":
         return _is_definition(scope)
     if kind == "Type":
@@ -747,9 +831,9 @@ def references_of(node: dict) -> List[Reference]:
                 refs.append((base, "Classifier" if is_def else "Feature", node, not is_def))
     for entry in node.get("redefines") or []:
         if isinstance(entry, dict) and isinstance(entry.get("target"), str) and entry["target"]:
-            refs.append((entry["target"], "Feature", node, True))
+            refs.append((_normalized_text(entry, "target") or entry["target"], "Feature", node, True))
     referenced = _referenced_feature(node)
-    if referenced and (node_type == "satisfy_requirement_usage" or node.get("reference")
+    if referenced and (node_type in ("satisfy_requirement_usage", "require_usage") or node.get("reference")
                        or extra_of(node, "referenceForm")):
         # キーワードの有無が AST に残らない形（`include u;` など）は、宣言と区別できないので
         # 報告しない（参照として継承元を探すのには使う）
@@ -791,6 +875,26 @@ _EXPRESSION_KEYWORDS = frozenset({"null", "true", "false"})
 
 _IDENTIFIER_END = re.compile(r"[A-Za-z_]\w*$")
 _IDENTIFIER_START = re.compile(r"[A-Za-z_]")
+
+
+def _declared_names(tree) -> frozenset:
+    """式の木の中で宣言されている名前（ラムダの本体の feature など）。"""
+    names = set()
+
+    def walk(node):
+        if isinstance(node, list):
+            for item in node:
+                walk(item)
+        elif isinstance(node, dict):
+            if node.get("type") not in _REFERENCE_TYPES and node.get("type") != "name_ref" \
+                    and isinstance(node.get("name"), str):
+                names.add(node["name"])
+            for value in node.values():
+                if isinstance(value, (dict, list)):
+                    walk(value)
+
+    walk(tree)
+    return frozenset(names)
 
 
 def _chain_head(reference: str) -> str:
@@ -1230,7 +1334,7 @@ def kind_violations(ast: dict, external_names: Optional[Iterable[str]] = None) -
             else:
                 return None
         element = resolver.element_of.get(id(node))
-        inherited_from = [entry["target"] for entry in node.get("redefines") or []
+        inherited_from = [_normalized_text(entry, "target") or entry["target"] for entry in node.get("redefines") or []
                           if isinstance(entry, dict) and entry.get("kind") in ("redefines", "subsets")
                           and isinstance(entry.get("target"), str)]
         referenced = _referenced_feature(node) or (
@@ -1442,6 +1546,9 @@ def unresolved_references(ast: dict, external_names: Optional[Iterable[str]] = N
         param = node.get("param")
         if node.get("type") == "arrow_lambda" and isinstance(param, dict) and isinstance(param.get("name"), str):
             local_names = local_names | {param["name"]}  # `{in p; p.m}` の p
+        if node.get("type") == "arrow_lambda":
+            # 本体の中で宣言した名前（`{in i; private thisSample : T = ...; ... thisSample.t ...}`）
+            local_names = local_names | _declared_names([node.get("body"), node.get("children")])
         trigger = node.get("trigger")
         if isinstance(trigger, dict) and trigger.get("type_name") and isinstance(trigger.get("reference"), str):
             local_names = local_names | {trigger["reference"]}  # `accept sig : Sig if sig.on` の sig
@@ -1469,6 +1576,19 @@ def unresolved_references(ast: dict, external_names: Optional[Iterable[str]] = N
                     missing = resolver.missing_chain_member(found, [name for _sep, name in segments[1:]])
                     if missing:
                         out.append((node, missing, "Feature"))
+        referenced = _referenced_feature(node)
+        if referenced and _chain_head(referenced) != referenced and (
+                node.get("type") in ("satisfy_requirement_usage", "require_usage") or node.get("reference")
+                or extra_of(node, "referenceForm")):
+            # 参照の連鎖（`perform transportTask.receiveCommand;`）: 先頭と 2 番目以降を確かめる
+            head = _chain_head(referenced)
+            status, found = resolver.resolve(head, owner, feature=True, exclude=element)
+            if status == NOT_FOUND:
+                out.append((node, head, "Feature"))
+            elif status == FOUND:
+                missing = resolver.missing_chain_member(found, _chain_tail(referenced))
+                if missing:
+                    out.append((node, missing, "Feature"))
         if node.get("type") in ("import", "expose") and (node.get("name") or node.get("qualified_name")):
             target = node.get("name") or node.get("qualified_name")
             index = next((i for i, imp in enumerate(owner.imports) if imp.node is node), None)

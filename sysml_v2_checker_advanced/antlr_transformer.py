@@ -1347,6 +1347,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             return {
                 "type": "perform_action",
                 "reference": _namespace_path_text(npath_ctx),
+                # `perform a.b;` の `.` は正規化で `::` になる。`::` と書いたときだけ元の文字列を残す
+                **_colon_source("reference", npath_ctx),
                 # `perform deliver : Deliver;`（参照に型を書く形）
                 **({"type_name": _namespace_path_text(ctx.bareTypeRef)} if ctx.bareTypeRef is not None else {}),
                 "redefines": redefines,
@@ -1733,6 +1735,19 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                     else {}
                 ),
             }
+        if ctx.typeRef is not None:
+            # `satisfy requirement : R by x;`（名前の無い requirement usage の宣言）
+            by_ctx = ctx.by
+            return {
+                "type": "satisfy_requirement_usage",
+                "is_negated": is_negated,
+                "name": None,
+                "type_name": _namespace_path_text(ctx.typeRef),
+                "by": _namespace_path_text(by_ctx) if by_ctx is not None else None,
+                **_colon_source("by", by_ctx),
+                "children": [self.visit(el) for el in ctx.partBodyElement()],
+                "declaresRequirement": True,
+            }
         type_ctx = ctx.ID()
         return {
             "type": "satisfy_requirement_usage",
@@ -2093,6 +2108,21 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         }
 
     def visitExitActionMember(self, ctx: SysMLMinParser.ExitActionMemberContext) -> Dict:
+        if ctx.payload is not None:
+            # `exit send new Status("recharged") via hmi;`（do と同じインラインの send）
+            return {
+                "type": "exit_action",
+                "kind": "exit",
+                "action_reference": None,
+                "type_name": None,
+                "redefines": [],
+                "send": {
+                    "payload": self.visit(ctx.payload),
+                    "to": _namespace_path_text(ctx.sendTarget) if ctx.sendTarget is not None else None,
+                    "via": _namespace_path_text(ctx.sendVia) if ctx.sendVia is not None else None,
+                },
+                "children": [],
+            }
         id_ctx = ctx.ID()
         return {
             "type": "exit_action",
@@ -3678,6 +3708,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             return {
                 "type": "exhibit_state_usage",
                 "name": _namespace_path_text(ctx.ref),
+                **_colon_source("name", ctx.ref),
                 "type_name": None,
                 # `state` の無い形。name は既存の state への参照
                 "referenceForm": True,

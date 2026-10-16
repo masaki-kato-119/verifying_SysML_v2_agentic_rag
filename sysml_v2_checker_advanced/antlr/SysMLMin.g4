@@ -281,7 +281,7 @@ portionUsageStmt
     // （OccurrenceTest.sysml）のように、`individual`先頭修飾子も持ちうる
     // （occurrenceDef/partDef等と同じ設計。2026-08-29、730件ベースライン
     // 154件エラー要因分析で発見）。
-    : isThen='then'? isIndividual='individual'? kind=('snapshot' | 'timeslice') subKind=('item' | 'part' | 'action' | 'attribute' | 'state')? simpleName?
+    : isThen='then'? isIndividual='individual'? kind=('snapshot' | 'timeslice') subKind=('item' | 'part' | 'action' | 'attribute' | 'state' | 'port')? simpleName?
       preMult=multiplicitySpec?
       // `snapshot missionSystemAtIngress :> apollo11MissionSystem { ... }`
       // （Apollo11MissionExecutionPackage.sysml）のように、occurrenceUsage
@@ -1002,6 +1002,8 @@ constraintUsage
 satisfyRequirementUsage
     : 'assert' ('not')? 'satisfiedBy' ( 'requirement' simpleName ':' ID | simpleName ) ';'
     | ('assert')? ('not')? 'satisfy' 'requirement'? nameRef=namespacePath (':' typeRef=namespacePath)? ('by' by=namespacePath)? ( '{' partBodyElement* '}' | ';' )
+    // `satisfy requirement : R by x;`（名前の無い requirement usage の宣言。advent-of-sysml-v2 lesson24）
+    | ('assert')? ('not')? 'satisfy' 'requirement' ':' typeRef=namespacePath ('by' by=namespacePath)? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // `verify requirement : R;`・`verify requirement massRequirement :
@@ -1401,6 +1403,8 @@ itemUsage
     : visibilityIndicator? prefixMetadataAnnotation* isRefPre='ref'? isIndividual='individual'? isDerived='derived'? isAbstract='abstract'? isRef='ref'? 'item' simpleName?
       preMult=multiplicitySpec?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
+      // `item redefines payload [0..1] : BottomlessGiftBag;`（再定義の後ろに多重度。advent-of-sysml-v2）
+      midMult=multiplicitySpec?
       // `item boundingBox : ShapeItems::Box [1] :> boundingShapes { ... }`
       // （DontPanic-SysMLv2-Batmobile.sysml）のように、型節が`::`修飾型名を
       // 取ることがある（単一`ID`のままでは受理できない。2026-08-28、730件
@@ -3249,6 +3253,8 @@ exitActionMember
     : 'exit' ('action')? qualifiedName? (':' ID)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' actionBodyElement* '}' | ';' )
+    // `exit send new Status("recharged") via hmi;`（do と同じインラインの send。advent-of-sysml-v2 lesson18）
+    | 'exit' 'send' payload=expression ( 'to' sendTarget=namespacePath | 'via' sendVia=namespacePath )? ';'
     ;
 
 // --- transition (8.2.2.18) -------------------------------------------------------
@@ -3822,7 +3828,9 @@ INT_LITERAL
     ;
 
 STRING_LITERAL
-    : '"' (~["\\\r\n] | '\\' .)* '"'
+    // 改行を含む文字列（sysmod の `attribute perform_prompt : String = "...（複数行）...";`）。
+    // 参照実装は受け付ける（held-out、2026-10-16）
+    : '"' (~["\\] | '\\' .)* '"'
     ;
 
 // doc の本体専用トークン。一般的なブロックコメントのスキップとしては未対応。
