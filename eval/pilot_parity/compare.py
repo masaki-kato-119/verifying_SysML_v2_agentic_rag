@@ -40,6 +40,8 @@ PILOT_CATEGORIES: list[tuple[str, re.Pattern[str]]] = [
     ("ownership", re.compile(r"Owned usages of a port definition|Nested usages in a port usage")),
     ("invocation", re.compile(r"Must invoke|model-level evaluable|input parameter of the invoked")),
     ("annotation", re.compile(r"Cannot annotate|metadata")),
+    ("expression_result", re.compile(r"Must have a Boolean result|Must be a Boolean expression|must be a DurationValue")),
+    ("end_kind", re.compile(r"An interface end must be a port")),
 ]
 
 # 自作のルール名 → 種類（ルール名の一部で判定。上から順）
@@ -62,8 +64,15 @@ LOCAL_CATEGORIES: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 
-# 未解決参照に連鎖して参照実装が重ねて出す種類（compare() の cascade）
-CASCADE_CATEGORIES = frozenset({"typing_kind", "must_reference"})
+# 原因の指摘（右）と同じ行に、参照実装が連鎖して重ねて出す種類（左）。compare() の cascade。
+# 型・参照先が解決できない → 種類のエラー。端の参照が `::` の誤りや未解決 → 関係の端の数・flow の端
+CASCADES = {
+    "typing_kind": ("unresolved",),
+    "must_reference": ("unresolved",),
+    "related_elements": ("accessible_feature", "unresolved"),
+    "flow_end": ("accessible_feature", "unresolved"),
+}
+CASCADE_CATEGORIES = frozenset(CASCADES)
 
 
 def category(issue: dict, side: str) -> str:
@@ -76,6 +85,10 @@ def category(issue: dict, side: str) -> str:
         # 参照実装と同じ文言の指摘は、出したルールにかかわらずその種類（flow の端点のルールも
         # `Must be an accessible feature` を出す）
         local_message = issue.get("message") or ""
+        # 参照実装と同じ英文で始まる指摘は、参照実装の種類の対応表で分類する
+        pilot_like = category({"message": local_message}, "pilot") if local_message[:1].isascii() else "other"
+        if pilot_like not in ("other", "syntax"):
+            return pilot_like
         if local_message.startswith("Must be an accessible feature"):
             return "accessible_feature"
         if local_message.startswith("Must reference a"):
@@ -118,10 +131,11 @@ def compare(corpus: Path, labels: Path) -> dict:
         p_keys = {(i.get("line"), category(i, "pilot")) for i in p_err}
         l_keys = {(i.get("line"), category(i, "local")) for i in l_err}
         # 連鎖: 型や参照先が解決できないと、参照実装は同じ行に種類のエラー（must be typed by /
-        # Must reference / concrete type）も重ねて出す。自作は原因の未解決参照だけを出す方針なので、
-        # その行に未解決参照を出していれば種類のエラーも当たったと数える（cascade に件数を残す）
-        cascade = {(line, cat) for line, cat in p_keys if cat in CASCADE_CATEGORIES
-                   and (line, "unresolved") in p_keys and (line, "unresolved") in l_keys and (line, cat) not in l_keys}
+        # Must reference / concrete type）も重ねて出す（端の誤りには関係の端の数・flow の端も）。
+        # 自作は原因の指摘だけを出す方針なので、その行に原因の指摘を出していれば、連鎖の
+        # エラーも当たったと数える（cascade に件数を残す。CASCADES）
+        cascade = {(line, cat) for line, cat in p_keys if cat in CASCADE_CATEGORIES and (line, cat) not in l_keys
+                   and any((line, cause) in p_keys and (line, cause) in l_keys for cause in CASCADES[cat])}
         l_keys |= cascade
         matched = {k for k in p_keys & l_keys if k[1] != "other"}
         p_lines = {i.get("line") for i in p_err}

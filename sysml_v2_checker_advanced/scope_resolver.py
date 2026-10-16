@@ -125,6 +125,8 @@ class Scope:
     library: Optional[str] = None  # 標準ライブラリの要素なら修飾名
     filters: List[dict] = field(default_factory=list)  # パッケージの `filter @Safety;`（import に効く）
     metadata: List[str] = field(default_factory=list)  # 付いているメタデータの型（`@Safety;`、`#g1`）
+    # メタデータの値（`@Safety { isMandatory = true; }` → {"Safety": {"isMandatory": True}}）
+    metadata_values: Dict[str, Dict[str, object]] = field(default_factory=dict)
 
     def names(self) -> Tuple[str, ...]:
         return tuple(n for n in (self.name, self.short_name) if n)
@@ -196,7 +198,14 @@ class ScopeResolver:
             return
         if node_type == "metadata_usage" and not node.get("type_name") and isinstance(node.get("name"), str):
             # `@Safety;` / `metadata Tag about x;` の名前はメタデータの型への参照
-            owner.metadata.append(split_qualified(node["name"])[-1])
+            meta_name = split_qualified(node["name"])[-1]
+            owner.metadata.append(meta_name)
+            values = owner.metadata_values.setdefault(meta_name, {})
+            for child in node.get("children") or []:
+                value = child.get("value") if isinstance(child, dict) else None
+                if isinstance(child.get("name") if isinstance(child, dict) else None, str) \
+                        and isinstance(value, dict) and value.get("type") == "literal":
+                    values[child["name"]] = value.get("value")
             element = Scope(node=node, parent=owner, supertypes=[node["name"]])
             owner.members.append(element)
             self.element_of[id(node)] = element
@@ -559,9 +568,38 @@ def _without_enum_literals(result: Result) -> Result:
     return (FOUND, kept) if kept else (NOT_FOUND, [])
 
 
+_ABSENT = object()  # メタデータが無い、または値が書かれていない
+
+
+def _metadata_value(scope: Scope, expression: dict):
+    """`(as Safety).isMandatory` の値。メタデータか値が無ければ _ABSENT、判定できなければ None。"""
+    base = expression.get("base") or {}
+    if expression.get("type") != "member_access" or base.get("type") != "as_cast" or base.get("base") is not None \
+            or not isinstance(base.get("type_name"), str) or not isinstance(expression.get("member"), str):
+        return None
+    if scope.library is not None:
+        return None
+    values = scope.metadata_values.get(split_qualified(base["type_name"])[-1])
+    if values is None:
+        return _ABSENT
+    return values.get(expression["member"], _ABSENT)
+
+
 def _filter_verdict(scope: Scope, expression: dict) -> Optional[bool]:
-    """import の条件（`@Safety`、`@A and not @B`）を要素に当てる。判定できなければ None。"""
+    """import の条件（`@Safety`、`@A and not @B`、`(as Safety).isMandatory == true`）を要素に当てる。
+
+    判定できなければ None。メタデータの値の条件は、参照実装の Import_Filtered のラベルで確かめた
+    意味だけを扱う: `(as M).f` は値が true のときだけ真、`(as M).f == v` は値が v と書かれている
+    ときだけ真（メタデータや値が無ければ偽）。
+    """
     kind = expression.get("type")
+    value = _metadata_value(scope, expression)
+    if value is not None:
+        return value is True
+    if kind == "binary_expr" and expression.get("op") == "==" and (expression.get("right") or {}).get("type") == "literal":
+        left = _metadata_value(scope, expression.get("left") or {})
+        if left is not None:
+            return left is not _ABSENT and left == expression["right"].get("value")
     if kind == "metadata_ref" and isinstance(expression.get("reference"), str):
         if scope.library is not None:
             return None

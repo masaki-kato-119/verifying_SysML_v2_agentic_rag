@@ -31,7 +31,8 @@ topLevelElement
 // `{}`を持たない、フォワード宣言/空パッケージ宣言もある（2026-08-28、
 // 730件パース失敗の要因分析で発見）。
 packageDef
-    : ('standard')? ('library')? 'package' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName ( '{' topLevelElement* '}' | ';' )
+    // `private package C1 { ... }`（パッケージの中のパッケージに可視性。KerML の Import_All などで実測）
+    : visibilityIndicator? ('standard')? ('library')? 'package' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName ( '{' topLevelElement* '}' | ';' )
     ;
 
 packageBodyElement
@@ -460,7 +461,8 @@ commentStmt
 // 注釈`locale`節を持つことがある（2026-08-28、参照実装比較レポートP1-5で
 // 発見）。
 documentationStmt
-    : 'doc' simpleName? ('locale' locale=STRING_LITERAL)? DOC_COMMENT
+    // `doc <B> /* */`（短い名前の付いた文書。KerML の ShortName_Scoping_Valid2 で実測）
+    : 'doc' ('<' docShortName=(ID | QUOTED_NAME) '>')? simpleName? ('locale' locale=STRING_LITERAL)? DOC_COMMENT
     ;
 
 textualRepresentationStmt
@@ -2704,7 +2706,9 @@ performActionStmt
     // 後に`= value`値代入が続くことがある（従来この代替にだけ移植されて
     // いなかった。2026-08-29、add_requireusage_feature_chain_target対応中
     // に連鎖的に発見）。
-    : variability=('variation' | 'variant')? isThen='then'? 'perform' namespacePath
+    // `perform deliver : Deliver;`（`action` 無しで型を書く LLM の書き方）。参照実装は受け付け、
+    // deliver を参照として解決する（2026-10-16、perform_drop_action の変異体）
+    : variability=('variation' | 'variant')? isThen='then'? 'perform' namespacePath (':' bareTypeRef=namespacePath)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       (('=' | ':=') value=expression)?
       ( '{' actionBodyElement* '}' | ';' )

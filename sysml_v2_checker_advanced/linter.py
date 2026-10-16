@@ -7,7 +7,7 @@ SysML v2 Advanced Checker Linter
 import re
 from typing import Dict, List, Set
 
-from . import library_index, scope_resolver
+from . import library_index, scope_resolver, validation_rules
 from .constants import (
     BUILTIN_TYPES,
     ELEMENT_REFERENCE_ONLY_USAGE_TYPES,
@@ -359,6 +359,20 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
             self.issues.append(LintIssue(SEVERITY_ERROR, message, node))
         self._check_usage_kinds_scoped(ast, known_external_types)
         self._check_accessible_features_scoped(ast, known_external_types)
+        self._check_pilot_validations(ast, known_external_types)
+
+    def _check_pilot_validations(self, ast: Dict, known_external_types: Set[str] | None = None) -> None:
+        """参照実装の個別の検証ルール（段階 D、validation_rules.py）。
+
+        既存のルールが同じ要素に同じ文言で出していれば重ねない。
+        """
+        already = {(id(issue.node), issue.message.split(":")[0].split("。")[0])
+                   for issue in self.issues if issue.severity == SEVERITY_ERROR and issue.node}
+        for node, message in validation_rules.validation_violations(ast, external_names=known_external_types):
+            if (id(node), message) in already:
+                continue
+            already.add((id(node), message))
+            self.issues.append(LintIssue(SEVERITY_ERROR, message, node))
 
     def _check_usage_kinds_scoped(self, ast: Dict, known_external_types: Set[str] | None = None) -> None:
         """usage の型の種類と、perform / exhibit / satisfy の参照先の種類（段階 C）。

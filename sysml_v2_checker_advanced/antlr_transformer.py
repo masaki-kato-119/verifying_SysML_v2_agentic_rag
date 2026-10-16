@@ -232,11 +232,13 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # `standard library package <USCU> USCustomaryUnits { ... }`という
         # ShortName注釈。
         children = [self.visit(el) for el in ctx.topLevelElement()]
+        visibility_ctx = ctx.visibilityIndicator()
         return {
             "type": "package",
             "name": _simple_name_text(ctx.simpleName()),
             "shortName": ctx.shortName.text if ctx.shortName is not None else None,
             "children": children,
+            **({"visibility": visibility_ctx.getText()} if visibility_ctx is not None else {}),
         }
 
     def visitPackageBodyElement(self, ctx: SysMLMinParser.PackageBodyElementContext) -> Dict:
@@ -1327,7 +1329,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # のみ存在）の有無で判別する（2026-08-28、730件パース失敗の要因
         # 分析で発見）。
         if ctx.hasActionKeyword is None:
-            npath_ctx = ctx.namespacePath()
+            npath_ctx = ctx.namespacePath(0)  # 型節（bareTypeRef）があると namespacePath は 2 つになる
             # `perform X :>> Y;`というredefine節（2026-08-28、730件回帰
             # チェックで発見）。
             redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
@@ -1345,6 +1347,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             return {
                 "type": "perform_action",
                 "reference": _namespace_path_text(npath_ctx),
+                # `perform deliver : Deliver;`（参照に型を書く形）
+                **({"type_name": _namespace_path_text(ctx.bareTypeRef)} if ctx.bareTypeRef is not None else {}),
                 "redefines": redefines,
                 "params": params,
                 "children": children,
@@ -3467,6 +3471,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "locale": ctx.locale.text[1:-1] if ctx.locale is not None else None,
             "body": self._doc_comment_body_text(ctx.DOC_COMMENT()),
             "children": [],
+            # `doc <B> /* */` の短い名前（`comment C about A::B` で参照される）
+            **({"shortName": ctx.docShortName.text} if ctx.docShortName is not None else {}),
         }
 
     def visitBareDocComment(self, ctx: SysMLMinParser.BareDocCommentContext) -> Dict:
