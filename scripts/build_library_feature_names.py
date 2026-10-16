@@ -38,7 +38,10 @@ _KEYWORDS = (
     "return|end|exhibit|perform|include|use|feature|step|expr|bool|function|predicate|"
     "succession|binding|connector|composite|portion|derived|readonly|var|const|in|out|inout"
 )
-_DECLARATION = re.compile(rf"\b(?:{_KEYWORDS})\s+(?:<[^>]*>\s*)?('[^']+'|[A-Za-z_]\w*)")
+# キーワードは続くことがある（`in ref alternative`、`abstract part def`）
+_DECLARATION = re.compile(rf"\b(?:(?:{_KEYWORDS}|def|abstract)\s+)+(?:<[^>]*>\s*)?('[^']+'|[A-Za-z_]\w*)")
+# 名前の無い再定義（`attribute :>> width = ...;`、`redefines width`）も、その名前の feature を持つ
+_REDEFINITION = re.compile(r"(?::>>|\bredefines\b)\s*('[^']+'|[A-Za-z_]\w*)")
 # 名前の無いキーワードの並び（`in item x` の item なども名前として拾わないよう除く）
 _NOT_NAMES = set(_KEYWORDS.split("|")) | {"def", "abstract", "variation", "variant", "all", "of", "by"}
 _COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
@@ -62,7 +65,7 @@ def _body_declarations(text: str, *, direct_only: bool = False) -> set[str]:
         segment = text[segment_start:i]
         depth = sum(1 for is_package in stack if not is_package)
         if stack and not stack[-1] and (not direct_only or depth == 1):
-            for match in _DECLARATION.finditer(segment):
+            for match in list(_DECLARATION.finditer(segment)) + list(_REDEFINITION.finditer(segment)):
                 name = match.group(1).strip("'")
                 if name not in _NOT_NAMES:
                     names.add(name)

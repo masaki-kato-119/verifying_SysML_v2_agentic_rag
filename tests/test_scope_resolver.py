@@ -7,7 +7,11 @@
 import pytest
 
 from sysml_v2_checker_advanced.antlr_transformer import parse_sysml_with_semantic_model_recovering
-from sysml_v2_checker_advanced.scope_resolver import typed_by_usages, unresolved_references
+from sysml_v2_checker_advanced.scope_resolver import (
+    inaccessible_features,
+    typed_by_usages,
+    unresolved_references,
+)
 
 
 def _unresolved(text: str) -> list:
@@ -113,3 +117,58 @@ def test_usage_typed_by_another_usage():
     ast, _model, _errors = parse_sysml_with_semantic_model_recovering(
         "package Q { part def V { attribute b : ScalarValues::Real; attribute a : b; } }")
     assert [type_name for _node, type_name in typed_by_usages(ast)] == ["b"]
+
+
+@pytest.mark.parametrize("text, expected", [
+    # `verify X;`（requirement 無し）は参照。定義を指すのは誤り（参照実装で確認、2026-10-16）
+    ("package Q { requirement def R; requirement r0 : R; verification def V { objective { "
+     "verify R; verify r0; verify nope : R; verify requirement fresh : R; } } }", ["R", "nope"]),
+    # `exhibit s;`（state 無し）も参照
+    ("package Q { state def S0; part q { exhibit state s0 : S0; exhibit nosuchState; } }", ["nosuchState"]),
+    # satisfy の参照先の名前は、後ろの satisfy から引けない
+    ("package Q { part s; satisfy Spec::'R-010' by s; satisfy 'R-010' by s; }", ["R-010", "Spec::R-010"]),
+    # 前置メタデータ（定義にも付く）
+    ("package Q { #logical part def C; }", ["logical"]),
+    # 引用符の中の . は連鎖の区切りではない
+    ("package Q { requirement r :> Spec::'1.1'; }", ["Spec::1.1"]),
+    # 接続の端の連鎖の 2 番目以降
+    ("package Q { part def A { part b; } part def S { part a : A; part c : A; "
+     "connect a.b to c.nosuch; } }", ["nosuch"]),
+])
+def test_referencing_forms_and_end_chains(text, expected):
+    assert _unresolved(text) == sorted(expected)
+
+
+def _inaccessible(text: str) -> list:
+    ast, _model, errors = parse_sysml_with_semantic_model_recovering(text)
+    assert errors == []
+    return sorted(reference for _node, reference in inaccessible_features(ast))
+
+
+@pytest.mark.parametrize("text, expected", [
+    # 接続の端で `::` を使って feature をたどる（左が usage でも定義でも）
+    ("package Q { part def V { part engine; part wheel; } part def S { part a : V; part b : V; "
+     "connect a.engine to b.engine; connect a::engine to b.engine; connect V::engine to b.wheel; } }",
+     ["V::engine", "a::engine"]),
+    # 部分集合の先は、左が usage のときだけ。再定義と、左が定義のものは通る
+    ("package Q { part def V { part engine; part wheel; } part v : V; part x :> v::engine; "
+     "part y :> v.engine; part def C :> V { part :>> V::engine; part w2 :> V::wheel; } "
+     "part c2 : V { part :>> v::engine; } }", ["v::engine"]),
+    # 両端が同じ定義の feature なら通る。別々の定義はエラー
+    ("package Q { part def Car { part tank; part engine; } part def Eng { part engine; } "
+     "allocate Car::tank to Car::engine; allocate Car::tank to Eng::engine; }", ["Car::tank", "Eng::engine"]),
+    # 入れ子の usage の中から外側の feature を端に使う（connect・flow・succession は不可、message と値の式は可）
+    ("package Q { attribute def Cmd; part def Pi { event occurrence sent; port p; } "
+     "part def Sh { event occurrence rcv; port p; } part def F { part pilot : Pi; part ship : Sh; "
+     "part sub { message m of Cmd from pilot.sent to ship.rcv; connect pilot to ship; ref part p2 = pilot; } "
+     "action act { flow from pilot.p to ship.p; first pilot then ship; } } }",
+     ["pilot", "pilot", "pilot.p", "ship", "ship", "ship.p"]),
+    # 入れ子の定義の中からは、値の式と message の端でも外側の feature を使えない
+    ("package Q { attribute def Cmd; part def Pi { event occurrence sent; } part def Sh { event occurrence rcv; } "
+     "part def F { part pilot : Pi; part ship : Sh; occurrence def Seq { ref part p2 = pilot; "
+     "message m of Cmd from pilot.sent to ship.rcv; } } }", ["pilot", "pilot.sent", "ship.rcv"]),
+    # 列挙の値は feature のアクセスではない
+    ("package Q { enum def E { e1; e2; } part e1 { attribute x : E; bind e1.x = E::e2; } }", []),
+])
+def test_accessible_features(text, expected):
+    assert _inaccessible(text) == sorted(expected)

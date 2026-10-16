@@ -1016,7 +1016,10 @@ verifyRequirementUsage
     : 'verify' 'requirement' simpleName? (':' typeRef=namespacePath)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )
-    | 'verify' nameRef=namespacePath ('by' by=namespacePath)?
+    // `verify massCheck : MassLimitRequirement;`（`requirement` 無しで型を書く LLM の誤り）。
+    // 参照実装はこれを受け付け、massCheck を参照として解決する
+    // （Couldn't resolve reference to Feature 'massCheck'.、2026-10-16 llm-sonnet-B1）
+    | 'verify' nameRef=namespacePath (':' typeRef=namespacePath)? ('by' by=namespacePath)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )
     ;

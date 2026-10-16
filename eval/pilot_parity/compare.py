@@ -69,6 +69,10 @@ def category(issue: dict, side: str) -> str:
         text = issue.get("message") or ""
         table = PILOT_CATEGORIES
     else:
+        # 参照実装と同じ文言の指摘は、出したルールにかかわらずその種類（flow の端点のルールも
+        # `Must be an accessible feature` を出す）
+        if (issue.get("message") or "").startswith("Must be an accessible feature"):
+            return "accessible_feature"
         text = issue.get("rule") or ""
         table = LOCAL_CATEGORIES
     for name, pattern in table:
@@ -81,7 +85,7 @@ def category(issue: dict, side: str) -> str:
     return "other"
 
 
-_LOCAL_UNRESOLVED_MESSAGE = re.compile(r"存在しない|Couldn't resolve reference")
+_LOCAL_UNRESOLVED_MESSAGE = re.compile(r"存在しない|存在しません|Couldn't resolve reference")
 
 
 def is_error(issue: dict) -> bool:

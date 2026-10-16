@@ -361,6 +361,29 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
                 message += self._library_suggestion_suffix(reference)
             self.issues.append(LintIssue(SEVERITY_ERROR, message, node))
         self._check_usage_typed_by_definitions(ast, known_external_types)
+        self._check_accessible_features_scoped(ast, known_external_types)
+
+    def _check_accessible_features_scoped(self, ast: Dict, known_external_types: Set[str] | None = None) -> None:
+        """接続の端などが、`::` で feature の中をたどったり、外側の型の feature を指したりしていないか。
+
+        参照実装の `Must be an accessible feature (use dot notation for nesting)`。境界は
+        scope_resolver.inaccessible_features の docstring（2026-10-16 に参照実装で確認）。
+        既存のルール（_check_accessible_feature_paths・flow の端点）が同じ要素に出していれば重ねない。
+        """
+        already = {id(issue.node) for issue in self.issues
+                   if issue.severity == SEVERITY_ERROR and issue.node and "accessible" in issue.message}
+        for node, reference in scope_resolver.inaccessible_features(ast, external_names=known_external_types):
+            if id(node) in already:
+                continue
+            already.add(id(node))
+            self.issues.append(LintIssue(
+                SEVERITY_ERROR,
+                f"Must be an accessible feature (use dot notation for nesting): '{reference}'。"
+                "part や action の中の要素は `.` でたどる（`a.b.c`）。`::` はパッケージと定義の"
+                "メンバーにだけ使う。外側の要素の feature は、それを持つ要素の中に移すか、"
+                "自分の feature からたどる",
+                node,
+            ))
 
     def _check_usage_typed_by_definitions(self, ast: Dict, known_external_types: Set[str] | None = None) -> None:
         """usage を定義ではなく別の usage で型付けしていないか（`attribute a : b;` の b が usage）。

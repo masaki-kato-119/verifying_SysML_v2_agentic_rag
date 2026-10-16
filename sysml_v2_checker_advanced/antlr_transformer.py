@@ -128,6 +128,55 @@ def _unquote_text(text: str) -> str:
     return text
 
 
+class AnnotatedNode(dict):
+    """AST の値としては持たない付帯情報（`extra`）を属性で持つ dict。
+
+    `==` は普通の dict と同じに比べるので、AST を完全一致で比べる既存のテストに影響しない。
+    付帯情報は名前解決（scope_resolver）だけが `extra_of()` で読む。dict(...) でコピーすると失われ、
+    そのときは付帯情報を使う判定が働かないだけになる。
+    """
+
+    extra: Dict
+
+
+# 付帯情報として属性へ移すキー（visit() の上書きで、ノードの dict から取り除く）
+_EXTRA_KEY_SUFFIX = "_source"
+_EXTRA_KEYS = frozenset({"referenceForm"})
+
+
+def _with_extra(node: Dict, extra: Dict) -> Dict:
+    if not extra:
+        return node
+    annotated = AnnotatedNode(node)
+    annotated.extra = dict(extra)
+    return annotated
+
+
+def extra_of(node, key: str):
+    """AnnotatedNode の付帯情報（無ければ None）。"""
+    return (getattr(node, "extra", None) or {}).get(key)
+
+
+def _move_extra(node: Dict) -> Dict:
+    keys = [k for k in node if k in _EXTRA_KEYS or k.endswith(_EXTRA_KEY_SUFFIX)]
+    if not keys:
+        return node
+    extra = {k: node[k] for k in keys}
+    return _with_extra({k: v for k, v in node.items() if k not in extra}, extra)
+
+
+def _colon_source(key: str, ctx) -> Dict:
+    """端の参照を `::` で書いていたときだけ、元の文字列を `<key>_source` に残す。
+
+    端の参照は `.` と `::` を区別せず `::` に正規化して持つ（_namespace_path_text）。
+    参照実装は feature の中を `::` でたどると `Must be an accessible feature` を返すので、
+    区別が要る（段階 B、scope_resolver）。キーが無ければ元は `.` 区切りだったと分かる。
+    既存の AST の完全一致のテストを壊さないよう、`::` が無いときはキーを足さない。
+    """
+    text = ctx.getText() if ctx is not None else ""
+    return {f"{key}_source": text} if "::" in text else {}
+
+
 class SysMLMinASTVisitor(SysMLMinVisitor):
     """パース木の各ノードをAST dictに組み立てる。"""
 
@@ -143,8 +192,15 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
 
     def visit(self, tree):
         node = super().visit(tree)
+        if isinstance(node, dict):
+            node = _move_extra(node)
         if isinstance(node, dict) and "type" in node:
             self._register(tree, node)
+            # `#logical part def C;` の前置メタデータ。規則ごとの visitXxx で拾い漏れていたもの
+            # （part def など）をここでまとめて補う（2026-10-16、段階 B の名前解決で発見）
+            annotations = getattr(tree, "prefixMetadataAnnotation", None)
+            if not node.get("prefixMetadata") and callable(annotations) and annotations():
+                node["prefixMetadata"] = [_namespace_path_text(a.namespacePath()) for a in annotations()]
         return node
 
     def _register(self, ctx, node: Dict) -> None:
@@ -565,9 +621,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         attributeUsageもこの版を使うよう統一している。"""
         result = []
         for kind_token, target_ctx in zip(kind_tokens, target_ctxs):
-            targets = [_namespace_path_text(q) for q in target_ctx.namespacePath()]
+            paths = target_ctx.namespacePath()
+            targets = [_namespace_path_text(q) for q in paths]
             redefine = self._redefine_dict(kind_token, targets)
             if redefine:
+                if paths:
+                    redefine = _with_extra(redefine, _colon_source("target", paths[0]))
                 result.append(redefine)
         return result
 
@@ -805,7 +864,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 reference = _qualified_name_text(qualified_ctx())
             else:
                 reference = _namespace_path_text(ctx.namespacePath())
-            return {"reference_subsetting": {"referenced_feature": reference}}
+            return {"reference_subsetting": _with_extra({"referenced_feature": reference},
+                                                        _colon_source("referenced_feature", ctx))}
 
         result = {"type": part_type, "from_end": _end(from_ctx), "to_end": _end(to_ctx)}
         if span_ctx is not None:
@@ -853,6 +913,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 **({"item_type": ctx.ofType.text} if ctx.ofType is not None else {}),
                 **({"from_end": _namespace_path_text(ctx.fromEnd)} if ctx.fromEnd is not None else {}),
                 **({"to_end": _namespace_path_text(ctx.toEnd)} if ctx.toEnd is not None else {}),
+                **_colon_source("from_end", ctx.fromEnd),
+                **_colon_source("to_end", ctx.toEnd),
                 **({"item_multiplicity": self._multiplicity_dict(ctx.ofMult)} if ctx.ofMult is not None else {}),
                 **({"item_name": _simple_name_text(ctx.ofName)} if ctx.ofName is not None else {}),
                 "children": [self.visit(el) for el in ctx.partBodyElement()],
@@ -878,6 +940,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "item_type": ctx.ofType.text if ctx.ofType is not None else None,
             "from_end": from_end,
             "to_end": to_end,
+            **_colon_source("from_end", ctx.fromEnd),
+            **_colon_source("to_end", ctx.toEnd),
             **({"redefines": bare_redefines} if bare_redefines else {}),
             # `flow call_getItems of CallGiveItems[1] from tlu.cll to
             # apsph.cll;`（AHFSequences.sysml）のように、`of`型の直後に
@@ -1605,8 +1669,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             return {
                 "type": "verify_requirement_usage",
                 "name": _namespace_path_text(ctx.nameRef),
-                "type_name": None,
+                "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
+                # `requirement` の無い形。name は宣言ではなく既存の requirement への参照
+                "referenceForm": True,
                 "by": _namespace_path_text(by_ctx) if by_ctx is not None else None,
+                **_colon_source("name", ctx.nameRef),
+                **_colon_source("by", by_ctx),
                 "redefines": redefines,
                 "children": [self.visit(el) for el in ctx.partBodyElement()],
             }
@@ -1648,6 +1716,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 "name": _namespace_path_text(ctx.nameRef),
                 "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
                 "by": _namespace_path_text(by_ctx) if by_ctx is not None else None,
+                **_colon_source("name", ctx.nameRef),
+                **_colon_source("by", by_ctx),
                 "children": [self.visit(el) for el in ctx.partBodyElement()],
                 # `satisfy requirement r by d;` は r を参照せず、新しい requirement usage を
                 # 宣言する（参照実装は、束縛済みの subject を持つ r に対しても通す）。
@@ -2675,6 +2745,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             # で発見）。
             "from_end": _namespace_path_text(ctx.fromEnd) if ctx.fromEnd is not None else None,
             "to_end": _namespace_path_text(ctx.toEnd) if ctx.toEnd is not None else None,
+            **_colon_source("from_end", ctx.fromEnd),
+            **_colon_source("to_end", ctx.toEnd),
             # `message :>> setSpeedMessage = driver_a.driverBehavior.
             # sendSetSpeed.sentMessage;`（Interaction Realization-1.sysml）
             # のように、redefine節の後に`= value`値代入を持つことがある
@@ -3601,6 +3673,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 "type": "exhibit_state_usage",
                 "name": _namespace_path_text(ctx.ref),
                 "type_name": None,
+                # `state` の無い形。name は既存の state への参照
+                "referenceForm": True,
                 "redefines": redefines,
                 "isParallel": ctx.isParallel is not None,
                 "children": [self.visit(el) for el in ctx.stateBodyElement()],
