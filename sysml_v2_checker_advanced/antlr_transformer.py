@@ -866,8 +866,10 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 reference = _qualified_name_text(qualified_ctx())
             else:
                 reference = _namespace_path_text(ctx.namespacePath())
+            # 端の行（`interface i : I connect` の次の行の端。参照実装は端の行に指摘を出す）
             return {"reference_subsetting": _with_extra({"referenced_feature": reference},
-                                                        _colon_source("referenced_feature", ctx))}
+                                                        {**_colon_source("referenced_feature", ctx),
+                                                         "line": ctx.start.line})}
 
         result = {"type": part_type, "from_end": _end(from_ctx), "to_end": _end(to_ctx)}
         if span_ctx is not None:
@@ -2164,6 +2166,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                     trigger["type_name"] = _namespace_path_text(trigger_ctx.triggerType)
                 if trigger_ctx.via is not None:
                     trigger["via"] = _namespace_path_text(trigger_ctx.via)
+                # accept の行（参照実装は transition の先頭ではなく accept の行に指摘を出す）
+                trigger = _with_extra(trigger, {"line": trigger_ctx.start.line})
 
         guard = None
         if ctx.guard is not None:

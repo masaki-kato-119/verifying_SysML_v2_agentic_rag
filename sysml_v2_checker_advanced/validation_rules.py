@@ -7,7 +7,7 @@ xpect テスト（org.omg.sysml.xpect.tests の validation/invalid）と、Pilot
 
 from __future__ import annotations
 
-from typing import Iterable, List, Optional, Tuple
+from typing import Iterable, List, Optional, Sequence, Tuple
 
 from .scope_resolver import FOUND, Scope, ScopeResolver, _classes_of
 
@@ -37,8 +37,9 @@ def _not_model_level(expression) -> bool:
                if key != "type" and isinstance(value, (dict, list)))
 
 
-def validation_violations(ast: dict, external_names: Optional[Iterable[str]] = None) -> List[Violation]:
-    resolver = ScopeResolver(ast, external_names)
+def validation_violations(ast: dict, external_names: Optional[Iterable[str]] = None,
+                          other_asts: Sequence[dict] = ()) -> List[Violation]:
+    resolver = ScopeResolver(ast, external_names, other_asts)
     out: List[Violation] = []
 
     def resolved_definitions(type_names: List[str], owner: Scope) -> Optional[List[Scope]]:

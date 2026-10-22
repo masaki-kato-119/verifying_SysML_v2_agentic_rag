@@ -6,7 +6,7 @@ fastmcpを使用してSysML v2チェッカーをMCPサーバーとして公開
 
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 # パッケージのルートディレクトリをPythonパスに追加
 current_dir = Path(__file__).parent
@@ -20,6 +20,11 @@ from fastmcp import FastMCP  # noqa: E402
 # 以前はImportError時に`from parser import ...`へフォールバックしていたが、
 # 前者が失敗する状況(パッケージ自体が壊れている等)では後者も同じ原因で
 # 失敗するため、実質デッドコードだった(SYSML_CHECKER_STANDALONE_AUDIT参照)。
+from sysml_v2_checker_advanced.model_files import (  # noqa: E402
+    OtherFiles,
+    load_other_files,
+    model_files,
+)
 from sysml_v2_checker_advanced.parser import parse_sysml  # noqa: E402
 from sysml_v2_checker_advanced.semantic_model import (  # noqa: E402
     build_semantic_model,
@@ -118,18 +123,79 @@ def parse_sysml_text(sysml_text: str) -> Dict[str, Any]:
             "ast": None
         }
 
+def _other_files(file_path: Optional[str], directory: Optional[str]) -> OtherFiles:
+    """一緒に検証するほかのファイル（model_files の決まり。参照実装の validate_sysml と同じ）。"""
+    base = Path(directory) if directory else (Path(file_path).parent if file_path else None)
+    return load_other_files(model_files(file_path, directory), base=base)
+
+
+def _scope_fields(others: OtherFiles, file_path: Optional[str], directory: Optional[str]) -> Dict[str, Any]:
+    """結果の scope / loaded / unparsable_files / note（どのファイルと一緒に検証したか）。"""
+    if not others.loaded and not others.unparsable:
+        note = ("このファイル（テキスト）だけで検証しました。ほかのファイルの定義を参照しているなら、"
+                "そのエラーはモデルの誤りとは限りません（directory を指定してください）。")
+        return {"scope": "file", "loaded": [], "unparsable_files": [], "note": note}
+    fields: Dict[str, Any] = {
+        "scope": "directory",
+        "directory": str(Path(directory).absolute()) if directory else str(Path(file_path).parent.absolute()),
+        "loaded": others.loaded,
+        "unparsable_files": others.unparsable,
+    }
+    if others.unparsable:
+        fields["note"] = ("構文エラーのため読めなかったファイルがあります（unparsable_files）。その中の定義への"
+                          "参照は未解決になります。先にそのファイルの構文エラーを直してください。")
+    return fields
+
+
+def _lint_result(text: str, others: OtherFiles, file_path: Optional[str], directory: Optional[str]) -> Dict[str, Any]:
+    # パースとリント。指摘に行番号を付けるため、source_range を持つ経路でパースする
+    ast, issues, issue_dicts = lint_text_with_locations(text, other_asts=others.asts)
+
+    if ast.get("type") == "error":
+        return {
+            "success": False,
+            "error": f"パースエラー: {ast.get('message')}",
+            "issues": [],
+            "summary": {"total": 0, "errors": 0, "warnings": 0, "info": 0},
+            **_scope_fields(others, file_path, directory),
+        }
+
+    # 問題の集計
+    summary = {
+        "total": len(issues),
+        "errors": len([i for i in issues if i.severity == "error"]),
+        "warnings": len([i for i in issues if i.severity == "warning"]),
+        "info": len([i for i in issues if i.severity == "info"])
+    }
+    return {
+        "success": True,
+        "error": None,
+        "issues": issue_dicts,
+        "summary": summary,
+        **_scope_fields(others, file_path, directory),
+    }
+
+
 @mcp.tool()
-def lint_sysml_file(file_path: str) -> Dict[str, Any]:
+def lint_sysml_file(file_path: str, directory: Optional[str] = None) -> Dict[str, Any]:
     """
     SysMLファイルをリント（構文チェック）して問題を報告
-    
+
+    複数ファイルのモデルに対応する。directory を省略すると、同じフォルダの .sysml
+    （サブフォルダは含めない）を一緒に読み込み、ファイルをまたぐ import・参照を解決する
+    （ほかのファイルの要素の名前の誤記も見つける）。指摘は file_path のファイルについてだけ返す。
+
     Args:
         file_path: SysMLファイルのパス
-        
+        directory: 複数ファイルのモデルのフォルダ。フォルダ内（サブフォルダも含む）の .sysml を
+            すべて一緒に読み込む。"" ならほかのファイルを読み込まない（1ファイルだけで検証）。
+
     Returns:
         リント結果と問題のリストを含む辞書。issues の各要素は重大度・メッセージ・
         rule・element_id・source_range に加え、指摘の行番号 `line`（1始まり。
-        位置の分からない指摘は None）を持つ
+        位置の分からない指摘は None）を持つ。scope は "file"（そのファイルだけで検証）か
+        "directory"（ほかのファイルと一緒に検証）。loaded は一緒に読み込んだファイル、
+        unparsable_files は構文エラーで読めなかったファイル。note は結果を読むときの注意
     """
     try:
         # ファイルの存在確認
@@ -141,38 +207,15 @@ def lint_sysml_file(file_path: str) -> Dict[str, Any]:
                 "issues": [],
                 "summary": {"total": 0, "errors": 0, "warnings": 0, "info": 0}
             }
-        
+
         # ファイル読み込み
         text = path.read_text(encoding="utf-8")
-        
-        # パースとリント。指摘に行番号を付けるため、source_range を持つ経路でパースする
-        ast, issues, issue_dicts = lint_text_with_locations(text)
-        
-        if ast.get("type") == "error":
-            return {
-                "success": False,
-                "error": f"パースエラー: {ast.get('message')}",
-                "issues": [],
-                "summary": {"total": 0, "errors": 0, "warnings": 0, "info": 0}
-            }
-        
-        # 問題の集計
-        summary = {
-            "total": len(issues),
-            "errors": len([i for i in issues if i.severity == "error"]),
-            "warnings": len([i for i in issues if i.severity == "warning"]),
-            "info": len([i for i in issues if i.severity == "info"])
-        }
-        
-        return {
-            "success": True,
-            "error": None,
-            "issues": issue_dicts,
-            "summary": summary,
-            "file_path": str(path.absolute()),
-            "file_size": len(text)
-        }
-        
+        result = _lint_result(text, _other_files(file_path, directory), file_path, directory)
+        if result["success"]:
+            result["file_path"] = str(path.absolute())
+            result["file_size"] = len(text)
+        return result
+
     # MCPツール境界: 想定外の例外もクライアントへのエラー応答に変換するため意図的に広く捕捉する
     except Exception as e:  # noqa: BLE001
         return {
@@ -183,46 +226,31 @@ def lint_sysml_file(file_path: str) -> Dict[str, Any]:
         }
 
 @mcp.tool()
-def lint_sysml_text(sysml_text: str) -> Dict[str, Any]:
+def lint_sysml_text(sysml_text: str, file_path: Optional[str] = None,
+                    directory: Optional[str] = None) -> Dict[str, Any]:
     """
     SysMLテキストを直接リント（構文チェック）して問題を報告
-    
+
     Args:
         sysml_text: SysMLのテキスト内容
-        
+        file_path: このテキストで置き換えるファイル（保存前の確認）。directory を省略すると、
+            同じフォルダの .sysml を一緒に読み込む。
+        directory: 複数ファイルのモデルのフォルダ。フォルダ内（サブフォルダも含む）の .sysml を
+            すべて一緒に読み込む（file_path のファイルは除く）。file_path も directory も無ければ
+            テキストだけで検証する。
+
     Returns:
         リント結果と問題のリストを含む辞書。issues の各要素は重大度・メッセージ・
         rule・element_id・source_range に加え、指摘の行番号 `line`（1始まり。
-        位置の分からない指摘は None）を持つ
+        位置の分からない指摘は None）を持つ。scope・loaded・unparsable_files・note は
+        lint_sysml_file と同じ
     """
     try:
-        # パースとリント。指摘に行番号を付けるため、source_range を持つ経路でパースする
-        ast, issues, issue_dicts = lint_text_with_locations(sysml_text)
-        
-        if ast.get("type") == "error":
-            return {
-                "success": False,
-                "error": f"パースエラー: {ast.get('message')}",
-                "issues": [],
-                "summary": {"total": 0, "errors": 0, "warnings": 0, "info": 0}
-            }
-        
-        # 問題の集計
-        summary = {
-            "total": len(issues),
-            "errors": len([i for i in issues if i.severity == "error"]),
-            "warnings": len([i for i in issues if i.severity == "warning"]),
-            "info": len([i for i in issues if i.severity == "info"])
-        }
-        
-        return {
-            "success": True,
-            "error": None,
-            "issues": issue_dicts,
-            "summary": summary,
-            "text_length": len(sysml_text)
-        }
-        
+        result = _lint_result(sysml_text, _other_files(file_path, directory), file_path, directory)
+        if result["success"]:
+            result["text_length"] = len(sysml_text)
+        return result
+
     # MCPツール境界: 想定外の例外もクライアントへのエラー応答に変換するため意図的に広く捕捉する
     except Exception as e:  # noqa: BLE001
         return {
@@ -465,7 +493,7 @@ def get_server_info() -> Dict[str, Any]:
         "capabilities": [
             "SysMLファイルのパース",
             "SysMLテキストの直接パース",
-            "構文チェック（リント）",
+            "構文チェック（リント。複数ファイルのモデルはフォルダごと名前解決）",
             "AST生成（JSON形式）",
             "完全解析（パース + リント + AST）",
             "Semantic Model生成（stable ID・source range・参照エッジ）"

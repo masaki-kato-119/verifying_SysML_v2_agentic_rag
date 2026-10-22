@@ -45,7 +45,7 @@ linter.py には一切手を入れない。SysMLAdvancedLinter().lint(ast) を�
   `_find_element_in_symbols` をそのまま呼んで揃えている）
 """
 
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from .linter import SysMLAdvancedLinter
 
@@ -621,7 +621,8 @@ def build_semantic_model(text: str, known_external_types: Optional[Set[str]] = N
     return ast, model
 
 
-def lint_text_with_locations(text: str, known_external_types: Optional[Set[str]] = None, *, recover: bool = False):
+def lint_text_with_locations(text: str, known_external_types: Optional[Set[str]] = None, *, recover: bool = False,
+                             other_asts: Sequence[Dict] = ()):
     """テキストをパースして lint し、各指摘を位置付きの辞書で返す（MCP ツール用）。
 
     `lint_sysml(parse_sysml(text))` の経路では AST が source_range を持たず、指摘に
@@ -643,6 +644,8 @@ def lint_text_with_locations(text: str, known_external_types: Optional[Set[str]]
     パースエラーを示す {"type": "error", ...} のまま（呼び出し側がパースエラーを
     報告できるように）、issues / issue_dicts には読めた部分の指摘が入る。回復後の
     木も読めなかったときは、recover=False と同じく issues は空。
+
+    other_asts は、同じモデルのほかのファイルの AST（複数ファイルのモデル。SysMLAdvancedLinter.lint）。
     """
     from .antlr_transformer import (
         parse_sysml_with_semantic_model,
@@ -661,7 +664,7 @@ def lint_text_with_locations(text: str, known_external_types: Optional[Set[str]]
         lint_ast = ast
 
     linter = SysMLAdvancedLinter()
-    issues = linter.lint(lint_ast, known_external_types=known_external_types)
+    issues = linter.lint(lint_ast, known_external_types=known_external_types, other_asts=other_asts)
     nodes = model["nodes"]
     element_index = build_element_index(nodes)
     stable_id_by_node = _build_reverse_index(nodes)

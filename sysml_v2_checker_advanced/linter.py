@@ -5,9 +5,10 @@ SysML v2 Advanced Checker Linter
 """
 
 import re
-from typing import Dict, List, Set
+from typing import Dict, List, Sequence, Set
 
 from . import library_index, scope_resolver, validation_rules
+from .antlr_transformer import extra_of
 from .constants import (
     BUILTIN_TYPES,
     ELEMENT_REFERENCE_ONLY_USAGE_TYPES,
@@ -133,7 +134,8 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         self.feature_subsettings: Dict[str, List[str]] = {}  # フィーチャー名 -> サブセットリスト
         self.feature_redefinitions: Dict[str, List[str]] = {}  # フィーチャー名 -> 再定義リスト
     
-    def lint(self, ast: Dict, known_external_types: Set[str] | None = None) -> List[LintIssue]:
+    def lint(self, ast: Dict, known_external_types: Set[str] | None = None,
+             other_asts: Sequence[Dict] = ()) -> List[LintIssue]:
         """
         ASTをチェックして問題を返す
 
@@ -146,10 +148,19 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
                 そのファイルが実際に正しくimportしているかまでは検証しない
                 （既存のSTANDARD_LIBRARY_PACKAGES方式と同種のトレードオフ）。
                 省略時（デフォルトNone）は単体ファイル動作のままとなる。
+            other_asts: 同じモデルのほかのファイルの AST（model_files.load_other_files）。
+                名前解決（scope_resolver）がファイルをまたいで参照をたどり、ほかのファイルの
+                要素の誤記も見つける。平らな名前表のルールには、そこで宣言された名前を
+                known_external_types と同じ扱いで渡す。指摘は ast のものだけ。
 
         Returns:
             検出された問題のリスト
         """
+        self.other_asts = list(other_asts or ())
+        scoped_external_types = known_external_types
+        if self.other_asts:
+            from .model_files import declared_names
+            known_external_types = set(known_external_types or ()) | declared_names(self.other_asts)
         # 状態をリセット
         self.issues = []
         self.symbols = {}
@@ -308,7 +319,7 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         # 第16パス: スコープつき名前解決（段階 B、eval/pilot_parity/ROADMAP.md）。
         # 平らな名前表による「存在しない型」系の判定を、名前空間・import・可視性・継承を
         # たどる判定（scope_resolver）に置き換える。
-        self._check_scoped_references(ast, known_external_types)
+        self._check_scoped_references(ast, scoped_external_types)
 
         # 最後に、import 漏れで解決できなかった名前へ import のヒントを付ける
         self._add_library_import_hints(ast)
@@ -335,7 +346,8 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         （scope_resolver.py）。確かめられない参照（ライブラリの型の中身など）はエラーに
         しない。メッセージは参照実装と同じ `Couldn't resolve reference to <種類> '<名前>'.`。
         """
-        unresolved = scope_resolver.unresolved_references(ast, external_names=known_external_types)
+        unresolved = scope_resolver.unresolved_references(ast, external_names=known_external_types,
+                                                          other_asts=self.other_asts)
 
         def replaced(issue: LintIssue) -> bool:
             if issue.severity != SEVERITY_ERROR:
@@ -344,6 +356,9 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
                 return bool(self._FLAT_TYPE_MESSAGE.search(issue.message))
             if issue.rule in self._FLAT_NAMESPACE_RULES:
                 return "存在しない" in issue.message or "Couldn't resolve reference" in issue.message
+            if issue.rule == "_check_transition_trigger_type":
+                # accept の型は名前解決が accept の行に出す（ヒントは下で引き継ぐ）
+                return issue.message.startswith("Couldn't resolve reference")
             return False
 
         self.issues = [issue for issue in self.issues if not replaced(issue)]
@@ -356,7 +371,11 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
             root = scope_resolver.split_qualified(reference)[0] if reference else ""
             if "::" in reference and library_index.is_library_package(root):
                 message += self._library_suggestion_suffix(reference)
-            self.issues.append(LintIssue(SEVERITY_ERROR, message, node))
+            elif isinstance(node, dict) and node.get("kind") == "trigger" and not node.get("type_name"):
+                message += (" accept のトリガーは型（item def・attribute def など）で書く。`event X;` は型を"
+                            f"宣言しない（例: `item def {reference};` を定義して `accept {reference}` とする）")
+            # 接続の端・accept のトリガーは、要素の先頭ではなく自分の行を持つ
+            self.issues.append(LintIssue(SEVERITY_ERROR, message, node, line=extra_of(node, "line")))
         self._check_usage_kinds_scoped(ast, known_external_types)
         self._check_accessible_features_scoped(ast, known_external_types)
         self._check_pilot_validations(ast, known_external_types)
@@ -368,7 +387,8 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         """
         already = {(id(issue.node), issue.message.split(":")[0].split("。")[0])
                    for issue in self.issues if issue.severity == SEVERITY_ERROR and issue.node}
-        for node, message in validation_rules.validation_violations(ast, external_names=known_external_types):
+        for node, message in validation_rules.validation_violations(ast, external_names=known_external_types,
+                                                                    other_asts=self.other_asts):
             if (id(node), message) in already:
                 continue
             already.add((id(node), message))
@@ -387,7 +407,8 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
             "metadata usage": "メタデータの型（metadata def）を import するか修飾名で書く"
                               "（`#refinement` には `private import ModelingMetadata::*;`）",
         }
-        for node, message in scope_resolver.kind_violations(ast, external_names=known_external_types):
+        for node, message in scope_resolver.kind_violations(ast, external_names=known_external_types,
+                                                            other_asts=self.other_asts):
             hint = next((h for key, h in hints.items() if key in message),
                         "型の種類が違う（part → part def、attribute → attribute def / ScalarValues::Real など）"
                         "か、型そのものが解決できていない（先にそちらを直す）")
@@ -402,7 +423,8 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         """
         already = {id(issue.node) for issue in self.issues
                    if issue.severity == SEVERITY_ERROR and issue.node and "accessible" in issue.message}
-        for node, reference in scope_resolver.inaccessible_features(ast, external_names=known_external_types):
+        for node, reference in scope_resolver.inaccessible_features(ast, external_names=known_external_types,
+                                                                    other_asts=self.other_asts):
             if id(node) in already:
                 continue
             already.add(id(node))

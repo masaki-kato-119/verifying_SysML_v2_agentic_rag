@@ -240,6 +240,48 @@ ROADMAP の「xpect の期待エラー ≥ 95%」は、期待エラー 164 件�
 
 テスト: 既存のテストはすべて通る。修正した形は `tests/test_scope_resolver.py` の `test_held_out_forms` で固定した。参照名に引用符を残すようにしたので（`Spec::'R-010'`）、2 件のテストの期待値を直した。
 
+## 複数ファイル対応（2026-10-22）
+
+自作のリンターをフィードバックにして 4 ファイルの AGV モデルを生成したところ（`C:\test\sysml_models\eval\linter_gen\RESULT.md`）、MCP の `lint_sysml_file` は 1 ファイルずつ検証するので、ファイルをまたぐ正しい参照がすべて未解決のエラーになった（初稿で 50 件中 46 件が誤検出）。ほかのファイルの名前を `known_external_types` で渡しても、ほかのファイルのパッケージを import したファイルでは解決できない名前がすべて「不明」になり、同じファイルの中の誤記まで見逃した（誤りを 1 つずつ入れた 12 版で 4 件しか見つからない。Pilot は 12 件）。
+
+### 作ったもの
+
+- `ScopeResolver(ast, external_names, other_asts)`: ほかのファイルの AST を、ファイルごとのルートに組み立て、各ファイルの最上位の要素をグローバルな名前空間に置く（Pilot で確認: 最上位の private な要素もほかのファイルから見える。ファイルの最上位の import はそのファイルの中だけに効く）。判定するのは対象のファイルの参照だけ。
+- `model_files.py`: 一緒に検証するファイルを集める。決まりは sysml-mcp-server の `validate_sysml` と同じ（file_path だけなら同じフォルダ、directory ならサブフォルダも含む、`""` なら 1 ファイル）。構文エラーのファイルは読まず、`unparsable_files` として返す。
+- `SysMLAdvancedLinter.lint(..., other_asts)`・`lint_text_with_locations(..., other_asts)`。平らな名前表のルールには、ほかのファイルで宣言された名前を `known_external_types` と同じ扱いで渡す。
+- MCP: `lint_sysml_file(file_path, directory=None)` は既定でフォルダを読む。`lint_sysml_text(sysml_text, file_path=None, directory=None)`（file_path はこのテキストで置き換えるファイル）。結果に `scope`・`loaded`・`unparsable_files`・`note` を付けた。
+
+AGV の probe を調べる中で見つかった、1 ファイルでも起きる名前解決の不足も直した（どれも Pilot で確かめた形）。
+
+- 遷移の `accept T`（型の節の無い形）の型を名前解決で確かめる。指摘は accept の行に出す（古い平らな規則は import があると黙り、遷移の先頭の行に出していた。ヒントは引き継いだ）。
+- 端の名前の付いた接続の端（`interface i : I connect x ::> a.nosuch to ...`）: 元の書き方が `x::>a.nosuch` のまま連鎖として読まれ、確かめていなかった。端の名前を外して確かめ、指摘は端の行に出す（ANTLR の行を端の付帯情報に残した）。
+- 接続の端の先頭の名前が無いもの（`connect a.p to nob.p;`・`connect a to nob2;`・`bind`・interface）を出す。以前は flow だけ。
+- 端の名前（`x ::> wheel.lugNut`、n 項の `connect (x ::> a.p, ...)` も）を接続のメンバーにする（型の同名の端を再定義し、`::>` の先を部分集合にする）。中の `connect y ::> x.q` の x.q を解決する（held-out の Vehicle_Example・Arrowhead_Framework_Example で、上の修正の直後に出た誤検出）。
+- 端の名前の付いた端の型の種類（Pilot は端の行に `A port must be typed by port definitions.`）は、端の種類と行が合わせられないので、以前どおり出さない。
+
+### 結果
+
+| 指標 | 修正前 | 修正後 |
+| --- | --- | --- |
+| AGV の probe（誤りを 1 つずつ入れた 12 版、MCP の `lint_sysml_file`） | 4 / 12（名前を渡したとき）。名前を渡さないと誤検出 10〜25 件に埋もれる | **12 / 12**（Pilot と同じ指摘。正しいモデルはエラー 0） |
+| AGV の初稿（MCP の `lint_sysml_file`） | エラー 50（うち 46 は誤検出） | **エラー 4**（Pilot と同じ 4 件） |
+| 開発: 行 + 種類の再現率 / 適合率（構文エラーの無い 449 件） | 91.7% / 97.2% | 91.8% / 97.3% |
+| 開発: 未解決参照の再現率 / 適合率（同） | 95.6% / 97.7% | 95.8% / 98.0% |
+| 開発: 正しいモデルの誤検出・変異体・xpect | 0 / 110 / 126 | 0 / 110 / 126 |
+| held-out: 行 + 種類の再現率 / 適合率（構文エラーの無い 127 件） | 80.6% / 94.6% | 81.7% / 94.7% |
+| held-out: 未解決参照・型の種類の再現率 | 78.0% / 85.6% | 79.0% / 87.2% |
+| held-out: Pilot がエラーを出さない 96 件での誤検出 | 2 | 2 |
+
+開発と held-out のコーパスは 1 unit = 1 テキストなので、複数ファイルの名前解決そのものは測っていない（AGV の probe だけ）。held-out の誤検出 2 件は以前からの文法の穴。端の修正の直後に held-out で出た新しい誤検出（Vehicle_Example・Arrowhead_Framework_Example）は held-out を見ながら直したので、held-out の数値はここでも汎化の証拠にならない。開発の Pilot に構文エラーのある unit（llm-sonnet-A2）で、端の先頭の未解決が 3 件増えた（import の可視性の無い構文エラーでパッケージが見えないための連鎖。到達判定の外）。
+
+テスト: `tests/test_multi_file.py`（16 件）。既存のテストはすべて通る。
+
+### 残した課題
+
+- 複数ファイルのモデルのコーパス（フォルダ単位の unit）を作り、Pilot の `validate_sysml`（directory）と比べる。
+- 構文エラーのあるほかのファイルは読まない。Pilot はエラー回復で読めた部分の要素を見せる（AGV の probe m02 で、壊れたファイルの前半の定義は解決した）。
+- 名前を渡すたびにほかのファイルをパースし直す（AGV の 4 ファイルで 1 ファイル 0.3〜0.7 秒）。
+
 ## 再現手順
 
 ```

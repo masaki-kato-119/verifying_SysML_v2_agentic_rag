@@ -26,7 +26,7 @@ import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from . import library_index
 from .antlr_transformer import extra_of
@@ -158,11 +158,19 @@ def _merge(results: Iterable[Result]) -> Result:
 
 
 class ScopeResolver:
-    def __init__(self, ast: dict, external_names: Optional[Iterable[str]] = None):
+    def __init__(self, ast: dict, external_names: Optional[Iterable[str]] = None,
+                 other_asts: Sequence[dict] = ()):
         """external_names: 他のファイルにあると分かっている名前（linter の known_external_types）。
-        ルートで見つからない名前がこの中にあれば「不明」とする（1 ファイル単位の検証）。"""
+        ルートで見つからない名前がこの中にあれば「不明」とする（1 ファイル単位の検証）。
+
+        other_asts: 同じモデルのほかのファイルの AST（複数ファイルのモデル）。参照実装と同じく、
+        各ファイルの最上位の要素をグローバルな名前空間に置き、どのファイルからも
+        修飾なしの名前（`private import AGV_Definitions::*;` の AGV_Definitions）で引ける。
+        ファイルの最上位の import はそのファイルの中だけに効く。判定するのは ast の参照だけ。
+        """
         self.external_names = frozenset(_unquote(n) for n in external_names or ())
         self.root = Scope(node={"type": "root"}, name=None)
+        self.file_roots: List[Scope] = [self.root]
         self.scope_of: Dict[int, Scope] = {}  # id(AST ノード) → それを所有する（参照を解決する）名前空間
         self.element_of: Dict[int, Scope] = {}  # id(宣言ノード) → その Scope
         self._library_cache: Dict[str, Scope] = {}
@@ -170,7 +178,21 @@ class ScopeResolver:
         self._memo_cache: Dict[tuple, Result] = {}
         self._cycle_cuts = 0  # 循環で打ち切った回数（打ち切りを含む結果は記憶しない）
         self._build(ast, self.root)
+        if other_asts:
+            global_scope = Scope(node={"type": "root"}, name=None)
+            self.root.parent = global_scope
+            for other in other_asts:
+                file_root = Scope(node={"type": "root"}, name=None, parent=global_scope)
+                self._build(other, file_root)
+                self.file_roots.append(file_root)
+            # 最上位の private な要素もほかのファイルから見える（参照実装で確認、2026-10-22）
+            global_scope.members = [m for file_root in self.file_roots for m in file_root.members]
         self._name_referencing_usages()
+
+    @property
+    def global_members(self) -> List[Scope]:
+        """グローバルな名前空間の要素（`$::A` の A の候補）。1 ファイルならこのファイルのルートの要素。"""
+        return self.root.parent.members if self.root.parent is not None else self.root.members
 
     def _name_referencing_usages(self) -> None:
         """参照する usage（`perform generateTorque;`）は、参照先の宣言名を自分の名前として持つ
@@ -184,7 +206,8 @@ class ScopeResolver:
                     pending.append(member)
                 walk(member)
 
-        walk(self.root)
+        for file_root in self.file_roots:
+            walk(file_root)
         for scope in pending:
             status, found = self.resolve(scope.referenced, scope.parent or self.root, feature=True, exclude=scope)
             names = {self._dealias(f).name for f in found} if status == FOUND else set()
@@ -309,6 +332,15 @@ class ScopeResolver:
             # `transition T ... accept s : Sig` の s は遷移のメンバー（`T.s.x` で参照される）
             element.members.append(Scope(node=trigger, name=_unquote(trigger["reference"]), parent=element,
                                          supertypes=[trigger["type_name"]]))
+        for end_name, path in _named_ends(node):
+            # `interface i : I connect x ::> a.p to ...` の x は接続のメンバー。型の端 x を再定義し、
+            # a.p を部分集合にする（中の `connect y ::> x.q` の x.q は a.p のメンバー。held-out の
+            # Vehicle_Example、2026-10-22）
+            supertypes = [path]
+            if isinstance(node.get("type_name"), str) and node["type_name"]:
+                supertypes.append(f"{node['type_name'].lstrip('~')}::{end_name}")
+            element.members.append(Scope(node={"type": "connection_end", "name": end_name}, name=end_name,
+                                         parent=element, supertypes=supertypes))
         self._build_children(node, element)
 
     def _build_children(self, node: dict, owner: Scope) -> None:
@@ -381,7 +413,7 @@ class ScopeResolver:
             if not segments:
                 return UNKNOWN, []
             context, exclude = self.root, None
-            owned = [m for m in self.root.members if segments[0] in m.names()]
+            owned = [m for m in self.global_members if segments[0] in m.names()]
             status, scopes = (FOUND, owned) if owned else self._library_root(segments[0])
         else:
             status, scopes = self._resolve_first(segments[0], context, exclude)
@@ -852,6 +884,13 @@ def references_of(node: dict) -> List[Reference]:
         for key in ("source", "target"):
             if isinstance(node.get(key), str) and node[key]:
                 refs.append((node[key], "Element", node, True))
+        trigger = node.get("trigger")
+        if isinstance(trigger, dict) and not trigger.get("trigger_kind") and not trigger.get("type_name"):
+            # `accept TaskAssigned` の型（after / when / at は型を持たない。`accept s : Sig` の Sig は
+            # trigger のノードの type_name として確かめる）
+            accepted = trigger.get("reference")
+            if isinstance(accepted, str) and accepted and _chain_head(accepted) == accepted:
+                refs.append((accepted, "Type", trigger, False))
     if node_type == "alias" and isinstance(node.get("target"), str):
         refs.append((node["target"], "Element", node, False))
     return refs
@@ -958,37 +997,54 @@ def _normalized_text(node: dict, key: str) -> Optional[str]:
     return value.replace("::", ".") if isinstance(value, str) and value else None
 
 
-def _end_paths(node: dict) -> List[str]:
-    """接続・束縛・flow・allocate・succession・message・satisfy の by の端（元の書き方の文字列）。"""
-    out: List[str] = []
+def _end_paths(node: dict, named_ends: bool = True) -> List[str]:
+    """接続・束縛・flow・allocate・succession・message・satisfy の by の端（元の書き方の文字列）。
+
+    named_ends=False は、端の名前の付いた端（`connect x ::> a.p to ...`）を除く。
+    """
+    return [text for text, _end in _end_entries(node, named_ends)]
+
+
+def _end_entries(node: dict, named_ends: bool = True) -> List[Tuple[str, Optional[dict]]]:
+    """_end_paths の端と、その端のノード（行を持つ `x ::> a.p` の端だけ。ほかは None）。"""
+    out: List[Tuple[str, Optional[dict]]] = []
+    end_nodes: Dict[int, dict] = {}
 
     def connector_end(end):
         if not isinstance(end, dict):
             return
         if "reference_subsetting" in end:
             text = _normalized_text(end["reference_subsetting"], "referenced_feature")
+            if text:
+                # 元の書き方は端の名前と演算子を含む（`x ::> a.nosuch` → `x::>a.nosuch`）
+                stripped = _END_NAME_PREFIX.sub("", text)
+                if stripped != text and not named_ends:
+                    return
+                text = stripped
+                if extra_of(end["reference_subsetting"], "line") is not None:
+                    end_nodes[len(out)] = end["reference_subsetting"]
         elif end.get("segments"):
             text = _segments_text(end["segments"])
         else:
             text = end.get("reference") if isinstance(end.get("reference"), str) else None
         if text:
-            out.append(text)
+            out.append((text, None))
 
     node_type = node.get("type")
     if node_type in _SUCCESSION_STATEMENTS:
         name = node.get("name")
-        return [name] if isinstance(name, str) and name else []
+        return [(name, None)] if isinstance(name, str) and name else []
     if node_type == "flow_from_stmt":  # action の中の `flow from a.x to b.y;`（区切りはそのまま）
-        return [node[key] for key in ("from_port", "to_port") if isinstance(node.get(key), str) and node[key]]
+        return [(node[key], None) for key in ("from_port", "to_port") if isinstance(node.get(key), str) and node[key]]
     if node_type in ("flow_usage", "message_usage"):
         for key in ("from_end", "to_end"):
             text = _normalized_text(node, key)
             if text:
-                out.append(text)
-        return out
+                out.append((text, None))
+        return [(text, end_nodes.get(i)) for i, (text, _none) in enumerate(out)]
     if node_type in ("satisfy_requirement_usage", "verify_requirement_usage"):
         text = _normalized_text(node, "by")
-        return [text] if text else []
+        return [(text, None)] if text else []
     for key in ("from_end", "to_end", "firstEnd", "thenEnd", "leftEnd", "rightEnd"):
         connector_end(node.get(key))
     for end in node.get("ends") or []:
@@ -998,14 +1054,40 @@ def _end_paths(node: dict) -> List[str]:
         if isinstance(part, dict):
             connector_end(part.get("from_end"))
             connector_end(part.get("to_end"))
-    return out
+    return [(text, end_nodes.get(i)) for i, (text, _none) in enumerate(out)]
 
+
+_END_NAME_PREFIX = re.compile(r"^\s*(?P<name>[A-Za-z_]\w*|'(?:[^'\\]|\\.)*')\s*(?:::>|references)\s*")
+
+
+def _named_ends(node: dict) -> List[Tuple[str, str]]:
+    """接続の端の名前と、その端が部分集合にする feature（`connect x ::> a.p to y ::> b.q` → (x, a.p), (y, b.q)）。"""
+    out: List[Tuple[str, str]] = []
+    for key in ("interface_part", "connector_part"):
+        part = node.get(key)
+        if not isinstance(part, dict):
+            continue
+        for side in ("from_end", "to_end"):
+            end = part.get(side)
+            subsetting = end.get("reference_subsetting") if isinstance(end, dict) else None
+            text = _normalized_text(subsetting, "referenced_feature") if isinstance(subsetting, dict) else None
+            match = _END_NAME_PREFIX.match(text) if text else None
+            if match and text[match.end():]:
+                out.append((_unquote(match.group("name")), text[match.end():]))
+    for end in node.get("ends") or []:
+        # n 項の接続（`connect (x ::> a.p, y ::> b.q)`。held-out の Arrowhead_Framework_Example）
+        if isinstance(end, dict) and isinstance(end.get("declared_name"), str) and end["declared_name"]:
+            path = _segments_text(end.get("segments")) or end.get("reference")
+            if isinstance(path, str) and path:
+                out.append((_unquote(end["declared_name"]), path))
+    return out
 
 # `first a then b;` / `then b;` の参照先（端と同じく、外側の型の feature を指せない）
 _SUCCESSION_STATEMENTS = frozenset({"then_stmt", "first_stmt"})
 
 
-def inaccessible_features(ast: dict, external_names: Optional[Iterable[str]] = None) -> List[Tuple[dict, str]]:
+def inaccessible_features(ast: dict, external_names: Optional[Iterable[str]] = None,
+                          other_asts: Sequence[dict] = ()) -> List[Tuple[dict, str]]:
     """参照実装の `Must be an accessible feature (use dot notation for nesting)` に当たる参照。
 
     2026-10-16 に参照実装で境界を確かめた規則:
@@ -1019,7 +1101,7 @@ def inaccessible_features(ast: dict, external_names: Optional[Iterable[str]] = N
 
     戻り値: (ノード, 問題の参照)。解決できない参照は扱わない（unresolved_references が出す）。
     """
-    resolver = ScopeResolver(ast, external_names)
+    resolver = ScopeResolver(ast, external_names, other_asts)
     out: List[Tuple[dict, str]] = []
 
     def is_type(scope: Scope) -> bool:
@@ -1310,9 +1392,10 @@ def _usage_rule_of(node: dict) -> Optional[Tuple[str, str, bool]]:
     return _USAGE_TYPE_RULES.get(node_type)
 
 
-def kind_violations(ast: dict, external_names: Optional[Iterable[str]] = None) -> List[Tuple[dict, str]]:
+def kind_violations(ast: dict, external_names: Optional[Iterable[str]] = None,
+                    other_asts: Sequence[dict] = ()) -> List[Tuple[dict, str]]:
     """usage の型の種類と、perform / exhibit / satisfy の参照先の種類の誤り: (ノード, 参照実装のメッセージ)。"""
-    resolver = ScopeResolver(ast, external_names)
+    resolver = ScopeResolver(ast, external_names, other_asts)
     out: List[Tuple[dict, str]] = []
     cache: Dict[int, Optional[List[object]]] = {}
 
@@ -1397,7 +1480,10 @@ def kind_violations(ast: dict, external_names: Optional[Iterable[str]] = None) -
                         if types and any(t is _PROXY for t in types):
                             out.append((node, "A usage must be typed by definitions."))
                             return
-        for text in _end_paths(node):
+        # 端の名前の付いた端（`connect x ::> a.p to ...`）は、参照実装は端の行に端の種類の
+        # メッセージ（`A port must be typed by port definitions.`）を出す。AST に端の行が
+        # 無いので出さない（行の違う指摘は、見逃しと誤検出の両方になる）
+        for text in _end_paths(node, named_ends=False):
             status, found = resolve_path(text, owner, None)
             if status != FOUND:
                 continue
@@ -1530,9 +1616,10 @@ def kind_violations(ast: dict, external_names: Optional[Iterable[str]] = None) -
     return out
 
 
-def unresolved_references(ast: dict, external_names: Optional[Iterable[str]] = None) -> List[Tuple[dict, str, str]]:
+def unresolved_references(ast: dict, external_names: Optional[Iterable[str]] = None,
+                          other_asts: Sequence[dict] = ()) -> List[Tuple[dict, str, str]]:
     """解決できないと言い切れる参照: (ノード, 参照, 種類の名前)。"""
-    resolver = ScopeResolver(ast, external_names)
+    resolver = ScopeResolver(ast, external_names, other_asts)
     out: List[Tuple[dict, str, str]] = []
 
     def visit(node, owner: Scope, local_names: frozenset):
@@ -1566,16 +1653,21 @@ def unresolved_references(ast: dict, external_names: Optional[Iterable[str]] = N
         if node.get("type") not in ("binary_interface_part", "binary_connector_part"):
             # 接続・allocate・satisfy の by などの端の連鎖（`a.b.c`）。`::` を含む端はアクセス範囲の
             # 判定（inaccessible_features）に任せ、ここでは `.` だけの連鎖を確かめる
-            for text in _end_paths(node):
+            for text, end_node in _end_entries(node):
                 segments = _path_segments(text)
-                if len(segments) < 2 or any(sep == "::" for sep, _ in segments) \
+                if not segments or any(sep == "::" for sep, _ in segments) \
                         or segments[0][1] in _FLOW_CONTEXT_NAMES:
                     continue
+                at = end_node if end_node is not None else node  # 端の行に出す（`x ::> a.p` の端）
                 status, found = resolver.resolve(segments[0][1], owner, feature=True)
-                if status == FOUND:
+                if status == NOT_FOUND and node.get("type") not in _SUCCESSION_STATEMENTS:
+                    # 端の先頭の名前が無い（`connect a.p to nob.p;` の nob、`connect a to nob2;`）。
+                    # 参照実装は先頭を出す（先の `.p` も重ねて出すが、同じ行・同じ種類）
+                    out.append((at, segments[0][1], "Feature"))
+                elif status == FOUND and len(segments) > 1:
                     missing = resolver.missing_chain_member(found, [name for _sep, name in segments[1:]])
                     if missing:
-                        out.append((node, missing, "Feature"))
+                        out.append((at, missing, "Feature"))
         referenced = _referenced_feature(node)
         if referenced and _chain_head(referenced) != referenced and (
                 node.get("type") in ("satisfy_requirement_usage", "require_usage") or node.get("reference")
