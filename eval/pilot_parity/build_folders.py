@@ -13,6 +13,8 @@ compare.py をそのまま使える（manifest と units/<id>.sysml の形が同
 source:
   folder-dev      開発で見たモデル（eval/runs・eval/runs_sonnet・eval/linter_gen の AGV、verified のテーマ）
   folder-heldout  held-out と同じ公開リポジトリのフォルダ（build_heldout.py と同じ除外）
+  folder-heldout2 --heldout2: 研究に使っていない題材で、Sonnet / Haiku に 1 回で書かせたモデル
+                  （C:\\test\\sysml_models\\eval\\heldout2\\<書き手>_<題材>。出力は heldout2/ 以下。2026-10-23）
   xfile-mutant    Pilot がエラーを出さないフォルダの 1 ファイルに、ほかのファイルで宣言された名前の誤記を 1 つ入れたもの
                   （operator: xfile_type_typo / xfile_feature_typo / xfile_import_typo。origin は元のフォルダの id）
 
@@ -58,6 +60,16 @@ _SKIP = re.compile(r"/\*.*?\*/|//[^\n]*|\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'",
 
 def folder_id(rel: str) -> str:
     return "folder-" + re.sub(r"[^\w.-]+", "_", rel)
+
+
+def collect_heldout2(models: Path) -> list[tuple[str, Path, list[Path]]]:
+    """新しい held-out（eval/heldout2 の各フォルダ。2 ファイル以上）。"""
+    out = []
+    for directory in sorted(p for p in (models / "eval" / "heldout2").iterdir() if p.is_dir()):
+        files = sorted(directory.glob("*.sysml"))
+        if len(files) >= 2:
+            out.append(("folder-heldout2", directory, files))
+    return out
 
 
 def collect_folders(models: Path) -> list[tuple[str, Path, list[Path]]]:
@@ -175,8 +187,13 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--models", type=Path, default=DEFAULT_MODELS)
     ap.add_argument("--mutants", action="store_true",
-                    help="Pilot がエラーを出さないフォルダ（folders/labels/pilot）に誤りを入れた版を足す")
+                    help="Pilot がエラーを出さないフォルダ（<root>/labels/pilot）に誤りを入れた版を足す")
+    ap.add_argument("--heldout2", action="store_true",
+                    help="新しい held-out（eval/heldout2）を heldout2/ 以下に作る")
     args = ap.parse_args()
+    global OUT
+    root = HERE / ("heldout2" if args.heldout2 else "folders")
+    OUT = root / "corpus"
     manifest_path = OUT / "manifest.json"
     if args.mutants:
         manifest = [m for m in json.loads(manifest_path.read_text(encoding="utf-8")) if m["source"] != "xfile-mutant"]
@@ -184,7 +201,7 @@ def main() -> None:
             shutil.rmtree(old)
         for old in (OUT / "units").glob("*--*"):
             old.unlink()
-        labels = HERE / "folders" / "labels" / "pilot"
+        labels = root / "labels" / "pilot"
         clean = {}
         for m in manifest:
             label = labels / f"{m['id']}.json"
@@ -204,7 +221,8 @@ def main() -> None:
             shutil.rmtree(OUT)
         (OUT / "units").mkdir(parents=True)
         manifest = []
-        for source, directory, files in collect_folders(args.models):
+        collected = collect_heldout2(args.models) if args.heldout2 else collect_folders(args.models)
+        for source, directory, files in collected:
             rel = directory.relative_to(args.models).as_posix()
             texts = {f.name: read(f) for f in files}
             write_folder(folder_id(rel), texts, source, rel, manifest)

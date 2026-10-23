@@ -17,20 +17,22 @@ import json
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-CORPUS = HERE / "folders" / "corpus"
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--out", type=Path, default=HERE / "folders" / "labels" / "pilot")
+    ap.add_argument("--root", default="folders", help="コーパスの置き場所（folders / heldout2）")
+    ap.add_argument("--out", type=Path, default=None, help="既定は <root>/labels/pilot")
     ap.add_argument("--force", action="store_true", help="ラベルがあるフォルダも付け直す")
     args = ap.parse_args()
+    corpus = HERE / args.root / "corpus"
+    args.out = args.out or HERE / args.root / "labels" / "pilot"
 
     from sysml_mcp.backend import Config, SysMLDaemon, SysMLFile, SysMLService
 
     config = Config.from_env()
     version = Path(config.jar).name if hasattr(config, "jar") else "unknown"
-    manifest = json.loads((CORPUS / "manifest.json").read_text(encoding="utf-8"))
+    manifest = json.loads((corpus / "manifest.json").read_text(encoding="utf-8"))
     by_folder: dict[str, list[dict]] = {}
     for entry in manifest:
         by_folder.setdefault(entry["folder"], []).append(entry)
@@ -42,7 +44,7 @@ def main() -> None:
         for n, (folder, entries) in enumerate(sorted(by_folder.items()), 1):
             if not args.force and all((args.out / f"{e['id']}.json").exists() for e in entries):
                 continue
-            directory = CORPUS / "folders" / folder
+            directory = corpus / "folders" / folder
             files = [SysMLFile(path=p.name, text=p.read_text(encoding="utf-8"))
                      for p in sorted(directory.glob("*.sysml"))]
             r = service.validate_files(files, targets=[e["file"] for e in entries])

@@ -443,7 +443,51 @@ AGV の probe を調べる中で見つかった、1 ファイルでも起きる�
 - 構文エラーのあるファイルの回復の仕方が Pilot（Xtext）と違う。AGV の probe m02 では、Pilot は action の中の
   セミコロン抜けのあとで `missing EOF at 'then'` を出してファイルを閉じ、残りの定義を捨てる。ANTLR は残りを
   読み続ける。どこで閉じるかは Xtext のエラー回復の細部によるので、合わせる確かな方法が無い。既知の違いとして残す。
-- 新しい held-out での測定（今の held-out は誤検出の修正に使ったので、汎化の証拠にならない）。
+- ~~新しい held-out での測定~~ → 次の章。
+
+## 新しい held-out: LLM が書いたモデル（2026-10-23）
+
+これまでの held-out は誤検出の修正に使ったので、汎化の証拠にならなくなった。そこで、研究に使っていない題材で、
+新しくモデルを書かせ、**規則を変えずに**測った（測ったのはコミット `6a1d61c` のリンター）。
+
+- **題材**（`C:\test\sysml_models\eval\heldout2\SPECS.md`。AGV の課題と同じ形式）: 家庭用コーヒーマシン、電動アシスト
+  自転車、エレベーター、小型人工衛星の電源サブシステム、輸液ポンプ。
+- **書き手**: 研究の文脈を持たないサブエージェント。開発に使った Opus ではなく Sonnet と Haiku が、題材ごとに 1 本ずつ
+  （10 フォルダ・53 ファイル）。1 回で書いた初稿で、検証ツール・ほかのモデルは使わせていない。
+- **比べ方**: フォルダ単位のコーパスと同じ（`build_folders.py --heldout2`、ほかのスクリプトは `--root heldout2`）。
+  Pilot はフォルダごと、自作は MCP の `lint_sysml_file` の既定（同じフォルダを読む）。
+
+### 結果
+
+| 指標 | 1 ファイルずつ（以前の MCP） | **フォルダを読む（今の MCP）** |
+| --- | --- | --- |
+| 行 + 種類の再現率 / 適合率（Pilot に構文エラーの無い 12 ファイル） | 85.4% / 26.1% | **85.4% / 97.2%** |
+| 同（全 53 ファイル。構文エラーのあるファイルを含む） | 88.1% / 84.4% | **87.7% / 95.6%** |
+| Pilot がエラーを出さないファイル（8 件）での誤検出 | 6 | **1** |
+| unit 単位の見逃し（Pilot はエラー、自作は 0） | 0 | 1 |
+
+Pilot の種類ごとの再現率（全 53 ファイル、フォルダを読む）: 未解決参照 94.6%（544 / 575）、型の種類 90.0%（505 / 561）、
+構文エラーの行 73.1%（122 / 167）、参照先の種類 61.5%（8 / 13）。
+
+- **LLM の初稿の 77%（41 / 53 ファイル）に Pilot の構文エラーがある**。構文エラーの無いファイルは 12 件と少ない。
+  全ファイルの見逃しの大半は、Pilot（Xtext）のエラー回復の連鎖（`A usage must be typed by definitions.` 52 件、
+  `extraneous input ... expecting EOF` 34 件など）で、回復の仕方の違いによる（既知）。
+- **誤検出 1 件**: `entry action initial;`（`action` キーワード付きの entry は新しい action の宣言）を、既存の action への
+  参照（`entry initial;` と同じ）として扱い、後の `first initial then standby;` を未解決とした。AST が両者を区別していない。
+- **見逃し 1 件**: `Redefining feature must have a compatible direction`（再定義の方向の食い違い。未実装の個別ルール、
+  RESULTS.md の 5 章）。
+- Pilot がエラーを出さないフォルダが無かったので、ファイルをまたぐ誤記の版は作れなかった。
+- **比較**: 前の held-out の「段階 D 後（規則を作るときに held-out を見ていない）」は、構文エラーの無い入力で
+  81.4% / 84.9%、正しいモデルの誤検出 27 / 96 だった。今回は 85.4% / 97.2%、誤検出 1 / 8。題材・書き手が違うので
+  直接は比べられないが、誤検出の修正が新しいモデルにも効いていることを示す。
+- **限界**: 規模が小さい（構文エラーの無いファイル 12 件、正しいファイル 8 件）。書き手は Opus 以外だが、同じ
+  Claude の系統。題材の仕様は私が書いた。
+
+### 残した課題
+
+- `entry action x;`（宣言）と `entry x;`（参照）を AST で区別する（今回の誤検出）。直すと、この held-out の数値も
+  汎化の証拠でなくなる。
+- 再定義の方向の食い違い（`Redefining feature must have a compatible direction`）。
 
 ## 再現手順
 
@@ -468,3 +512,7 @@ C:\test\SysMLv2_pilot\sysml-mcp-server\.venv\Scripts\python.exe -I eval\pilot_pa
 .venv\Scripts\python.exe -I eval\pilot_parity\compare.py --corpus eval\pilot_parity\folders\corpus --labels eval\pilot_parity\folders\labels_single --out eval\pilot_parity\folders\results\single
 .venv\Scripts\python.exe -I eval\pilot_parity\analyze_folders.py
 ```
+
+新しい held-out（LLM が書いたモデル、`C:\test\sysml_models\eval\heldout2`）は、上の各スクリプトに `--heldout2`
+（build_folders.py）・`--root heldout2`（label_pilot_folders.py・run_local_folders.py・analyze_folders.py）を付け、
+compare.py の `--corpus`・`--labels`・`--out` を `eval\pilot_parity\heldout2\...` にする。

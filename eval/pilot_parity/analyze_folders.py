@@ -12,10 +12,11 @@ compare.py をフォルダのラベルで 2 回実行してから使う（BASELI
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE / "folders"
+ROOT = HERE / "folders"  # main() の --root で変える
 MODES = {"single": "1 ファイルずつ（以前の MCP）", "multi": "フォルダを読む（今の MCP）"}
 
 
@@ -34,6 +35,12 @@ def line_kind(rows: list[dict]) -> tuple[int, int, int]:
 
 
 def main() -> None:
+    import argparse
+
+    global ROOT
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--root", default="folders", help="コーパスの置き場所（folders / heldout2）")
+    ROOT = HERE / ap.parse_args().root
     manifest = {m["id"]: m for m in json.loads((ROOT / "corpus" / "manifest.json").read_text(encoding="utf-8"))}
     pilot_labels = ROOT / "labels" / "pilot"
     hidden = {uid for uid in manifest
@@ -48,7 +55,7 @@ def main() -> None:
               + " | " + " | ".join(f"{label} 誤検出のファイル" for label in MODES.values()) + " |",
               "| --- | --- | " + " | ".join("---" for _ in MODES) + " | " + " | ".join("---" for _ in MODES) + " |"]
     units = {mode: load_units(mode) for mode in MODES}
-    for source in ("folder-dev", "folder-heldout", "xfile-mutant"):
+    for source in ("folder-dev", "folder-heldout", "folder-heldout2", "xfile-mutant"):
         ids = [uid for uid, m in manifest.items() if m["source"] == source]
         cells, alarms = [], []
         for mode in MODES:
@@ -88,7 +95,8 @@ def main() -> None:
     out = ROOT / "results"
     (out / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1), encoding="utf-8")
     (out / "SUMMARY.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print("\n".join(lines))
+    # -I では PYTHONIOENCODING が効かないので、コンソールの文字コード（cp932）に無い文字があっても落ちないように書く
+    sys.stdout.buffer.write(("\n".join(lines) + "\n").encode("utf-8"))
 
 
 if __name__ == "__main__":
