@@ -126,9 +126,9 @@ _INVOKE = """package V {
 
 def test_invocation_arguments_correspond_to_input_parameters():
     # 位置の引数は subject と方向のある引数に順に対応する。`out` に当たれば方向の食い違いも。
-    # 特化した定義（H）と、ライブラリの subject を継承する要件（NoSubject）は確かめない（Pilot は 30 行目の H も
-    # 誤りにする: H の `in z` は F の x を順番に再定義するので入力は 2 つ。31 行目は Pilot も通す）
-    assert _lines(_INVOKE, "Must correspond to one input parameter") == [15, 16, 17, 19, 20, 21, 23, 24, 25, 28, 29]
+    # 特化した定義 H の `in z` は F の x を順番に再定義するので入力は 2 つ（30 行目）。ライブラリの subject を
+    # 継承する要件（NoSubject）は確かめない（31 行目は Pilot も通す）
+    assert _lines(_INVOKE, "Must correspond to one input parameter") == [15, 16, 17, 19, 20, 21, 23, 24, 25, 28, 29, 30]
     assert _lines(_INVOKE, "Redefining feature must have a compatible direction") == [16]
     assert _lines(_INVOKE, "Couldn't resolve reference to Feature 'w'") == [23]
 
@@ -228,3 +228,112 @@ def test_subject_must_be_first_parameter():
     lines = sorted(d["line"] for d in lint_text_with_locations(_SUBJECT)[2]
                    if d["severity"] == "error" and "8.2.2.21" in d["message"])
     assert lines == [7, 9, 10, 13, 17, 18, 20, 21, 22, 23, 24, 27]
+
+
+_SPECIALIZED = """package V {
+    private import ScalarValues::*;
+    calc def F { in x : Real; in y : Real; return r : Real; }
+    calc def H :> F { in z : Real; }
+    calc def H2 :> F { in a : Real; in b : Real; in c : Real; }
+    calc def H3 :> H { }
+    calc def H4 :> F;
+    calc def H5 :> F { in :>> y; }
+    action def A { in p : Real; out q : Real; }
+    action def A2 :> A { in s : Real; }
+    attribute v1 = H(1.0, 2.0);
+    attribute v2 = H(1.0, 2.0, 3.0);
+    attribute v3 = H2(1.0, 2.0, 3.0);
+    attribute v4 = H2(1.0, 2.0, 3.0, 4.0);
+    attribute v5 = H3(1.0, 2.0, 3.0);
+    attribute v6 = H4(1.0, 2.0, 3.0);
+    attribute v7 = H5(1.0, 2.0, 3.0);
+    attribute v8 = H(z = 1.0, y = 2.0);
+    attribute v9 = H(x = 1.0);
+    action a1 = A2(1.0, 2.0);
+}
+"""
+
+
+def test_specialized_definition_parameters_redefine_inherited_ones_in_order():
+    # `calc def H :> F { in z; }` の引数は z・y（z に再定義された x は名前で引けない）。`in :>> y` は y を除く
+    assert _lines(_SPECIALIZED, "Must correspond to one input parameter") == [12, 14, 15, 16, 17, 17, 19, 20]
+    assert _lines(_SPECIALIZED, "Couldn't resolve reference to Feature 'x'") == [19]
+    assert _lines(_SPECIALIZED, "Redefining feature must have a compatible direction") == [20]
+
+
+_VARIANT = """package V {
+    part def Engine; part def E4 :> Engine; part def E6 :> Engine;
+    variation part top : Engine { variant part t1 : E4; }
+    part def Family {
+        variation part w : Engine { variant part w1 : E4; variant part w2 : E6; }
+        part a1 = top.t1;
+        part a2 = w.w1;
+        part inner {
+            part a3 = w.w1;
+        }
+    }
+    part fam : Family;
+    part a4 = fam.w.w1;
+    part a5 = top.t1;
+    part p {
+        variation part pv : Engine { variant part pv1 : E4; }
+        part a6 = pv.pv1;
+    }
+    action def A {
+        variation action va { variant action va1; }
+        first start then va.va1;
+    }
+    part def F2 {
+        variation part w : Engine { variant part w1 : E4; }
+        constraint c { w.w1 != null }
+        part a7 :> w.w1;
+    }
+    part def Family2 :> Family {
+        part b1 = w.w2;
+    }
+}
+"""
+
+
+def test_variant_of_a_variation_usage_is_not_a_valid_chain_member():
+    # 型・usage の中の variation の usage の variant を `.` でたどると誤り。パッケージの直下の variation は通る
+    assert _lines(_VARIANT, "Must be a valid feature") == [7, 9, 13, 17, 21, 25, 26, 29]
+
+
+_SEMANTIC = """package S {
+    private import Metaobjects::SemanticMetadata;
+    requirement def Goal;
+    part def Machine;
+    attribute def Level;
+    abstract requirement goals : Goal[0..*] nonunique;
+    abstract part machines : Machine[0..*];
+    abstract attribute levels : Level[0..*];
+    metadata def <g> G :> SemanticMetadata { :>> baseType = goals meta SysML::RequirementUsage; }
+    metadata def <m> M :> SemanticMetadata { :>> baseType = machines meta SysML::PartUsage; }
+    metadata def <l> L :> SemanticMetadata { :>> baseType = levels meta SysML::AttributeUsage; }
+    #g item i1;
+    #g port p1;
+    #g action a1;
+    #g constraint c1;
+    #g requirement r1;
+    #m attribute a2;
+    #m item i2;
+    #m action a3;
+    #l part p2;
+    #l attribute a4;
+    #m part p3 : Machine;
+    #m port p4;
+    #g part def PD;
+}
+"""
+
+
+def test_semantic_metadata_base_type_gives_the_types_of_its_feature():
+    # `#m attribute a2;` は machines（Machine 型）を特化するので attribute の種類の誤り
+    assert [(line, message.split(". ")[0] + ".") for line, message in _errors(_SEMANTIC) if "typed by" in message] == [
+        (13, "A port must be typed by port definitions."),
+        (17, "An attribute must be typed by attribute definitions."),
+        (19, "An action must be typed by action definitions."),
+        (20, "An occurrence, item or part must be typed by occurrence definitions."),
+        (23, "A port must be typed by port definitions."),
+    ]

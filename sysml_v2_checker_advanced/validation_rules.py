@@ -13,7 +13,14 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .antlr_transformer import extra_of
-from .scope_resolver import FOUND, Scope, ScopeResolver, _classes_of, _normalized_text
+from .scope_resolver import (
+    FOUND,
+    Scope,
+    ScopeResolver,
+    _classes_of,
+    _normalized_text,
+    _path_segments,
+)
 
 Violation = Tuple[dict, str]
 
@@ -179,6 +186,9 @@ def validation_violations(ast: dict, external_names: Optional[Iterable[str]] = N
             check_invocation(node, owner)
         # 「Cannot annotate <メタクラス>」
         check_annotations(node, owner)
+        # 「Must be a valid feature」: variation の usage の variant を `.` でたどる連鎖
+        for text, at in _chain_references(node):
+            check_variant_chain(text, at, owner)
 
         inner = element or owner
         for key, value in node.items():
@@ -323,8 +333,8 @@ def validation_violations(ast: dict, external_names: Optional[Iterable[str]] = N
     def invoked_parameters(name: str, owner: Scope) -> Optional[Tuple[List[dict], set]]:
         """呼び出した型の引数の並び（subject と方向のある引数、宣言の順）と、型のメンバーの名前。分からなければ None。
 
-        呼び出せるのは、このファイルの振る舞いの定義（特化を持たないもの。特化した定義の引数は継承した引数を
-        順番に再定義するので並びが変わる）と、その定義で型付けした、自分では引数を書いていない usage。
+        呼び出せるのは、このファイルの振る舞いの定義と、その定義で型付けした、自分では引数を書いていない usage。
+        特化した定義の引数の並びは effective_parameters。
         """
         status, found = resolver.resolve(name, owner)
         if status == FOUND and len(found) > 1:
@@ -346,14 +356,46 @@ def validation_violations(ast: dict, external_names: Optional[Iterable[str]] = N
             node = invoked.node
             if node.get("type") not in _INVOCABLE_DEFINITIONS:
                 return None
-        if invoked.supertypes:
+        return effective_parameters(invoked)
+
+    def effective_parameters(definition: Scope, depth: int = 0) -> Optional[Tuple[List[dict], set]]:
+        """定義の引数の並びと、名前で引けるメンバーの名前（Pilot 0.63.0 で確かめた規則、2026-10-23）。
+
+        特化した定義（`calc def H :> F { in z; }`）の自分の方向のある引数は、継承した引数を順番に再定義する
+        （H の引数は z・y。z に再定義された x は名前で引けない）。自分の引数より後ろの継承した引数は残るが、
+        自分の引数が `:>>` で明示的に再定義したもの（`calc def H5 :> F { in :>> y; }` の y）は除く。
+        特化の先が 1 つのこのファイルの振る舞いの定義でなければ None。
+        """
+        node = definition.node or {}
+        if node.get("type") not in _INVOCABLE_DEFINITIONS or depth > 6:
             return None
-        parameters = _invocation_parameters(node)
-        if node.get("type") in _SUBJECT_DEFINITIONS and not any(p.get("type") == "subject_usage" for p in parameters):
-            # 自分で subject を書いていない要件・case は、ライブラリの subject を継承する（引数が 1 つある）
+        own = _invocation_parameters(node)
+        members = {name for member in definition.members for name in member.names()}
+        if not definition.supertypes:
+            if node.get("type") in _SUBJECT_DEFINITIONS and not any(p.get("type") == "subject_usage" for p in own):
+                # 自分で subject を書いていない要件・case は、ライブラリの subject を継承する（引数が 1 つある）
+                return None
+            return own, members
+        if len(definition.supertypes) != 1 or any(p.get("type") == "subject_usage" for p in own):
             return None
-        members = {name for member in invoked.members for name in member.names()}
-        return parameters, members
+        status, found = resolver.resolve(definition.supertypes[0], definition.parent or resolver.root,
+                                          exclude=definition)
+        if status != FOUND or len(found) != 1:
+            return None
+        base_definition = resolver._dealias(found[0])
+        if base_definition.library is not None or base_definition.node is None:
+            return None
+        base = effective_parameters(base_definition, depth + 1)
+        if base is None:
+            return None
+        base_parameters, base_members = base
+        if any(p.get("type") == "subject_usage" for p in base_parameters):
+            return None
+        explicit = {entry["target"].split("::")[-1].split(".")[-1] for p in own for entry in p.get("redefines") or []
+                    if isinstance(entry, dict) and entry.get("kind") == "redefines" and isinstance(entry.get("target"), str)}
+        replaced = {p.get("name") for p in base_parameters[:len(own)]}
+        rest = [p for p in base_parameters[len(own):] if p.get("name") not in explicit]
+        return own + rest, members | (base_members - replaced - explicit) | explicit
 
     def check_invocation(node: dict, owner: Scope) -> None:
         """呼び出しの引数と、呼び出した型の引数の対応（Pilot 0.63.0 で確かめた規則、2026-10-23）。
@@ -449,6 +491,33 @@ def validation_violations(ast: dict, external_names: Optional[Iterable[str]] = N
                 metaclass = _METACLASS_OF.get((target or {}).get("type") or "")
                 if metaclass and not (_metaclass_ancestors(metaclass) & restrictions):
                     out.append((at, f"Cannot annotate {metaclass}"))
+
+    def check_variant_chain(text: str, at: dict, owner: Scope) -> None:
+        """`w.w1` の w が variation の usage で、w1 がその variant なら `Must be a valid feature`（Pilot 0.63.0 で
+        確かめた規則、2026-10-23）。
+
+        w が型・usage の中にあるときだけ（パッケージの直下の `variation part top { variant part t1; }` の
+        `top.t1` は通る）。値・制約の式・部分集合の先・succession の端のどれでも、継承した w でも同じ。
+        variation の定義の variant（`part e : EngineChoices;` の `e.ev4`）は通る。
+        """
+        segments = _path_segments(text)
+        if len(segments) < 2 or any(sep == "::" for sep, _name in segments):
+            return
+        status, current = resolver.resolve(segments[0][1], owner, feature=True)
+        for _sep, name in segments[1:]:
+            if status != FOUND or len(current) != 1:
+                return
+            scope = resolver._dealias(current[0])
+            status, current = resolver._chain_member(scope, name)
+            if status != FOUND:
+                return
+            node = scope.node or {}
+            holder = (scope.parent.node or {}).get("type") if scope.parent is not None else None
+            if node.get("variability") == "variation" and not str(node.get("type") or "").endswith("_def") \
+                    and scope.library is None and holder not in (None, "root", "package", "library_package") \
+                    and any((resolver._dealias(f).node or {}).get("variability") == "variant" for f in current):
+                out.append((at, "Must be a valid feature"))
+                return
 
     def found_lexically(found: Scope, owner: Scope) -> bool:
         """再定義の先が、継承ではなく、再定義を囲む名前空間（owner かその外側）の要素として見つかったか。
@@ -581,6 +650,22 @@ def _directed_parameters(node: dict) -> List[dict]:
             if isinstance(child, dict) and child.get("type") in ("param", "calc_parameter") \
                     and child.get("direction") in ("in", "out", "inout"):
                 out.append(child)
+    return out
+
+
+def _chain_references(node: dict) -> List[Tuple[str, dict]]:
+    """`.` の連鎖になりうる参照（元の区切りの文字列、出す位置）: 式の名前・接続や succession の端・部分集合と
+    再定義の先。"""
+    out = []
+    if isinstance(node.get("reference"), str) and node["reference"]:
+        text = _normalized_text(node, "reference") if node.get("type") != "name_ref" else node["reference"]
+        if text:
+            out.append((text, node))
+    for entry in node.get("redefines") or []:
+        if isinstance(entry, dict) and isinstance(entry.get("target"), str) and entry["target"]:
+            text = _normalized_text(entry, "target")
+            if text:
+                out.append((text, node))
     return out
 
 

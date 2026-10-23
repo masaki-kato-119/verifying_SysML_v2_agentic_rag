@@ -660,6 +660,34 @@ sha256 をリリースの値と照合）を `C:\test\SysMLv2_pilot\pilot-0.63.0\
   メタデータの baseType による種類の制約。
 - 呼び出しの規則は、特化した定義（継承した引数を順番に再定義する）を確かめない。
 
+## variant の連鎖・意味的メタデータの種類・特化した定義の呼び出し（2026-10-23）
+
+上の残した課題の 3 つ。どれも Pilot 0.63.0 で行と文言が同じになることを確かめた
+（`tests/test_pilot_parity_more_rules.py`）。
+
+- **`Must be a valid feature`**（`validation_rules.check_variant_chain`）: `w.w1` の w が variation の usage で、w1 が
+  その variant。w が型・usage の中にあるときだけで、パッケージの直下の `variation part top` の `top.t1` は通る。
+  値・制約の式・部分集合の先・succession の端のどれでも、継承した w（`Family2 :> Family` の `w.w2`）、連鎖の途中
+  （`fam.w.w1`）でも同じ。variation の定義の variant（`part e : EngineChoices;` の `e.ev4`）は通る。
+- **意味的メタデータの baseType の型**（`scope_resolver.kind_violations`）: `#m attribute a2;` の m の baseType が
+  このファイルの usage（`machines : Machine`）なら、a2 はその型も持ち、attribute の種類の誤りになる。port・action・
+  part も同じ。ライブラリの baseType は確かめない。
+- **特化した定義の呼び出し**（`effective_parameters`）: 特化した定義の自分の方向のある引数は、継承した引数を
+  順番に再定義する（`calc def H :> F { in z; }` の引数は z・y、x は名前で引けず未解決）。自分の引数より後ろの継承
+  した引数は残るが、`:>>` で明示的に再定義したもの（`H5 :> F { in :>> y; }` の y）は除く（H5 の入力は 1 つ）。
+  特化の先が 1 つのこのファイルの振る舞いの定義で、subject を持たないときだけ確かめる。
+- 文法の穴: `#g constraint c1;`。
+
+| 指標 | 前 | 後 |
+| --- | --- | --- |
+| 開発: 行 + 種類（構文エラーの無い 449 件） | 94.1% / 97.5% | **94.4% / 97.5%** |
+| 開発: unit 単位の見逃し | 8（2.7%） | **6（2.0%）**、すべて Pilot に構文エラーのあるもの |
+| 開発: 変異体・正しいモデルの誤検出・xpect | 112 / 112・0・127 / 132 | 同じ |
+| held-out・フォルダ・新しい held-out | 84.9 / 99.3・83.2 / 99.8・92.7 / 100 | 同じ |
+
+開発コーパスの unit 単位の見逃し率は目標（≤ 2%）に届いた。残る 6 件はどれも Pilot が構文エラーを出す入力で、
+回復の仕方の違い（`BASELINE.md` の構文エラーの章、`RESULTS.md` の「残る差」）による。
+
 ## 再現手順
 
 ```

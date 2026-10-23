@@ -1568,6 +1568,18 @@ def kind_violations(ast: dict, external_names: Optional[Iterable[str]] = None,
                 if inherited is None:
                     return None
                 types.extend(inherited)
+        if element is not None and node.get("prefixMetadata") and depth <= 5:
+            # 意味的メタデータの baseType がこのファイルの usage なら、その型も持つ（`#g3 attribute a3;` の g3 が
+            # `:>> baseType = goals meta SysML::RequirementUsage;` なら a3 は goals の型 Goal を持ち、attribute の
+            # 種類の誤り。参照実装で確認、2026-10-23）。ライブラリの baseType は確かめない
+            for base in element.super_scopes:
+                base = resolver._dealias(base)
+                if base.library is None and base.node is not None and base is not element.parent \
+                        and not str(base.node.get("type") or "").endswith("_def"):
+                    inherited = all_types(base.node, base.parent or resolver.root, depth + 1)
+                    if inherited is None:
+                        return None
+                    types.extend(inherited)
         cache[key] = types
         return types
 

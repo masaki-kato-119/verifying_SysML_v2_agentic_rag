@@ -970,8 +970,9 @@ calculationUsage
 // （ConstraintUsage_Invalid.sysml）のように、型節がカンマ区切りの複数型を
 // 取ることがある（calculationUsageと同じ理由。2026-08-28、730件パース
 // 失敗の要因分析で発見）。
+// `#g constraint c1;`（前置メタデータ注釈。参照実装は受理する、2026-10-23）
 constraintUsage
-    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'constraint' simpleName?
+    : visibilityIndicator? prefixMetadataAnnotation* isAbstract='abstract'? isRef='ref'? 'constraint' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' ID (',' extraTypeRefs+=ID)*)?
       multiplicitySpec?
