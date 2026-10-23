@@ -141,6 +141,8 @@ class AnnotatedNode(dict):
 
 # 付帯情報として属性へ移すキー（visit() の上書きで、ノードの dict から取り除く）
 _EXTRA_KEY_SUFFIX = "_source"
+# 端の行（flow・message の `from a.x to b.y` は先頭と違う行にありうる。参照実装は端の行に出す）
+_EXTRA_LINE_SUFFIX = "_line"
 _EXTRA_KEYS = frozenset({"referenceForm"})
 
 
@@ -158,7 +160,7 @@ def extra_of(node, key: str):
 
 
 def _move_extra(node: Dict) -> Dict:
-    keys = [k for k in node if k in _EXTRA_KEYS or k.endswith(_EXTRA_KEY_SUFFIX)]
+    keys = [k for k in node if k in _EXTRA_KEYS or k.endswith(_EXTRA_KEY_SUFFIX) or k.endswith(_EXTRA_LINE_SUFFIX)]
     if not keys:
         return node
     extra = {k: node[k] for k in keys}
@@ -177,6 +179,11 @@ def _colon_source(key: str, ctx) -> Dict:
     return {f"{key}_source": text} if "::" in text else {}
 
 
+def _end_line(key: str, ctx) -> Dict:
+    """端の行を `<key>_line` に残す（visit() が付帯情報へ移すので、AST の完全一致のテストは変わらない）。"""
+    return {f"{key}_line": ctx.start.line} if ctx is not None else {}
+
+
 class SysMLMinASTVisitor(SysMLMinVisitor):
     """パース木の各ノードをAST dictに組み立てる。"""
 
@@ -190,8 +197,20 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # 中では親のstable_idがまだ決まっておらずここでは計算できない）。
         self._ctx_by_node_id: Dict[int, object] = {}
 
+    # エラー回復後の木を読むとき（parse_sysml_with_semantic_model_recovering）。True なら、形の崩れた
+    # 部分木（子の無い文脈など）で例外になっても、その部分木だけを {"type": "recovered_error"} にして
+    # 残りを読む（以前はファイル全体を読めなかったとみなし、ほかのファイルからも見えなかった。
+    # 参照実装は回復で読めた部分の要素を見せる。2026-10-22、フォルダ単位のコーパス）
+    recovering = False
+
     def visit(self, tree):
-        node = super().visit(tree)
+        if self.recovering:
+            try:
+                node = super().visit(tree)
+            except Exception:  # noqa: BLE001 -- 回復後の木は形が崩れうる。その部分木だけを捨てる
+                return {"type": "recovered_error"}
+        else:
+            node = super().visit(tree)
         if isinstance(node, dict):
             node = _move_extra(node)
         if isinstance(node, dict) and "type" in node:
@@ -919,6 +938,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 **({"to_end": _namespace_path_text(ctx.toEnd)} if ctx.toEnd is not None else {}),
                 **_colon_source("from_end", ctx.fromEnd),
                 **_colon_source("to_end", ctx.toEnd),
+                **_end_line("from_end", ctx.fromEnd),
+                **_end_line("to_end", ctx.toEnd),
                 **({"item_multiplicity": self._multiplicity_dict(ctx.ofMult)} if ctx.ofMult is not None else {}),
                 **({"item_name": _simple_name_text(ctx.ofName)} if ctx.ofName is not None else {}),
                 "children": [self.visit(el) for el in ctx.partBodyElement()],
@@ -946,6 +967,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "to_end": to_end,
             **_colon_source("from_end", ctx.fromEnd),
             **_colon_source("to_end", ctx.toEnd),
+            **_end_line("from_end", ctx.fromEnd),
+            **_end_line("to_end", ctx.toEnd),
             **({"redefines": bare_redefines} if bare_redefines else {}),
             # `flow call_getItems of CallGiveItems[1] from tlu.cll to
             # apsph.cll;`（AHFSequences.sysml）のように、`of`型の直後に
@@ -2785,6 +2808,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "to_end": _namespace_path_text(ctx.toEnd) if ctx.toEnd is not None else None,
             **_colon_source("from_end", ctx.fromEnd),
             **_colon_source("to_end", ctx.toEnd),
+            **_end_line("from_end", ctx.fromEnd),
+            **_end_line("to_end", ctx.toEnd),
             # `message :>> setSpeedMessage = driver_a.driverBehavior.
             # sendSetSpeed.sentMessage;`（Interaction Realization-1.sysml）
             # のように、redefine節の後に`= value`値代入を持つことがある
@@ -4120,6 +4145,7 @@ def parse_sysml_with_semantic_model_recovering(text: str):
     tree, errors = _parse_to_tree(text)
     error_ast = {"type": "error", "message": "; ".join(errors)}
     visitor = SysMLMinASTVisitor()
+    visitor.recovering = bool(errors)
     try:
         ast = visitor.visit(tree)
         if not isinstance(ast, dict):

@@ -1017,7 +1017,10 @@ def test_antlr_transition_do_inline_send_effect():
     assert effect["send"]["to"] == "B"
     assert effect["send"]["via"] is None
     assert effect["send"]["payload"]["type"] == "new_instance"
-    assert lint_ast(ast) == []
+    # Signal は定義していないので、参照実装と同じく未解決（2026-10-22 に確認。参照実装は B が
+    # state def であることのエラーも出す）
+    assert [i.message for i in lint_ast(ast) if i.severity == "error"] == [
+        "Couldn't resolve reference to Element 'Signal'."]
 
 
 def test_antlr_implicit_transition_first_omitted():

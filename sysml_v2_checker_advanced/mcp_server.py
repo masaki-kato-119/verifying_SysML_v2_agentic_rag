@@ -134,16 +134,23 @@ def _scope_fields(others: OtherFiles, file_path: Optional[str], directory: Optio
     if not others.loaded and not others.unparsable:
         note = ("このファイル（テキスト）だけで検証しました。ほかのファイルの定義を参照しているなら、"
                 "そのエラーはモデルの誤りとは限りません（directory を指定してください）。")
-        return {"scope": "file", "loaded": [], "unparsable_files": [], "note": note}
+        return {"scope": "file", "loaded": [], "partial_files": [], "unparsable_files": [], "note": note}
     fields: Dict[str, Any] = {
         "scope": "directory",
         "directory": str(Path(directory).absolute()) if directory else str(Path(file_path).parent.absolute()),
         "loaded": others.loaded,
+        "partial_files": others.partial,
         "unparsable_files": others.unparsable,
     }
+    notes = []
+    if others.partial:
+        notes.append("構文エラーのあるファイルは、エラー回復で読めた部分だけを使いました（partial_files）。"
+                     "そのファイルの定義への参照は、構文エラーを直すまで正しく確かめられないことがあります。")
     if others.unparsable:
-        fields["note"] = ("構文エラーのため読めなかったファイルがあります（unparsable_files）。その中の定義への"
-                          "参照は未解決になります。先にそのファイルの構文エラーを直してください。")
+        notes.append("構文エラーのため読めなかったファイルがあります（unparsable_files）。その中の定義への"
+                     "参照は未解決になります。先にそのファイルの構文エラーを直してください。")
+    if notes:
+        fields["note"] = "".join(notes)
     return fields
 
 

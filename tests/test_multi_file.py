@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-from sysml_v2_checker_advanced import mcp_server
 from sysml_v2_checker_advanced.model_files import load_other_files, model_files
 from sysml_v2_checker_advanced.semantic_model import lint_text_with_locations
 
@@ -206,10 +205,40 @@ def test_model_files_follow_validate_sysml_rules(tmp_path: Path):
     # "" は 1 ファイルだけ
     assert model_files(target, "") == []
     others = load_other_files(model_files(target), base=tmp_path)
-    assert others.loaded == ["a.sysml"] and others.unparsable == ["broken.sysml"]
+    # 構文エラーのファイルは、エラー回復で読めた部分を使う（参照実装と同じく、ほかのファイルに見せる）
+    assert others.loaded == ["a.sysml", "broken.sysml"] and others.partial == ["broken.sysml"]
+    assert others.unparsable == []
+
+
+def test_definitions_before_a_syntax_error_in_another_file_are_visible():
+    # 参照実装は、構文エラーのあるファイルの回復で読めた部分の要素をほかのファイルに見せる
+    # （AGV の probe m02: 別のファイルの action の中のセミコロン抜けのあとも、その前の定義は解決する）
+    broken = """package Behavior {
+    action def Plan;
+    action mission {
+        action plan : Plan;
+        first start;
+        then plan
+        then done;
+    }
+}
+"""
+    from sysml_v2_checker_advanced.model_files import parse_other_file
+
+    other, errors = parse_other_file(broken)
+    assert errors and other is not None
+    text = "package S {\n    private import Behavior::*;\n    part p { perform mission.plan; perform mission.plann; }\n}\n"
+    ast, _issues, dicts = lint_text_with_locations(text, other_asts=[other])
+    assert [d["message"] for d in dicts if d["severity"] == "error"] == [
+        "Couldn't resolve reference to Feature 'plann'."]
 
 
 def test_mcp_lint_sysml_file_reads_the_folder(tmp_path: Path):
+    # MCP サーバ（fastmcp）を読めない環境では、この 1 件だけ飛ばす（名前解決の試験は fastmcp に依らない）
+    try:
+        from sysml_v2_checker_advanced import mcp_server
+    except ImportError as exc:
+        pytest.skip(f"MCP サーバを読み込めない: {exc}")
     lint = getattr(mcp_server.lint_sysml_file, "fn", mcp_server.lint_sysml_file)
     (tmp_path / "Defs.sysml").write_text(DEFS, encoding="utf-8")
     (tmp_path / "Behavior.sysml").write_text(BEHAVIOR, encoding="utf-8")
@@ -226,3 +255,101 @@ def test_mcp_lint_sysml_file_reads_the_folder(tmp_path: Path):
     text_lint = getattr(mcp_server.lint_sysml_text, "fn", mcp_server.lint_sysml_text)
     replaced = text_lint(_structure("    part v : Vehicl;"), file_path=str(target))
     assert any("'Vehicl'" in i["message"] for i in replaced["issues"]), replaced["issues"]
+
+
+def test_flow_end_may_name_the_enclosing_interface():
+    # interface の本体の flow の端が、その interface 自身の名前から始まる形は参照実装で通る
+    # （フォルダ単位のコーパスの SysML-v2-Release ServerSequenceRealization-3）
+    text = """package P {
+    item def Msg;
+    port def PP { in ref m : Msg; }
+    interface def PI { end source : ~PP; end target : PP; }
+    part a { port p : ~PP; }
+    part b { port p : PP; }
+    interface pi : PI connect a.p to b.p {
+        flow f from pi.source.m to pi.target.m;
+    }
+}
+"""
+    assert _errors(text) == []
+
+
+def test_reference_positions_found_by_the_folder_corpus():
+    # フォルダ単位のコーパスでファイルをまたぐ誤記を見逃した位置（2026-10-22）。どれも参照実装と同じ指摘
+    text = """package G {
+    private import ScalarValues::*;
+    item def Sig;
+    item def Msg { attribute x : Real; }
+    port def MP { out item m : Msg; }
+    part def Eng { port fp : MP; attribute d : Real; }
+    calc def Vel { in a : Real; return : Real; }
+    part car {
+        part e : Eng;
+        part c : Eng;
+        flow f1 of Msgg from c.fp.m to e.fp.m;
+        attribute v : Real = Vell(1.0);
+        attribute w : Real = Vel(1.0);
+        item s : Msg = new Msgx();
+        ref part sub :> c.noo;
+        action act {
+            action r1 accept Sigg via c.fp;
+            action r2 accept Sig via c.fp;
+        }
+        flow f3 of Msg
+            from c.fp.m to e.fp.mx;
+    }
+}
+"""
+    assert _errors(text) == [
+        (11, "Couldn't resolve reference to Type 'Msgg'."),        # flow の `of T`
+        (12, "Couldn't resolve reference to Element 'Vell'."),      # 式の中の呼び出し
+        (14, "Couldn't resolve reference to Element 'Msgx'."),      # new T(...)
+        (15, "Couldn't resolve reference to Feature 'noo'."),       # 部分集合の先の連鎖
+        (17, "Couldn't resolve reference to Type 'Sigg'."),         # action の中の accept
+        (21, "Couldn't resolve reference to Feature 'mx'."),        # flow の端は端の行に出す
+    ]
+
+
+def test_library_functions_need_an_import():
+    # 参照実装は import していないライブラリの関数の呼び出しを未解決にする
+    text = """package H {
+    private import ScalarValues::*;
+    package Inner { calc def Acc { in a : Real; return : Real; } }
+    part p {
+        attribute a1 : Real = sqrt(2.0);
+        attribute a3 : Real = Inner::Acc(1.0);
+        attribute a4 : Real = Inner::Accx(1.0);
+    }
+}
+"""
+    assert _errors(text) == [(5, "Couldn't resolve reference to Element 'sqrt'."),
+                             (7, "Couldn't resolve reference to Element 'Inner::Accx'.")]
+
+
+def test_prefix_metadata_base_type_and_lambda_parameter_chains():
+    # `#service port p1` は baseType（global_sd）のメンバーを持つ。特化の無い metadata は何も足さない。
+    # ラムダの型のある引数の連鎖は、その型から確かめる
+    text = """package M {
+    private import Metaobjects::SemanticMetadata;
+    private import ControlFunctions::forAll;
+    port def SD { out item retall; }
+    port global_sd : SD;
+    metadata def <service> SDM :> SemanticMetadata { :>> baseType = global_sd meta SysML::PortUsage; }
+    metadata def <tag> Tag;
+    part a {
+        #service port p1;
+        #tag port p2 { out item q; }
+    }
+    part b {
+        attribute y = a.p1.retal;
+        attribute z = a.p2.qq;
+    }
+    part def W { attribute r; }
+    part def A { part wheel : W; }
+    constraint def C { in xs : A[4]; xs->forAll {in ref w: A; w.wheel.rr > 0} }
+}
+"""
+    # 参照実装は値の式の連鎖の先を Feature と書く（自作は Element。制約の式では参照実装も Element）。
+    # 種類の語は比べず、行と名前を比べる
+    assert [(line, message.rsplit("'", 2)[1]) for line, message in _errors(text) if "resolve" in message] == [
+        (13, "retal"), (14, "qq"), (18, "rr")]

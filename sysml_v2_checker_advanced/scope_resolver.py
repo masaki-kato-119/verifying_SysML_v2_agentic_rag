@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from . import library_index
-from .antlr_transformer import extra_of
+from .antlr_transformer import _with_extra, extra_of
 
 FOUND = "found"
 NOT_FOUND = "not_found"
@@ -188,6 +188,86 @@ class ScopeResolver:
             # 最上位の private な要素もほかのファイルから見える（参照実装で確認、2026-10-22）
             global_scope.members = [m for file_root in self.file_roots for m in file_root.members]
         self._name_referencing_usages()
+        self._drop_plain_metadata_opaque()
+
+    def _drop_plain_metadata_opaque(self) -> None:
+        """前置のメタデータ（`#idd port p { ... }`）が足す基底の型を、分かる範囲で確かめる。
+
+        前置のメタデータは基底の型を足しうる（SemanticMetadata の `:>> baseType = X meta ...`）ので、
+        型を不明（opaque）にしていた。metadata def の特化の連鎖をたどり、baseType が書いてあれば X を
+        継承元にし、SemanticMetadata まで baseType が無ければ何も足さない。それ以外（ほかのライブラリの
+        metadata、解決できない名前）は不明のまま（フォルダ単位のコーパスの Arrowhead_Framework_Example、
+        2026-10-22。参照実装は `x.APIS_MQTT.retal` の retal を確かめる）。
+        """
+        changed = False
+
+        def base_of(definition: Scope) -> Optional[str]:
+            """metadata def 自身に書いた `:>> baseType = X meta T` / `default X meta T` の X。"""
+            for child in (definition.node or {}).get("children") or []:
+                if not isinstance(child, dict):
+                    continue
+                targets = [e.get("target") for e in child.get("redefines") or [] if isinstance(e, dict)]
+                if child.get("type") == "value_binding":
+                    targets.append(child.get("target"))
+                if "baseType" not in targets:
+                    continue
+                for key in ("value", "defaultValue"):
+                    expr = child.get(key)
+                    base = expr.get("base") if isinstance(expr, dict) and expr.get("type") == "meta_expr" else None
+                    if isinstance(base, dict) and isinstance(base.get("reference"), str):
+                        return base["reference"]
+                return ""  # baseType を書いているが形が分からない
+            return None
+
+        def added(name: str, context: Scope, depth: int = 0):
+            """("none", []) 何も足さない / ("base", 継承元) / ("unknown", [])。"""
+            if depth > 8:
+                return "unknown", []
+            status, found = self.resolve(name, context)
+            if status != FOUND or not found:
+                return "unknown", []
+            bases: List[Scope] = []
+            for definition in (self._dealias(f) for f in found):
+                if definition.library is not None:
+                    if definition.library.split("::")[-1] == "SemanticMetadata":
+                        continue
+                    return "unknown", []
+                if (definition.node or {}).get("type") != "metadata_def":
+                    return "unknown", []
+                base = base_of(definition)
+                if base == "":
+                    return "unknown", []
+                if base is not None:
+                    status, targets = self.resolve(base, definition, feature=True)
+                    if status != FOUND:
+                        return "unknown", []
+                    bases.extend(targets)
+                    continue
+                for supertype in definition.supertypes:
+                    kind, more = added(supertype, definition.parent or self.root, depth + 1)
+                    if kind == "unknown":
+                        return kind, []
+                    bases.extend(more)
+            return ("base" if bases else "none"), bases
+
+        def walk(scope: Scope) -> None:
+            nonlocal changed
+            for member in scope.members:
+                names = [m for m in (member.node or {}).get("prefixMetadata") or [] if isinstance(m, str)]
+                if names and _OPAQUE_SUPERTYPE in member.supertypes:
+                    results = [added(n, member.parent or self.root) for n in names]
+                    if all(kind != "unknown" for kind, _ in results):
+                        # 前置のメタデータで足したもの（最後に足した 1 つ）だけを外し、baseType を継承元にする
+                        last = len(member.supertypes) - 1 - member.supertypes[::-1].index(_OPAQUE_SUPERTYPE)
+                        del member.supertypes[last]
+                        member.super_scopes.extend(b for _kind, bases in results for b in bases)
+                        changed = True
+                walk(member)
+
+        for file_root in self.file_roots:
+            walk(file_root)
+        if changed:
+            self._memo_cache.clear()  # 外す前の探索結果は古い
 
     @property
     def global_members(self) -> List[Scope]:
@@ -244,7 +324,8 @@ class ScopeResolver:
             if isinstance(node.get("expression"), dict):
                 owner.filters.append(node["expression"])
             return
-        if node_type == "metadata_usage" and not node.get("type_name") and isinstance(node.get("name"), str):
+        if node_type == "metadata_usage" and not node.get("type_name") and isinstance(node.get("name"), str) \
+                and split_qualified(node["name"]):  # エラー回復で名前が空になったものは除く
             # `@Safety;` / `metadata Tag about x;` の名前はメタデータの型への参照
             meta_name = split_qualified(node["name"])[-1]
             owner.metadata.append(meta_name)
@@ -891,6 +972,13 @@ def references_of(node: dict) -> List[Reference]:
             accepted = trigger.get("reference")
             if isinstance(accepted, str) and accepted and _chain_head(accepted) == accepted:
                 refs.append((accepted, "Type", trigger, False))
+    if node_type == "accept_action" and not node.get("after"):
+        # `action r accept Sig via p;` の Sig、`accept s : Sig via p` の Sig（受け取るものの型）
+        accepted = node.get("message_type") or node.get("message")
+        if isinstance(accepted, str) and accepted and _chain_head(accepted) == accepted:
+            refs.append((accepted, "Type", node, False))
+    if node_type == "flow_usage" and isinstance(node.get("item_type"), str) and node["item_type"]:
+        refs.append((node["item_type"], "Type", node, False))  # `flow f of Msg from ... to ...` の Msg
     if node_type == "alias" and isinstance(node.get("target"), str):
         refs.append((node["target"], "Element", node, False))
     return refs
@@ -910,6 +998,8 @@ def _chain_tail(reference: str) -> List[str]:
 
 # 式の中で name_ref になるが名前ではないもの
 _EXPRESSION_KEYWORDS = frozenset({"null", "true", "false"})
+# 式の木で呼び出しの形になる演算子（`(a and b) xor (c and d)` は function_call の xor になる）
+_OPERATOR_NAMES = frozenset({"xor", "and", "or", "not", "implies", "if", "as", "meta", "hastype", "istype", "all"})
 
 
 _IDENTIFIER_END = re.compile(r"[A-Za-z_]\w*$")
@@ -1040,6 +1130,10 @@ def _end_entries(node: dict, named_ends: bool = True) -> List[Tuple[str, Optiona
         for key in ("from_end", "to_end"):
             text = _normalized_text(node, key)
             if text:
+                line = extra_of(node, f"{key}_line")
+                if line is not None:
+                    # 端の行を持つ、指摘の置き場所（flow の先頭と端が違う行のとき、参照実装は端の行に出す）
+                    end_nodes[len(out)] = _with_extra({"type": "flow_end", "end": text}, {"line": line})
                 out.append((text, None))
         return [(text, end_nodes.get(i)) for i, (text, _none) in enumerate(out)]
     if node_type in ("satisfy_requirement_usage", "verify_requirement_usage"):
@@ -1622,10 +1716,11 @@ def unresolved_references(ast: dict, external_names: Optional[Iterable[str]] = N
     resolver = ScopeResolver(ast, external_names, other_asts)
     out: List[Tuple[dict, str, str]] = []
 
-    def visit(node, owner: Scope, local_names: frozenset):
+    def visit(node, owner: Scope, local_names: frozenset, local_types: Optional[Dict[str, str]] = None):
+        local_types = local_types or {}
         if isinstance(node, list):
             for item in node:
-                visit(item, owner, local_names)
+                visit(item, owner, local_names, local_types)
             return
         if not isinstance(node, dict):
             return
@@ -1633,16 +1728,39 @@ def unresolved_references(ast: dict, external_names: Optional[Iterable[str]] = N
         param = node.get("param")
         if node.get("type") == "arrow_lambda" and isinstance(param, dict) and isinstance(param.get("name"), str):
             local_names = local_names | {param["name"]}  # `{in p; p.m}` の p
+            if isinstance(param.get("typeName"), str) and param["typeName"]:
+                # 型のある引数（`{in ref w : WheelAssy; w.wheel.outerDiameter ...}`）は、連鎖を型から確かめる
+                local_types = {**local_types, param["name"]: param["typeName"]}
         if node.get("type") == "arrow_lambda":
             # 本体の中で宣言した名前（`{in i; private thisSample : T = ...; ... thisSample.t ...}`）
             local_names = local_names | _declared_names([node.get("body"), node.get("children")])
         trigger = node.get("trigger")
         if isinstance(trigger, dict) and trigger.get("type_name") and isinstance(trigger.get("reference"), str):
             local_names = local_names | {trigger["reference"]}  # `accept sig : Sig if sig.on` の sig
+        if node.get("type") == "accept_action" and isinstance(node.get("message"), str) and node.get("message_type"):
+            # state の本体の `accept cl : T via p do action { ... cl.itms ... }` は、AST では do の action が
+            # accept の子になる。受け取るもの cl を子から見えるようにする（参照実装では遷移のメンバー。
+            # Arrowhead_Framework_Example の AHFNorwayTopics）
+            local_names = local_names | {node["message"]}
+        if node.get("type") in ("function_call", "new_instance") and isinstance(node.get("name"), str):
+            # 式の中の呼び出し・インスタンス生成の名前（`Velocity(dt, v)`、`new Publish(t, p)`）。
+            # 参照実装は import していないライブラリの関数（`sqrt(2.0)`）も未解決にする
+            called = node["name"]
+            if called and _chain_head(called) == called and split_qualified(called)[0] not in local_names \
+                    and called not in _OPERATOR_NAMES:
+                status, _found = resolver.resolve(called, owner)
+                if status == NOT_FOUND:
+                    out.append((node, called, "Element"))
         if node.get("type") == "name_ref" and isinstance(node.get("reference"), str):
             # 式の中の名前（`[kg]`、`noSuch == true`、`d.m` の d）。連鎖は先頭だけ確かめる
             first = _chain_head(node["reference"])
-            if first and split_qualified(first)[0] not in local_names | _EXPRESSION_KEYWORDS:
+            if first in local_types and first != node["reference"]:
+                status, types = resolver.resolve(local_types[first], owner)
+                if status == FOUND:
+                    missing = resolver.missing_chain_member(types, _chain_tail(node["reference"]))
+                    if missing:
+                        out.append((node, missing, "Feature"))  # 参照実装は Feature と書く
+            elif first and split_qualified(first)[0] not in local_names | _EXPRESSION_KEYWORDS:
                 status, found = resolver.resolve(first, owner, feature=True)
                 if status == NOT_FOUND:
                     out.append((node, first, "Element"))
@@ -1690,7 +1808,21 @@ def unresolved_references(ast: dict, external_names: Optional[Iterable[str]] = N
         else:
             for reference, kind, ref_node, feature in references_of(node):
                 if _chain_head(reference) != reference:
-                    continue  # feature の連鎖は別に扱う（引用符の中の . は区切りではない）
+                    # feature の連鎖（引用符の中の . は区切りではない）。部分集合・再定義の先
+                    # （`ref part sub :> c.noo;`）は先頭と 2 番目以降を確かめる。参照する usage の
+                    # 連鎖（`perform a.b`）は上で確かめた
+                    if kind == "Feature" and reference != _referenced_feature(node):
+                        head = _chain_head(reference)
+                        # 先頭が自分の名前（`ref p : Person :> p.asPresident;`）なら自分自身に解決する
+                        own = isinstance(node.get("name"), str) and _unquote(node["name"]) == _unquote(head)
+                        status, found = resolver.resolve(head, owner, feature=True, exclude=None if own else element)
+                        if status == NOT_FOUND:
+                            out.append((ref_node, head, "Feature"))
+                        elif status == FOUND:
+                            missing = resolver.missing_chain_member(found, _chain_tail(reference))
+                            if missing:
+                                out.append((ref_node, missing, "Feature"))
+                    continue
                 # 名前の無い再定義（`:>> x`）は x として登録されているので自分を除く。
                 # 名前のある `part p4 :> p4;` は、参照実装でも自分自身に解決する
                 own_name = isinstance(node.get("name"), str) and node.get("name") and not _referenced_feature(node)
@@ -1705,7 +1837,7 @@ def unresolved_references(ast: dict, external_names: Optional[Iterable[str]] = N
         inner = element or owner
         for key, value in node.items():
             if key not in ("type",) and isinstance(value, (dict, list)):
-                visit(value, inner, local_names)
+                visit(value, inner, local_names, local_types)
 
     visit(ast, resolver.root, frozenset())
     return out

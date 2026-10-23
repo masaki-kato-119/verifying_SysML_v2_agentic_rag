@@ -699,6 +699,10 @@ class ActionBehaviorRulesMixin:
         if owner_members is None:
             return
         first = segments[0]
+        if any(isinstance(o, dict) and _flow_unquote(o.get("name") or "") == first for o in owners):
+            # flow を含む要素自身の名前（`interface pi : PI connect ... { flow from pi.source.p to ...; }`）。
+            # 参照実装はそれ自身に解決して通す（SysML-v2-Release の ServerSequenceRealization-3、2026-10-22）
+            return
         if first not in owner_members:
             outer = False
             for ancestor in owners[:-1]:

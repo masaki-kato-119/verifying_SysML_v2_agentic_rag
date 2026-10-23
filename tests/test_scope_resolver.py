@@ -56,13 +56,16 @@ def test_imports_visibility_and_short_names(text, expected):
     # 継承した feature の再定義は解決する。名前の無い `:>> x` は自分自身を指さない
     ("package Q { part def V { attribute mass; } part v : V { attribute :>> mass = 1; "
      "attribute :>> nosuch = 2; } }", ["nosuch"]),
-    # 型のない interface の中の flow は end 名がライブラリ由来なので判定しない
+    # 型のない interface の中の flow は end 名がライブラリ由来なので判定しない。flow の `of Q` の Q は
+    # パッケージで型ではない（参照実装は `Couldn't resolve reference to Type 'Q'.`。2026-10-22 に確認。
+    # 参照実装は source.x・target.x の x も出すが、自作は end 名の先を判定しない）
     ("package Q { part def V { part t; part e; interface connect t to e { "
-     "flow of Q from source.x to target.x; } } }", []),
+     "flow of Q from source.x to target.x; } } }", ["Q"]),
     # 名前のある自己参照（`part p4 :> p4;`）は自分自身に解決する
     ("package Q { part p4 :> p4; }", []),
-    # 意味的メタデータ（#g1）は基底型を加えるので、中の再定義は確かめない
-    ("package Q { metadata def g1; #g1 requirement a { attribute :>> priority = 1; } }", []),
+    # 特化の無い metadata def（#g1）は基底型を加えないので、中の再定義を確かめる（参照実装は
+    # `Couldn't resolve reference to Feature 'priority'.`。2026-10-22 に確認）
+    ("package Q { metadata def g1; #g1 requirement a { attribute :>> priority = 1; } }", ["priority"]),
 ])
 def test_kinds_and_inheritance(text, expected):
     assert _unresolved(text) == expected

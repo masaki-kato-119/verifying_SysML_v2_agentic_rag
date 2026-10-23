@@ -95,3 +95,4 @@ eval/pilot_parity/corpus/
 eval/pilot_parity/labels/
 eval/pilot_parity/results/
 eval/pilot_parity/heldout/
+eval/pilot_parity/folders/

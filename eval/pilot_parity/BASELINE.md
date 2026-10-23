@@ -278,9 +278,121 @@ AGV の probe を調べる中で見つかった、1 ファイルでも起きる�
 
 ### 残した課題
 
-- 複数ファイルのモデルのコーパス（フォルダ単位の unit）を作り、Pilot の `validate_sysml`（directory）と比べる。
+- ~~複数ファイルのモデルのコーパス（フォルダ単位の unit）を作り、Pilot の `validate_sysml`（directory）と比べる。~~ → 次の章。
 - 構文エラーのあるほかのファイルは読まない。Pilot はエラー回復で読めた部分の要素を見せる（AGV の probe m02 で、壊れたファイルの前半の定義は解決した）。
 - 名前を渡すたびにほかのファイルをパースし直す（AGV の 4 ファイルで 1 ファイル 0.3〜0.7 秒）。
+
+## フォルダ単位のコーパス（2026-10-22）
+
+複数ファイル対応を、1 つの AGV モデルより広く確かめる。フォルダをそのまま残し、ファイルごとに 1 unit にした
+（`build_folders.py`。id は `<フォルダ>__<ファイル>` なので `compare.py` をそのまま使う）。
+
+- **正解**: Pilot がフォルダのファイルを一緒に読んだときの、そのファイルの指摘（`label_pilot_folders.py`、
+  sysml-mcp-server の `validate_files`。MCP の `validate_sysml` に directory を渡したときと同じ）。
+- **自作**: 同じフォルダのほかのファイルを一緒に読む（`run_local_folders.py`。MCP の `lint_sysml_file` の既定と同じ）。
+  `--single` は 1 ファイルずつ（複数ファイル対応の前の MCP と同じ）。
+- **フォルダ**（2 ファイル以上。サブフォルダは含めない）: folder-dev = 開発で見たモデル（eval/runs・eval/runs_sonnet の
+  LLM の AGV 15 個、linter_gen の AGV 2 個、verified のテーマ 10 個。eval/blind* は runs の名前を伏せた写しなので
+  入れない）。folder-heldout = held-out と同じ公開リポジトリの 86 個（348 ファイル）。
+- **xfile-mutant**: Pilot がエラーを出さない 79 フォルダの 1 ファイルに、ほかのファイルで宣言された名前の誤記を
+  1 つ入れたもの（118 版）。型の名前（`part x : Vehicle` → `Vehicl`）、feature の連鎖の 2 番目以降
+  （`v.maxSpeed` → `v.maxSped`）、import するパッケージ（`private import Defs::*` → `Dfs`）。
+  最後から 2 文字目を落とし、フォルダのどこにも無い名前になるものだけ。
+
+### 結果（Pilot に構文エラーの無いファイル、行 + 種類の再現率 / 適合率）
+
+| source | ファイル | 1 ファイルずつ（以前の MCP） | **フォルダを読む（今の MCP）** | 正しいファイルの誤検出: 以前 → 今 |
+| --- | --- | --- | --- | --- |
+| folder-dev | 121 | 97.5% / 6.6% | **98.8% / 100%** | 54 / 104 → **0 / 104** |
+| folder-heldout | 339 | 81.6% / 74.9% | **81.4% / 95.2%** | 44 / 269 → **3 / 269** |
+| xfile-mutant | 118 | 83.3% / 25.2% | **82.6% / 97.3%** | — |
+
+ファイルをまたぐ誤り（Pilot が誤りを入れた行にエラーを出した 117 版のうち、自作も同じ行に同じ種類のエラー）:
+
+| operator | 版 | 1 ファイルずつ | **フォルダを読む** |
+| --- | --- | --- | --- |
+| 型の名前 | 37 | 32 | 30 |
+| feature の連鎖 | 41 | 35 | 35 |
+| import | 39 | 39 | 39 |
+| 合計 | 117 | 106 | **104（88.9%）** |
+
+- **1 ファイルずつの数は見かけだけ**: ほかのファイルの名前はすべて未解決になるので、入れた誤りも出るが、同じ形の
+  誤検出に埋もれる（適合率 6.6〜75%、Pilot がエラーを出さないファイルの 26%（98 / 373）で誤検出）。フォルダを読むと、誤検出がほぼ消えて
+  （正しいファイルの誤検出 98 → 3）、入れた誤りの 89% を Pilot と同じ行・同じ種類で出す。
+- **見逃した 13 版**は、ファイルをまたぐことと関係なく、自作の名前解決がその位置の参照を確かめていないもの:
+  flow の `of T` の型（2）、式の中の呼び出し・`new T(...)` の名前（4）、action の中の `accept T via p`（1）、
+  flow の端の 3 段以上の連鎖・n 項の接続の端からの連鎖（4）、制約式の中の連鎖（1）、部分集合の先の連鎖（1）。
+  1 ファイルずつで「出た」のは、ほかのファイルの名前がすべて未解決になるため（偶然の一致）。
+- **held-out の誤検出 3 件**は文法の穴（advent-of-sysml-v2 の `defined by`、sysmod の 2 ファイル）。以前からの held-out の 2 件と同じ原因。
+- 測る途中で、flow の端が自分を含む interface の名前から始まる形（`interface pi ... { flow from pi.source.m to ...; }`）を
+  古い平らな規則（`_check_one_flow_end`）が「外側の feature」と誤検出していた（ServerSequenceRealization-2・3）。
+  Pilot はそれ自身に解決して通す。直した（`tests/test_multi_file.py`）。開発・held-out の数値は変わらない。
+- **妥当性**: folder-heldout は held-out と同じリポジトリのモデルで、その誤検出の修正（2026-10-16）にも、今回の
+  flow の規則の修正にも使ったので、汎化の証拠としては弱い。xfile-mutant は機械的な 1 文字の誤記だけで、
+  LLM が書く誤りの分布とは違う。
+
+### 残した課題
+
+- ~~見逃した 13 版の参照の位置を名前解決で確かめる。~~ → 次の章。
+- ~~構文エラーのあるほかのファイルを、エラー回復で読めた部分だけ使う（Pilot と同じ）。~~ → 次の章。
+
+## 見逃した位置と、構文エラーのあるファイル（2026-10-22〜23）
+
+前章で見逃した 13 版の位置を確かめるようにし、構文エラーのあるファイルも回復で読めた部分を使うようにした。
+どれも小さな例で Pilot の指摘（行・名前・種類）を確かめてから入れた（`tests/test_multi_file.py`）。
+
+### 確かめるようにした参照
+
+- flow の `of T` の型（Type）。
+- 式の中の呼び出し・`new T(...)` の名前（Element）。Pilot は import していないライブラリの関数（`sqrt(2.0)`・
+  `max`・`size`）も未解決にする。式の木で呼び出しの形になる演算子（`(a) xor (b)` の xor など）は除く。
+- action の中の `accept T via p` の型（Type）。
+- 部分集合・再定義の先の連鎖（`ref part sub :> c.noo;`）。先頭が自分の名前なら自分自身に解決する
+  （`ref p : Person :> p.asPresident;`）。
+- ラムダの型のある引数からの連鎖（`{in ref w : A; w.wheel.rr > 0}`。型から確かめる）。
+- flow・message の端の行: 端が flow の先頭と違う行にあるとき、端の行に出す（ANTLR の行を付帯情報に残した）。
+- 前置のメタデータ（`#idd port p`）: これまで型を不明にしていた。metadata def の特化の連鎖をたどり、
+  `:>> baseType = X meta T` があれば X を継承元にし、SemanticMetadata まで baseType が無ければ何も足さない
+  （ほかのライブラリの metadata・解決できない名前は不明のまま）。
+- state の本体の `accept cl : T via p do action { ... cl.x ... }` の cl（do の action が accept の子になるので、子から見えるようにした）。
+
+### 構文エラーのあるファイル
+
+- エラー回復の木を読むとき、形の崩れた部分木で例外になっても、その部分木だけを `{"type": "recovered_error"}` に
+  して残りを読む（以前はファイル全体を読めなかったとみなした）。対象のファイルの lint（recover=True）と、
+  一緒に読むほかのファイルの両方に効く。
+- ほかのファイルは回復で読めた部分を使う（`model_files.parse_other_file`）。MCP の結果に `partial_files` を足した。
+- 回復の仕方は Pilot（Xtext）と ANTLR で違い、どの要素が残るかは一致しない（AGV の probe m02 では、Pilot は
+  エラーのあとの state def を落とすが、ANTLR は残す）。
+
+### 結果
+
+| 指標 | 前章 | この章 |
+| --- | --- | --- |
+| ファイルをまたぐ誤記（Pilot がその行に出した 117 版） | 104 | **117（100%）** |
+| フォルダ（dev）: 行 + 種類の再現率 / 適合率・正しいファイルの誤検出 | 98.8% / 100%・0 / 104 | 98.8% / 100%・0 / 104 |
+| フォルダ（held-out のリポジトリ） | 81.4% / 95.2%・3 / 269 | **83.9% / 94.7%**・3 / 269 |
+| 開発: 行 + 種類（構文エラーの無い 449 件）・正しいモデルの誤検出 | 91.8% / 97.3%・0 | **92.0% / 97.3%**・0 |
+| 開発: 未解決参照の再現率 / 適合率 | 95.8% / 98.0% | 96.2% / 98.0% |
+| held-out: 行 + 種類（構文エラーの無い 127 件） | 81.7% / 94.7% | **85.5% / 92.7%** |
+| held-out: 同（sysmod の 2 件を除く 125 件） | 86.3% / 97.5% | **87.8% / 97.6%** |
+| held-out: 未解決参照・型の種類の再現率 | 79.0% / 87.2% | **84.3% / 88.8%** |
+| held-out: Pilot がエラーを出さない 96 件での誤検出 | 2 | 2 |
+
+- **held-out の適合率が下がったのは sysmod の 2 件**（自作の文法の穴があり、Pilot は構文エラーを出さない）。以前は
+  回復の木が例外になり lint が止まっていたが、回復で読めるようになって、穴で落ちた要素の先の参照が未解決と
+  出る。2 件を除くと適合率は変わらない（97.5% → 97.6%）。直すには文法の穴を埋める。
+- 測る途中で、古いテスト 3 件の期待値が Pilot と違っていた（`flow of Q` の Q がパッケージ、特化の無い
+  metadata def の `#g1` の中の再定義、定義の無い `new Signal()`）。Pilot に合わせて直した。
+- 測る途中で、held-out のエラー回復の木で、名前の空のメタデータで名前解決が落ちていた（sysml-v2-lsp の invalid の
+  fixture）。直した。
+- 同じ held-out と、そのリポジトリのフォルダを見ながら直したので、held-out の数値は汎化の証拠としては弱い。
+
+### 残した課題
+
+- `xs->forAll {...}` の `->` の呼び出しの名前（Pilot は import していない `forAll` を未解決にする）。
+- 値の式の連鎖の先の種類の語（Pilot は `Feature`、自作は `Element`。比べ方では同じ未解決）。
+- sysmod の文法の穴（`use case x[*] : T`・`first [0..1] x`・`interface<...>` など）と advent-of-sysml-v2 の `defined by`。
 
 ## 再現手順
 
@@ -290,4 +402,18 @@ cd C:\test\verifying_SysML_v2_agentic_rag
 C:\test\SysMLv2_pilot\sysml-mcp-server\.venv\Scripts\python.exe -I eval\pilot_parity\label_pilot.py   # 数十分（索引キャッシュ無し）
 .venv\Scripts\python.exe -I eval\pilot_parity\run_local.py
 .venv\Scripts\python.exe -I eval\pilot_parity\compare.py
+```
+
+フォルダ単位のコーパス:
+
+```
+.venv\Scripts\python.exe eval\pilot_parity\build_folders.py
+C:\test\SysMLv2_pilot\sysml-mcp-server\.venv\Scripts\python.exe -I eval\pilot_parity\label_pilot_folders.py
+.venv\Scripts\python.exe eval\pilot_parity\build_folders.py --mutants
+C:\test\SysMLv2_pilot\sysml-mcp-server\.venv\Scripts\python.exe -I eval\pilot_parity\label_pilot_folders.py
+.venv\Scripts\python.exe -I eval\pilot_parity\run_local_folders.py
+.venv\Scripts\python.exe -I eval\pilot_parity\run_local_folders.py --single
+.venv\Scripts\python.exe -I eval\pilot_parity\compare.py --corpus eval\pilot_parity\folders\corpus --labels eval\pilot_parity\folders\labels --out eval\pilot_parity\folders\results\multi
+.venv\Scripts\python.exe -I eval\pilot_parity\compare.py --corpus eval\pilot_parity\folders\corpus --labels eval\pilot_parity\folders\labels_single --out eval\pilot_parity\folders\results\single
+.venv\Scripts\python.exe -I eval\pilot_parity\analyze_folders.py
 ```
