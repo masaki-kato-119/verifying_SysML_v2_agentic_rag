@@ -895,6 +895,15 @@ _KERML_CLASSIFIER_KINDS = ("datatype", "class", "struct", "classifier", "behavio
                            "interaction", "assoc", "metaclass")
 
 
+def _encloses(outer: Scope, scope: Optional[Scope]) -> bool:
+    """outer が scope 自身か、scope を囲む名前空間か。"""
+    while scope is not None:
+        if scope is outer:
+            return True
+        scope = scope.parent
+    return False
+
+
 def _is_definition(scope: Scope) -> bool:
     if scope.library is not None:
         kind = library_index.member_kind(scope.library) or ""
@@ -982,6 +991,14 @@ def references_of(node: dict) -> List[Reference]:
     if node_type == "alias" and isinstance(node.get("target"), str):
         refs.append((node["target"], "Element", node, False))
     return refs
+
+
+def _expression_chain_kind(reference: str) -> str:
+    """式の中の連鎖の先が無いときの、参照実装のメッセージの種類の語（2026-10-23 に確認）。
+
+    `a.bx`（2 つ）は `Element`、3 つ以上（`a.b.nx`、`a.bx.c.m`）は `Feature`。値の式でも制約の式でも同じ。
+    """
+    return "Element" if len(_chain_tail(reference)) == 1 else "Feature"
 
 
 def _chain_tail(reference: str) -> List[str]:
@@ -1222,6 +1239,10 @@ def inaccessible_features(ast: dict, external_names: Optional[Iterable[str]] = N
             # 列挙の値（`E::e2`）は feature のアクセスではない
             if not targets or not all(is_feature(t) and t.library is None
                                       and (t.node or {}).get("type") != "enum_literal" for t in targets):
+                continue
+            # 参照を囲む型自身のメンバー（`occurrence def <PRJ> P { ... x = PRJ::company; }`）は通る
+            # （参照実装で確認、2026-10-23。sysmod の `stakeholder :>> c = PRJ::logisticCompany;`）
+            if any(_encloses(q, context) for q in qualifiers):
                 continue
             if all(is_type(q) and not _is_definition(q) for q in qualifiers):
                 return "usage"
@@ -1742,9 +1763,11 @@ def unresolved_references(ast: dict, external_names: Optional[Iterable[str]] = N
             # accept の子になる。受け取るもの cl を子から見えるようにする（参照実装では遷移のメンバー。
             # Arrowhead_Framework_Example の AHFNorwayTopics）
             local_names = local_names | {node["message"]}
-        if node.get("type") in ("function_call", "new_instance") and isinstance(node.get("name"), str):
-            # 式の中の呼び出し・インスタンス生成の名前（`Velocity(dt, v)`、`new Publish(t, p)`）。
-            # 参照実装は import していないライブラリの関数（`sqrt(2.0)`）も未解決にする
+        if node.get("type") in ("function_call", "new_instance", "arrow_call", "arrow_lambda") \
+                and isinstance(node.get("name"), str):
+            # 式の中の呼び出し・インスタンス生成の名前（`Velocity(dt, v)`、`new Publish(t, p)`、
+            # `xs->forAll {...}`・`xs->size()`）。参照実装は import していないライブラリの関数
+            # （`sqrt(2.0)`、`->forAll` の ControlFunctions::forAll）も未解決にする（2026-10-23 に確認）
             called = node["name"]
             if called and _chain_head(called) == called and split_qualified(called)[0] not in local_names \
                     and called not in _OPERATOR_NAMES:
@@ -1759,7 +1782,7 @@ def unresolved_references(ast: dict, external_names: Optional[Iterable[str]] = N
                 if status == FOUND:
                     missing = resolver.missing_chain_member(types, _chain_tail(node["reference"]))
                     if missing:
-                        out.append((node, missing, "Feature"))  # 参照実装は Feature と書く
+                        out.append((node, missing, _expression_chain_kind(node["reference"])))
             elif first and split_qualified(first)[0] not in local_names | _EXPRESSION_KEYWORDS:
                 status, found = resolver.resolve(first, owner, feature=True)
                 if status == NOT_FOUND:
@@ -1767,7 +1790,7 @@ def unresolved_references(ast: dict, external_names: Optional[Iterable[str]] = N
                 elif status == FOUND:
                     missing = resolver.missing_chain_member(found, _chain_tail(node["reference"]))
                     if missing:
-                        out.append((node, missing, "Element"))
+                        out.append((node, missing, _expression_chain_kind(node["reference"])))
         if node.get("type") not in ("binary_interface_part", "binary_connector_part"):
             # 接続・allocate・satisfy の by などの端の連鎖（`a.b.c`）。`::` を含む端はアクセス範囲の
             # 判定（inaccessible_features）に任せ、ここでは `.` だけの連鎖を確かめる

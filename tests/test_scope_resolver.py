@@ -83,8 +83,9 @@ def test_kinds_and_inheritance(text, expected):
      "attribute y = x.b; attribute z = x.c; }", ["c"]),
     # 列挙の値は型付けで継承されない（`ModeKind::idle` と書く）
     ("package Q { enum def K { idle; } attribute m : K = idle; attribute n : K = K::idle; }", ["idle"]),
-    # ラムダの引数、トリガーのペイロード、null は名前ではない
-    ("package Q { part def D { attribute m; } part d : D[*]; attribute s = d->collect {in p : D; p.m}; "
+    # ラムダの引数、トリガーのペイロード、null は名前ではない（`->collect` は import が要る。参照実装、2026-10-23）
+    ("package Q { private import ControlFunctions::collect; "
+     "part def D { attribute m; } part d : D[*]; attribute s = d->collect {in p : D; p.m}; "
      "attribute def Sig { attribute on; } state def S { state a; state b; "
      "transition first a accept sig : Sig if sig.on then b; } attribute z = null; }", []),
 ])
@@ -242,7 +243,8 @@ def test_kind_violations(text, expected):
     # require は既存の制約・要件を参照し、その中身を持つ
     ("package Q { constraint c0 { attribute x; x >= 1 } requirement def R { require c0 { x = 2; } } }", []),
     # ラムダの本体で宣言した名前（`->forAll {in i; private s1 : T = ...; s1.t > 0}`）
-    ("package Q { attribute def T { attribute t; } attribute xs : T[*]; "
+    # （`->forAll` は import が要る。参照実装、2026-10-23）
+    ("package Q { private import ControlFunctions::forAll; attribute def T { attribute t; } attribute xs : T[*]; "
      "constraint c { (1..2)->forAll {in i : ScalarValues::Integer; private s1 : T = xs#(i); s1.t > 0} } }", []),
     # 型付きの usage の本体の型なしの引数は、型の同名の引数を暗黙に再定義する
     ("package Q { part def Image { attribute ok : ScalarValues::Boolean; } action def Focus { out image : Image; } "

@@ -322,7 +322,9 @@ portionUsageStmt
 // actionの各defの直前に付くプレフィックス修飾子としても使われる
 // （2026-08-28、参照実装比較レポートP0-3で発見）。
 occurrenceDef
-    : isIndividual='individual'? isAbstract='abstract'? 'occurrence' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    // `#project occurrence def <PRJ> 'Delivery Drone Project' { ... }`（フォルダ単位のコーパスの sysmod・advent-of-sysml-v2。参照実装は構文エラーを出さない。2026-10-23）
+    : prefixMetadataAnnotation* isIndividual='individual'? isAbstract='abstract'? 'occurrence' 'def'
+      ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // `abstract constant ref occurrence causes[1..*] :>> causes :> participant
@@ -350,9 +352,12 @@ occurrenceDef
 // Extensions.sysml）のように、`#Type`前置メタデータ注釈を持つことがある
 // （2026-08-29、add_occurrenceusage_itemdef_prefix_metadata対応中に発見）。
 occurrenceUsage
+    // `ref occurrence project :>> this : Project;`（型の前の再定義）・`occurrence xs[*] : X;`（フォルダ単位のコーパスの sysmod・advent-of-sysml-v2。参照実装は構文エラーを出さない。2026-10-23）
     : prefixMetadataAnnotation* direction? isIndividual='individual'? isAbstract='abstract'? isConstant='constant'? isRef='ref'? 'occurrence' simpleName?
+      preMult=multiplicitySpec?
+      (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
-      multiplicitySpec?
+      postMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       (('=' | ':=') value=expression)?
       ('default' ('=' | ':=')? defaultValue=expression)?
@@ -616,7 +621,9 @@ useCaseDef
     // G7(fork/join) を別原因と数えたが、どちらも action def 本体では単独で
     // パースできており、実際には「use case 本体が制御フローを受け付けない」
     // という単一の原因だった。
-    : isAbstract='abstract'? 'use' 'case' 'def' simpleName inheritanceClause? ( '{' actionBodyElement* '}' | ';' )
+    // `#systemUseCase use case def DeliverPackage { ... }`（フォルダ単位のコーパスの sysmod・advent-of-sysml-v2。参照実装は構文エラーを出さない。2026-10-23）
+    : prefixMetadataAnnotation* isAbstract='abstract'? 'use' 'case' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')?
+      simpleName inheritanceClause? ( '{' actionBodyElement* '}' | ';' )
     ;
 
 // `variation use case uc1 { variant use case uc11; variant use case
@@ -636,10 +643,13 @@ useCaseDef
 // 同じ理由。2026-08-29、add_analysiscaseusage_multitype対応中に連鎖的に
 // 発見。同一ファイルの並列テストケースで発覚）。
 useCaseUsage
+    // `use case :>> deliverPackage : UseCases::DeliverPackage { ... }`（修飾名の型）・
+    // `use case useCases [0..*] : SystemUseCase { ... }`（名前の後の多重度）（フォルダ単位のコーパスの sysmod・advent-of-sysml-v2。参照実装は構文エラーを出さない。2026-10-23）
     : variability=('variation' | 'variant')? isThen='then'? visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'use' 'case' simpleName?
+      preMult=multiplicitySpec?
       (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
-      (':' typeRef=(ID | QUOTED_NAME) (',' extraTypeRefs+=(ID | QUOTED_NAME))*)?
-      multiplicitySpec?
+      (':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
+      postMult=multiplicitySpec?
       (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' actionBodyElement* '}' | ';' )
     ;
@@ -1078,7 +1088,9 @@ requireUsage
 // のように、第1代替の型節がカンマ区切りの複数型を取ることがある（従来
 // 単一型のみだった。2026-09、参照実装比較レポートで発見）。
 interfaceUsage
-    : isAbstract='abstract'? 'interface' simpleName ':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*
+    // `interface <asis> actorSystemInterfaces[1..*] : ActorSystemInterface connect ...`（フォルダ単位のコーパスの sysmod・advent-of-sysml-v2。参照実装は構文エラーを出さない。2026-10-23）
+    : isAbstract='abstract'? 'interface' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName namedMult=multiplicitySpec?
+      ':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*
       // `interface wheelToleftHalAxleInterface:WheelHubInterface
       //     connect [1] rearWheel1.lugNutCompositePort to [1] rearAxle.leftHalfAxle.shankCompositePort;`
       // （SysML v2 Spec Annex A SimpleVehicleModel.sysml:640,642,953,968,970,999）
@@ -1119,8 +1131,9 @@ interfaceUsage
     // `:>`継承節を伴う形（この第2代替）でも connect 節に端点多重度が付く。
     // usage自身の多重度は`usageMult`ラベル経由で読むこと（無ラベルの
     // `ctx.multiplicitySpec()`は参照が複数になるとリストを返すようになる）。
+    // `interface :Interfaces::PositionInterface connect a.p to b.q;`（名前の無い形の修飾名の型）（フォルダ単位のコーパスの sysmod・advent-of-sysml-v2。参照実装は構文エラーを出さない。2026-10-23）
     | isAbstract='abstract'? 'interface' simpleName?
-      (':' ID)?
+      (':' bareTypeRef=namespacePath)?
       usageMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       (('=' | ':=') value=expression)?
@@ -1860,7 +1873,10 @@ partBodyElement
 // `frame c;`という省略形の両方がある。`frame c3[0..*];`のように多重度、
 // `frame concern hs : HomeSafety;`のように型節も付きうる。
 frameStatement
-    : 'frame' isConcern='concern'? name=simpleName multiplicitySpec? (':' typeRef=namespacePath)? ';'
+    // `frame concern :DD_STAKEHOLDERNEEDS::LowDeliveryCost;`（名前の無い形）・
+    // `frame problemStatement :>> Project::stakeholderNeeds::problemStatement :> PRJ::problemStatement;`（フォルダ単位のコーパスの sysmod・advent-of-sysml-v2。参照実装は構文エラーを出さない。2026-10-23）
+    : 'frame' isConcern='concern'? name=simpleName? multiplicitySpec? (':' typeRef=namespacePath)?
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)* ';'
     ;
 
 // 公式コーパスには`ref self: Part :>> Item::self;`や`ref stateSpace:
@@ -1988,7 +2004,8 @@ partUsage
       // crew;`（MissionPackage.sysml）のように、型節がカンマ区切りの複数型を
       // 取ることがある（calculationUsageと同じ理由。2026-08-28、730件
       // パース失敗の要因分析で発見）。
-      (':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
+      // `part nnDashboard redefines dashboard defined by NaughtyNiceDashboard;`（`defined by` は `:` と同じ）（フォルダ単位のコーパスの sysmod・advent-of-sysml-v2。参照実装は構文エラーを出さない。2026-10-23）
+      ((':' | 'defined' 'by') typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
       postMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       (('=' | ':=') value=expression)?
@@ -2478,7 +2495,9 @@ actionParameter
       // `in port materialIn : ~MaterialPortDef;`（Fischertechnik.sysml）
       // のように、direction付きポート宣言のkindに'port'が含まれていな
       // かった（2026-09、参照実装比較レポートで発見）。
-      kind=('item' | 'attribute' | 'part' | 'calc' | 'action' | 'port')?
+      // `in concern c : C;`・`out requirement r : R;`・`out verification v[*];`・`out use case u[*] : U;`（フォルダ単位のコーパスの sysmod・advent-of-sysml-v2。参照実装は構文エラーを出さない。2026-10-23）
+      ( kind=('item' | 'attribute' | 'part' | 'calc' | 'action' | 'port' | 'concern' | 'requirement' | 'verification' | 'occurrence')
+      | kindUse='use' 'case' )?
       simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       preMult=multiplicitySpec?
@@ -2893,7 +2912,9 @@ actionUsageStmt
       postMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       (('=' | ':=') value=expression)?
-      ( 'while' guard=expression )?
+      // `action monitoringCycle loop { ... } until drone.flying == null;`（名前の後の loop。`while` と同じ位置）
+      // （フォルダ単位のコーパスの sysmod。参照実装は構文エラーを出さない。2026-10-23）
+      ( 'while' guard=expression | postLoop='loop' )?
       // `then action aLoop while i > 0 { ... } until b;`
       // （StructuredControlTest.sysml）のように、`while`ガード付きの
       // named action usageは、body直後に継続条件`until <cond>`を
@@ -2936,7 +2957,9 @@ requirementBodyElement
 // ConcernCheck; }`、Requirements.sysmlのみ）ため、requirementDefと同型に
 // する。
 concernDef
-    : isAbstract='abstract'? 'concern' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    // `#extendedConcern concern def ReliableDelivery { ... }`（フォルダ単位のコーパスの sysmod・advent-of-sysml-v2。参照実装は構文エラーを出さない。2026-10-23）
+    : prefixMetadataAnnotation* isAbstract='abstract'? 'concern' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')?
+      simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // --- フェーズ2: state の entry (8.2.2.18) -----------------------------------
@@ -3113,7 +3136,8 @@ bindingConnector
 // 持つこともある（transitionStmt/successionUsage等と同型。2026-08-29、
 // add_successionstmt_body対応中に発見）。
 successionStmt
-    : 'first' firstEnd=connectorEnd 'then' thenEnd=connectorEnd
+    // `first [0..1]setupProject then [0..1]specifyBrownfieldSystem;`（フォルダ単位のコーパスの sysmod・advent-of-sysml-v2。参照実装は構文エラーを出さない。2026-10-23）
+    : 'first' firstMult=multiplicitySpec? firstEnd=connectorEnd 'then' thenMult=multiplicitySpec? thenEnd=connectorEnd
       ( '{' (documentationStmt | bareDocComment)* '}' | ';' )
     ;
 
@@ -3489,7 +3513,8 @@ expression
     // 範囲）を持つ。`)`の直前が`..`で終わるか否かでparenExprと曖昧性なく
     // 区別される。
     | '(' lower=expression '..' upper=expression ')'            # rangeExpr
-    | '(' expression (',' expression)+ ')'                      # sequenceExpr
+    // `("a", "b", )` のように末尾のカンマを許す（フォルダ単位のコーパスの sysmod・advent-of-sysml-v2。参照実装は構文エラーを出さない。2026-10-23）
+    | '(' expression (',' expression)+ ','? ')'                 # sequenceExpr
     // 空の列挙式`()`（例: `attribute :>> dimensions = ();`、
     // `MeasurementReferences.sysml`）。
     | '(' ')'                                                    # emptySequenceExpr

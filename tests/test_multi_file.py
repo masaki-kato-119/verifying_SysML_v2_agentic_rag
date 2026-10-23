@@ -349,7 +349,35 @@ def test_prefix_metadata_base_type_and_lambda_parameter_chains():
     constraint def C { in xs : A[4]; xs->forAll {in ref w: A; w.wheel.rr > 0} }
 }
 """
-    # 参照実装は値の式の連鎖の先を Feature と書く（自作は Element。制約の式では参照実装も Element）。
-    # 種類の語は比べず、行と名前を比べる
-    assert [(line, message.rsplit("'", 2)[1]) for line, message in _errors(text) if "resolve" in message] == [
-        (13, "retal"), (14, "qq"), (18, "rr")]
+    assert [(line, message) for line, message in _errors(text) if "resolve" in message] == [
+        (13, "Couldn't resolve reference to Feature 'retal'."),
+        (14, "Couldn't resolve reference to Feature 'qq'."),
+        (18, "Couldn't resolve reference to Feature 'rr'."),
+    ]
+
+
+def test_expression_chain_kind_word_and_arrow_calls():
+    # 式の中の連鎖の先: 2 つ（`a.bx`）は Element、3 つ以上は Feature（参照実装、2026-10-23 に確認）。
+    # `->` の呼び出しの名前も、import していなければ未解決
+    text = """package K {
+    private import ScalarValues::*;
+    private import SequenceFunctions::size;
+    part def C { attribute m : Real; }
+    part def B { part c : C; attribute n : Real; }
+    part def A { part b : B; }
+    part a : A;
+    attribute v1 = a.bx;
+    attribute v2 = a.b.nx;
+    attribute v4 = a.bx.c.m;
+    constraint k1 { a.bx == a.b.c.m }
+    attribute u = a->size();
+    attribute w = a->isEmpty();
+}
+"""
+    assert _errors(text) == [
+        (8, "Couldn't resolve reference to Element 'bx'."),
+        (9, "Couldn't resolve reference to Feature 'nx'."),
+        (10, "Couldn't resolve reference to Feature 'bx'."),
+        (11, "Couldn't resolve reference to Element 'bx'."),
+        (13, "Couldn't resolve reference to Element 'isEmpty'."),
+    ]

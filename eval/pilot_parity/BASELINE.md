@@ -390,9 +390,54 @@ AGV の probe を調べる中で見つかった、1 ファイルでも起きる�
 
 ### 残した課題
 
-- `xs->forAll {...}` の `->` の呼び出しの名前（Pilot は import していない `forAll` を未解決にする）。
-- 値の式の連鎖の先の種類の語（Pilot は `Feature`、自作は `Element`。比べ方では同じ未解決）。
-- sysmod の文法の穴（`use case x[*] : T`・`first [0..1] x`・`interface<...>` など）と advent-of-sysml-v2 の `defined by`。
+- ~~`xs->forAll {...}` の `->` の呼び出しの名前~~ → 次の章。
+- ~~値の式の連鎖の先の種類の語~~ → 次の章。
+- ~~sysmod の文法の穴と advent-of-sysml-v2 の `defined by`~~ → 次の章。
+
+## `->` の呼び出し、連鎖の種類の語、文法の穴（2026-10-23）
+
+どれも小さな例で Pilot の判定（構文エラーの有無、指摘の行・名前・種類）を確かめてから入れた。
+
+- **`->` の呼び出しの名前**（`xs->forAll {...}`・`xs->size()`）: 式の中の呼び出しと同じく名前解決する。Pilot は
+  import していないライブラリの関数（`collect`・`sum`・`size`・`isEmpty`・`forAll`・`select`）を未解決にする。
+- **連鎖の先の種類の語**: Pilot は式の中の連鎖の先が無いとき、`a.bx`（2 つ）は `Element`、3 つ以上
+  （`a.b.nx`・`a.bx.c.m`）は `Feature` と書く（値の式でも制約の式でも同じ）。これに合わせた。
+- **文法の穴**（フォルダ単位のコーパスで、Pilot は構文エラーを出さないのに自作が出した形）:
+  並びの式の末尾のカンマ（`("a", "b", )`）、方向付きの引数の種類（`in concern`・`out requirement`・
+  `out verification`・`out use case`・`occurrence`）、`occurrence def`・`use case def`・`concern def` の前置の
+  メタデータと短い名前（`#project occurrence def <PRJ> ...`）、use case の修飾名の型と名前の後の多重度、
+  occurrence の型の前の再定義と多重度（`ref occurrence project :>> this : Project;`）、interface の短い名前と
+  多重度（`interface <asis> xs[1..*] : I connect ...`）、名前の無い interface の修飾名の型
+  （`interface :Ifs::I connect ...`）、名前の無い frame と再定義（`frame concern :T;`・`frame p :>> A::b :> C::d;`）、
+  part の `defined by`（`:` と同じ。仕様のキーワード）、succession の多重度（`first [0..1] a then [0..1] b;`）、
+  名前の後の loop（`action x loop { ... } until c;`。`while` と同じ位置）。
+- 穴を埋めて sysmod が読めるようになったところで、`::` の左が参照を囲む型自身（短い名前の `PRJ::company`）
+  の形を古い規則（`_check_accessible_feature_paths`）が誤検出していた。囲む要素の短い名前も自己参照として
+  除外した（Pilot で確認。外からの `PRJ::company` は Pilot も自作も `Must be an accessible feature`）。
+- 古いテスト 2 件（`->collect`・`->forAll` を import 無しで使っていた）は、意図を変えずに import を足した
+  （Pilot でエラー 0 を確認）。
+
+### 結果
+
+| 指標 | 前章 | この章 |
+| --- | --- | --- |
+| 開発: 行 + 種類（構文エラーの無い 449 件）・正しいモデルの誤検出・xpect・変異体 | 92.0% / 97.3%・0・126・110 | 92.0% / 97.3%・0・126・110 |
+| held-out: 行 + 種類（構文エラーの無い 127 件） | 85.5% / 92.7% | **84.3% / 97.6%** |
+| held-out: 同（sysmod の 2 件を除く 125 件） | 87.8% / 97.6% | 87.8% / 97.6% |
+| held-out: Pilot がエラーを出さない 96 件での誤検出 | 2 | **0** |
+| フォルダ（held-out のリポジトリ）: 行 + 種類・正しいファイルの誤検出 | 83.9% / 94.7%・3 / 269 | **81.7% / 98.4%・0 / 269** |
+| フォルダ（dev）・ファイルをまたぐ誤記 | 98.8% / 100%・117 / 117 | 98.8% / 100%・117 / 117 |
+
+- held-out の誤検出は文法の穴だけだったので、**0 件**になった（開発・held-out・フォルダのどれでも、Pilot が
+  エラーを出さないモデル・ファイルでの誤検出が 0）。
+- held-out の再現率が下がったのは sysmod の 2 件だけ（2 件を除くと変わらない）。読めなかったときは構文エラーの
+  連鎖の未解決が、Pilot の同じ行の指摘と偶然に一致していた。
+- held-out はこの修正にも使ったので、汎化の証拠としては弱い（前章と同じ）。
+
+### 残した課題
+
+- `frame x;` の x は既にある concern への参照（Pilot は無ければ未解決）。自作は宣言として扱い、確かめない。
+- 構文エラーのあるファイルの回復の仕方が Pilot（Xtext）と違う。
 
 ## 再現手順
 

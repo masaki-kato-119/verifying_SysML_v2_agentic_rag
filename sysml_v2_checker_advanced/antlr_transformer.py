@@ -401,6 +401,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return {
             "type": "concern_def",
             "name": _simple_name_text(ctx.simpleName()),
+            **({"shortName": ctx.shortName.text} if ctx.shortName is not None else {}),
             "inheritance": self._inheritance_dict(ctx),
             "isAbstract": ctx.isAbstract is not None,
             "children": children,
@@ -1072,6 +1073,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # add_actionparameter_compound_kind対応中に発見）。
         if ctx.kind is not None:
             kind_text = ctx.kind.text
+        elif ctx.kindUse is not None:
+            kind_text = "use case"  # `out use case u[*] : U;`
         elif ctx.isRef is not None:
             kind_text = "ref"
         else:
@@ -1531,7 +1534,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             # `loop action charging { ... } until ...;`のように、named
             # action usage自体に`loop`前置修飾子が付くこともある
             # （2026-08-29、連鎖的に発見）。
-            **({"isLoop": True} if ctx.isLoop is not None else {}),
+            # `loop action x { ... }`（前置）と `action x loop { ... }`（名前の後）
+            **({"isLoop": True} if ctx.isLoop is not None or ctx.postLoop is not None else {}),
             "isAbstract": ctx.isAbstract is not None,
             "isRef": ctx.isRef is not None,
             # `individual action a : AP1;`のようなプレフィックス修飾子
@@ -1911,6 +1915,9 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "type": "succession",
             "firstEnd": self.visit(ctx.firstEnd),
             "thenEnd": self.visit(ctx.thenEnd),
+            # `first [0..1] a then [0..1] b;`（無ければキーを足さない）
+            **({"firstMultiplicity": self._multiplicity_dict(ctx.firstMult)} if ctx.firstMult is not None else {}),
+            **({"thenMultiplicity": self._multiplicity_dict(ctx.thenMult)} if ctx.thenMult is not None else {}),
             "children": children,
         }
 
@@ -2474,6 +2481,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             return {
                 "type": "interface_usage",
                 "name": _simple_name_text(ctx.simpleName()),
+                **({"shortName": ctx.shortName.text} if ctx.shortName is not None else {}),
+                **({"multiplicity": self._multiplicity_dict(ctx.namedMult)} if ctx.namedMult is not None else {}),
                 "type_name": type_names[0],
                 **({"type_names": type_names} if len(type_names) > 1 else {}),
                 "interface_part": interface_part,
@@ -2493,7 +2502,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 # だった）。
                 "children": [self.visit(el) for el in ctx.partBodyElement()],
             }
-        id_ctx = ctx.ID()
+        bare_type = _namespace_path_text(ctx.bareTypeRef) if ctx.bareTypeRef is not None else None
         redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
         bare_ends = ctx.connectorEndPath()
         bare_interface_part = (
@@ -2503,7 +2512,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return {
             "type": "interface_usage",
             "name": _optional_simple_name_text(ctx.simpleName()),
-            "type_name": id_ctx.getText() if id_ctx is not None else None,
+            "type_name": bare_type,
             # 2026-09-04(G1): connect節に端点多重度を追加した結果、この規則内の
             # multiplicitySpec参照が複数になった。無ラベルの
             # `ctx.multiplicitySpec()`は戻り値が単体からリストへ変わるため、
@@ -3807,9 +3816,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return {
             "type": "frame_statement",
             "isConcern": ctx.isConcern is not None,
-            "name": _simple_name_text(ctx.name),
+            "name": _simple_name_text(ctx.name) if ctx.name is not None else None,
             "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
             "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
+            # `frame p :>> A::b :> C::d;`（既存の完全一致のテストを壊さないよう、無ければキーを足さない）
+            **({"redefines": self._redefine_list_namespace(ctx.postKind, ctx.postTarget)} if ctx.postKind else {}),
         }
 
     def visitBareIncludeStmt(self, ctx: SysMLMinParser.BareIncludeStmtContext) -> Dict:
@@ -3833,6 +3844,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return {
             "type": "occurrence_def",
             "name": _simple_name_text(ctx.simpleName()),
+            **({"shortName": ctx.shortName.text} if ctx.shortName is not None else {}),
             "isIndividual": ctx.isIndividual is not None,
             "isAbstract": ctx.isAbstract is not None,
             "inheritance": self._inheritance_dict(ctx),
@@ -3842,7 +3854,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
     def visitOccurrenceUsage(self, ctx: SysMLMinParser.OccurrenceUsageContext) -> Dict:
         children = [self.visit(el) for el in ctx.partBodyElement()]
         direction_ctx = ctx.direction()
-        redefines = self._redefine_list_namespace(ctx.postKind, ctx.postTarget)
+        redefines = self._redefine_list_namespace(ctx.preKind, ctx.preTarget) + self._redefine_list_namespace(
+            ctx.postKind, ctx.postTarget)
         # `occurrence twoTypes: PartDef, Real;`のように型節がカンマ区切りの
         # 複数型を取ることがある（2026-08-28、730件パース失敗の要因分析で
         # 発見）。
@@ -3866,7 +3879,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "redefines": redefines,
             "value": self.visit(ctx.value) if ctx.value is not None else None,
             "defaultValue": self.visit(ctx.defaultValue) if ctx.defaultValue is not None else None,
-            "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
+            "multiplicity": self._multiplicity_dict(ctx.preMult if ctx.preMult is not None else ctx.postMult),
             "type_name": type_names[0] if type_names else None,
             **({"type_names": type_names} if len(type_names) > 1 else {}),
             # `#cause occurrence 'battery depleted' { ... }`（14c-Language

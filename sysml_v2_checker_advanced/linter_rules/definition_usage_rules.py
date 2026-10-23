@@ -540,6 +540,11 @@ class DefinitionUsageRulesMixin:
             child_ancestor_names = (
                 ancestor_names | {own_name} if isinstance(own_name, str) and own_name else ancestor_names
             )
+            # 短い名前での自己参照（`occurrence def <PRJ> P { ... x = PRJ::company; }`）も同じ
+            # （参照実装で確認、2026-10-23。sysmod の `stakeholder :>> c = PRJ::logisticCompany;`）
+            own_short = node.get("shortName")
+            if isinstance(own_short, str) and own_short:
+                child_ancestor_names = child_ancestor_names | {own_short.strip("'")}
             # `item def RightTriangle :> Triangle { ... Triangle::width ... }`
             # （ShapeItems.sysml）のように、サブタイプの本体内から基底型の名前で
             # `::`参照するのも許容されている（継承済みfeatureは実質的に
