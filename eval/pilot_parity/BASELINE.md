@@ -516,6 +516,11 @@ sha256 をリリースの値と照合）を `C:\test\SysMLv2_pilot\pilot-0.63.0\
 - 自作の 2 つのメッセージを 0.63.0 の文言にした（`scope_resolver.py` の種類の表、`validation_rules.py`）。比較の
   種類の表（`compare.py`）は両方の文言を同じ種類に分けるので、変えていない。
 - MCP サーバの中継クラス（`SysMLDaemon`、0.62.0 の jar に対してコンパイル）は 0.63.0 の jar でもそのまま動いた。
+- **ライブラリの `.index.json`**: 配布物の `sysml.library` には `.index.json` があり、段階 E のラベルはそれを含むライブラリで
+  作った。sysml-mcp-server の README によると、`.index.json` があると継承した feature を部分集合の先にしたとき誤って
+  未解決になる（サーバのテスト `test_inherited_feature_resolves_without_library_index`）。ただし版の差で増えたエラーは
+  flow の文言だけで、未解決は 1 件も増えていないので、ラベルへの影響は見つからなかった。MCP サーバに入れるときは
+  `.index.json` を消した（2026-10-23。サーバのテスト 42 件が通る）。次の版からは、消したライブラリでラベルを作る。
 
 ### 結果（正解を 0.63.0 にしたとき。Pilot に構文エラーの無い入力の行 + 種類）
 
@@ -535,8 +540,8 @@ sha256 をリリースの値と照合）を `C:\test\SysMLv2_pilot\pilot-0.63.0\
 
 ### 残した課題
 
-- MCP サーバ（sysml-mcp-server）の Pilot を 0.63.0 にするかどうか。今は MCP の `validate_sysml` が 0.62.0、
-  自作のリンターが 0.63.0 の文言で、flow の 2 つのメッセージだけ文言が食い違う。
+- ~~MCP サーバ（sysml-mcp-server）の Pilot を 0.63.0 にするかどうか~~ → 0.63.0 にした（2026-10-23。jar とライブラリを
+  入れ替え、中継クラスをコンパイルし直した。0.62.0 は `C:\test\SysMLv2_pilot\pilot-0.62.0-backup` に退避）。
 - xpect のコーパスを 0.63.0 のソース（`Source code` の zip）のテストで作り直す。
 - 多重度の既定値の変更が実際にどんなモデルで違いを出すかを、Pilot のテスト（PR #815・#821）で確かめる。
 
