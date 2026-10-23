@@ -54,6 +54,9 @@ _SUBJECT_FIRST_NODE_TYPES = (
     "use_case_def", "use_case_usage",
     "analysis_case_def", "analysis_case_usage",
     "verification_case_def", "verification_case_usage",
+    # `include use case e : Enter { actor :>> driver; }`・`viewpoint def VP { stakeholder s : P; }` も
+    # （Pilot 0.63.0 で確認、2026-10-23）
+    "include_use_case_usage", "viewpoint_def", "viewpoint_usage",
 )
 
 # action の本体を持つノード → 報告での呼び方（_check_leading_then_in_action_bodies）
@@ -348,10 +351,20 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         """
         unresolved = scope_resolver.unresolved_references(ast, external_names=known_external_types,
                                                           other_asts=self.other_asts)
+        definition_names = {name.split("::")[-1] for name, node in self.symbols.items()
+                            if isinstance(node, dict) and str(node.get("type") or "").endswith("_def")}
+        # 定義の protected・private のメンバー（`PD::b`）だけ。usage の中を `::` でたどる形（`vehicle::x`）は
+        # 名前解決が確かめきれないので、従来どおり accessible のほうを残す
+        unresolved_nodes = {id(node) for node, reference, _kind in unresolved
+                            if "::" in reference and reference.split("::")[-2] in definition_names}
 
         def replaced(issue: LintIssue) -> bool:
             if issue.severity != SEVERITY_ERROR:
                 return False
+            if issue.rule == "_check_accessible_feature_paths":
+                # `PD::b` の b が protected・private なら、参照実装は `::` の使い方ではなく未解決を出す
+                # （2026-10-23 に確認。public の `PD::a` は `Must be an accessible feature`）
+                return id(issue.node) in unresolved_nodes
             if issue.rule in self._FLAT_TYPE_RULES:
                 return bool(self._FLAT_TYPE_MESSAGE.search(issue.message))
             if issue.rule in self._FLAT_NAMESPACE_RULES:

@@ -603,6 +603,63 @@ sha256 をリリースの値と照合）を `C:\test\SysMLv2_pilot\pilot-0.63.0\
   variation の `.`。
 - **さらに新しい held-out**: 新しい held-out も見ながら直したので、汎化を確かめるには別のデータが要る。
 
+## 代入・呼び出し・注釈・subject の位置（2026-10-23）
+
+上で残した開発の見逃しのうち、構文エラーの無い 5 種類を入れた。どれも小さな例を Pilot 0.63.0 に通し、行と文言が
+同じになることを確かめた（`tests/test_pilot_parity_more_rules.py`）。
+
+### 入れた規則
+
+- **`assign` の代入先**（`scope_resolver.unresolved_references`）: 式の名前と同じく確かめる。先頭が無ければ
+  `Element`、連鎖の先は 2 つで `Element`・3 つ以上で `Feature`。連鎖の先の protected・private は見えない
+  （`assign i.b := null;`）。キーワードの無い `measurement = testVehicle.mass;` は feature の宣言なので、文法に
+  `isAssign` を足して区別した（区別しないと、宣言の名前が消えて誤検出が出た）。
+- **`PD::b` の b が protected・private**: `Must be an accessible feature` ではなく `Couldn't resolve reference to
+  Element 'PD::b'.`。修飾が定義のときだけ置き換える（usage の中を `::` でたどる `vehicle::x` は名前解決が
+  確かめきれないので従来どおり）。
+- **`Referent must be time varying.`**: 合成の action・calc・state・case の usage（`ref action`・`perform`・
+  `exhibit state`・constraint・requirement は通る）と、属性の定義・usage・列挙・パッケージが持つ feature
+  （`ad.k`・`E::e1`・パッケージの直下の `pp`）。constant・derived・end は通る。名前の無い要素は名前解決で透過
+  なので、持ち主は本体を見て確かめる（`action { attribute i; assign i := 0; }` の誤検出）。
+- **`Must correspond to one input parameter of the invoked type`**: 位置の引数は、型の subject と方向のある引数
+  （return と方向の無い属性は除く）に宣言の順で対応する。対応する引数の無い位置の引数・`out` に当たる位置の
+  引数（方向の食い違いも出す）・型に無い名前付きの引数（その名前の feature も無ければ未解決も）。確かめるのは
+  このファイルの特化を持たない振る舞いの定義と、それで型付けした引数の無い usage。自分で subject を書いていない
+  要件・case はライブラリの subject を継承するので確かめない（sysml-v2-lsp の `homePowerRequirement(home_uut)`
+  の誤検出）。`verify r;` は参照先 r の名前を持つので、宣言のほうを呼ぶ。
+- **`Cannot annotate <メタクラス>`**: メタデータの定義の `:> annotatedElement : SysML::PartUsage;`（複数なら
+  どれか、特化の先の制約も足す）に、注釈する要素のメタクラスが当たるか。`@M;`・`metadata m : M;` は囲む要素、
+  `about x` は x、`#M` は前置した要素。メタクラスの特化は `scripts/build_metaclass_supertypes.py` が
+  SysML.sysml・KerML.kerml から作る `metaclass_supertypes.json`。
+- **`Subject must be first parameter.`**（既存の規則）: `include use case`・viewpoint にも当てる。subject が無い
+  ときは要素の行に出す（以前は最初の引数の行）。先頭が `out` の引数なら出さない（Pilot は継承した subject の
+  順番の再定義として方向の食い違いを出す）。
+- 文法の穴 2 つ: `#M metadata def MD;`、`enum def E { @M; e1; }`。
+- `compare.py` に `time_varying` の種類を足した（`other` は一致として数えないため）。
+
+### 結果
+
+| 指標 | 前 | 後 |
+| --- | --- | --- |
+| 開発: 行 + 種類（構文エラーの無い 449 件） | 93.2% / 97.3% | **94.1% / 97.5%** |
+| 開発: unit 単位の見逃し | 12（4.0%） | **8（2.7%）**（構文エラーのあるもの 6 件） |
+| 開発: 変異体・正しいモデルの誤検出 | 112 / 112・0 | 112 / 112・0 |
+| 開発: xpect | 126 / 132 | **127 / 132** |
+| held-out: 行 + 種類 | 84.4% / 99.2% | 84.9% / 99.3% |
+| フォルダ: 行 + 種類 | 82.9% / 99.8% | 83.2% / 99.8% |
+| 新しい held-out: 行 + 種類 | 92.7% / 100% | 92.7% / 100% |
+
+- held-out とフォルダの上がり分は、ほぼ subject の位置（EveOnlineMiningFrigate の `include use case` 10 件、
+  subject の無い要素の行の取り違え 3 件）。
+- Pilot がエラーを出さない unit での誤検出は、どのコーパスでも 0 のまま。
+
+### 残した課題
+
+- 開発で残る見逃し（構文エラーの無いもの）: variation の usage の variant を `.` でたどる
+  `Must be a valid feature`（型の中だけ。パッケージの直下の `top.t1` は通る）、`#g3 attribute a3` の意味的
+  メタデータの baseType による種類の制約。
+- 呼び出しの規則は、特化した定義（継承した引数を順番に再定義する）を確かめない。
+
 ## 再現手順
 
 ```

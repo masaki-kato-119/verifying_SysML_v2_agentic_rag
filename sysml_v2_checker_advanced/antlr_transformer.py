@@ -145,7 +145,7 @@ _EXTRA_KEY_SUFFIX = "_source"
 _EXTRA_LINE_SUFFIX = "_line"
 # declaresAction: `entry action x;`・`do action x : T;`・`exit action x;` の action キーワード（宣言。キーワードの
 # 無い `entry x;` は既存の action への参照。Pilot 0.63.0 で確認、2026-10-23）
-_EXTRA_KEYS = frozenset({"referenceForm", "declaresAction"})
+_EXTRA_KEYS = frozenset({"referenceForm", "declaresAction", "assignKeyword"})
 
 
 def _with_extra(node: Dict, extra: Dict) -> Dict:
@@ -1183,11 +1183,14 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return {
             "type": "assignment_stmt",
             "name": _namespace_path_text(ctx.target),
+            **_colon_source("name", ctx.target),
             "operator": ctx.op.text,
             "value": self.visit(ctx.value),
             **({"isThen": True} if ctx.isThen is not None else {}),
             **({"visibility": visibility_ctx.getText()} if visibility_ctx is not None else {}),
             **({"actionName": _simple_name_text(ctx.actionName)} if ctx.actionName is not None else {}),
+            # `assign x := v;`（代入の action）。キーワードの無い `x = v;` は feature x の宣言
+            **({"assignKeyword": True} if ctx.isAssign is not None else {}),
         }
 
     def _send_action_payload(self, ctx) -> Dict | str:

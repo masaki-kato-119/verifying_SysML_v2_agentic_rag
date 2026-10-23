@@ -38,6 +38,7 @@ PILOT_CATEGORIES: list[tuple[str, re.Pattern[str]]] = [
     ("individual", re.compile(r"individual")),
     ("variant", re.compile(r"[Vv]ariant|variation")),
     ("ownership", re.compile(r"Owned usages of a port definition|Nested usages in a port usage")),
+    ("time_varying", re.compile(r"Referent must be time varying")),
     ("invocation", re.compile(r"Must invoke|model-level evaluable|input parameter of the invoked")),
     ("annotation", re.compile(r"Cannot annotate|metadata")),
     ("expression_result", re.compile(r"Must have a Boolean result|Must be a Boolean expression|must be a DurationValue")),

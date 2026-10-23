@@ -757,8 +757,9 @@ renderStmt
 // のどちらかがあればよいが、ここではnameのみ実装する（typeSpecは未対応）。
 // `metadata def <cause> CauseMetadata :> SemanticMetadata { ... }`のように、
 // metadata defもShortName注釈を取りうる（公式コーパスで10件、最頻出）。
+// `#MetaOnly metadata def MD;`（前置メタデータ注釈。参照実装は受理する、2026-10-23）
 metadataDef
-    : isAbstract='abstract'? 'metadata' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : prefixMetadataAnnotation* isAbstract='abstract'? 'metadata' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // `@Classified { classificationLevel = ...; }`/`@Security;`
@@ -1590,6 +1591,8 @@ enumBodyElement
     // を含むが、enumBodyElementには未登録だった。2026-08-28、730件パース
     // 失敗の要因分析で発見）。
     | valueBindingStmt
+    // `enum def E { @M; e1; }`（列挙の定義の本体のメタデータ。参照実装は受理する、2026-10-23）
+    | metadataUsage
     ;
 
 // (a) `enum 'literal';`という明示的キーワード形、(b)/(c) 裸の名前に
@@ -2595,7 +2598,7 @@ terminateActionStmt
 // ため、simpleNameではなくnamespacePathを使う（2026-08-28、参照実装比較
 // レポートP0-1/P0-5で発見）。
 assignmentStmt
-    : isThen='then'? visibilityIndicator? ('action' actionName=simpleName?)? 'assign'? target=namespacePath op=('=' | ':=') value=expression ';'
+    : isThen='then'? visibilityIndicator? ('action' actionName=simpleName?)? isAssign='assign'? target=namespacePath op=('=' | ':=') value=expression ';'
     ;
 
 // --- send action (Section 7.17 SendActionUsage) ------------------------------

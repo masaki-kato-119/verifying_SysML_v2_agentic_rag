@@ -781,11 +781,14 @@ class DefinitionUsageRulesMixin:
                 f"[8.2.2.21] '{name}' にsubjectが複数定義されています(1つのみ許可)",
                 extra
             ))
-        if param_like and param_like[0].get("type") != "subject_usage":
+        # 先頭が `out` の引数なら、参照実装は subject の位置ではなく、継承した subject を順番に再定義した
+        # 方向の食い違いを出す（`use case def U { out o : P; subject s : V; }`。Pilot 0.63.0 で確認、2026-10-23）
+        if param_like and param_like[0].get("type") != "subject_usage" and param_like[0].get("direction") != "out":
             self.issues.append(LintIssue(
                 SEVERITY_ERROR,
                 f"[8.2.2.21] '{name}' のsubjectは最初のパラメータでなければなりません",
-                subjects[0] if subjects else param_like[0]
+                # subject が無ければ要素そのものの位置（`include use case e1 : Enter { ... }` の行）
+                subjects[0] if subjects else node
             ))
     def _check_variation_variant_ownership(self, node: Dict, namespace: str) -> None:
         """variation と variant の所有関係 (8.2.2.5 Variability)。

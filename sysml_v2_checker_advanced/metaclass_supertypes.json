@@ -1,0 +1,560 @@
+{
+ "AcceptActionUsage": [
+  "ActionUsage"
+ ],
+ "ActionDefinition": [
+  "Behavior",
+  "OccurrenceDefinition"
+ ],
+ "ActionUsage": [
+  "Step",
+  "OccurrenceUsage"
+ ],
+ "ActorMembership": [
+  "ParameterMembership"
+ ],
+ "AllocationDefinition": [
+  "ConnectionDefinition"
+ ],
+ "AllocationUsage": [
+  "ConnectionUsage"
+ ],
+ "AnalysisCaseDefinition": [
+  "CaseDefinition"
+ ],
+ "AnalysisCaseUsage": [
+  "CaseUsage"
+ ],
+ "AnnotatingElement": [
+  "Element"
+ ],
+ "Annotation": [
+  "Relationship"
+ ],
+ "AssertConstraintUsage": [
+  "ConstraintUsage",
+  "Invariant"
+ ],
+ "AssignmentActionUsage": [
+  "ActionUsage"
+ ],
+ "Association": [
+  "Classifier",
+  "Relationship"
+ ],
+ "AssociationStructure": [
+  "Association",
+  "Structure"
+ ],
+ "AttributeDefinition": [
+  "DataType",
+  "Definition"
+ ],
+ "AttributeUsage": [
+  "Usage"
+ ],
+ "Behavior": [
+  "Class"
+ ],
+ "BindingConnector": [
+  "Connector"
+ ],
+ "BindingConnectorAsUsage": [
+  "BindingConnector",
+  "ConnectorAsUsage"
+ ],
+ "BooleanExpression": [
+  "Expression"
+ ],
+ "CalculationDefinition": [
+  "Function",
+  "ActionDefinition"
+ ],
+ "CalculationUsage": [
+  "Expression",
+  "ActionUsage"
+ ],
+ "CaseDefinition": [
+  "CalculationDefinition"
+ ],
+ "CaseUsage": [
+  "CalculationUsage"
+ ],
+ "Class": [
+  "Classifier"
+ ],
+ "Classifier": [
+  "Type"
+ ],
+ "CollectExpression": [
+  "OperatorExpression"
+ ],
+ "Comment": [
+  "AnnotatingElement"
+ ],
+ "ConcernDefinition": [
+  "RequirementDefinition"
+ ],
+ "ConcernUsage": [
+  "RequirementUsage"
+ ],
+ "ConjugatedPortDefinition": [
+  "PortDefinition"
+ ],
+ "ConjugatedPortTyping": [
+  "FeatureTyping"
+ ],
+ "Conjugation": [
+  "Relationship"
+ ],
+ "ConnectionDefinition": [
+  "AssociationStructure",
+  "PartDefinition"
+ ],
+ "ConnectionUsage": [
+  "ConnectorAsUsage",
+  "PartUsage"
+ ],
+ "Connector": [
+  "Feature",
+  "Relationship"
+ ],
+ "ConnectorAsUsage": [
+  "Usage",
+  "Connector"
+ ],
+ "ConstraintDefinition": [
+  "OccurrenceDefinition",
+  "Predicate"
+ ],
+ "ConstraintUsage": [
+  "BooleanExpression",
+  "OccurrenceUsage"
+ ],
+ "ConstructorExpression": [
+  "InstantiationExpression"
+ ],
+ "ControlNode": [
+  "ActionUsage"
+ ],
+ "CrossSubsetting": [
+  "Subsetting"
+ ],
+ "DataType": [
+  "Classifier"
+ ],
+ "DecisionNode": [
+  "ControlNode"
+ ],
+ "Definition": [
+  "Classifier"
+ ],
+ "Dependency": [
+  "Relationship"
+ ],
+ "Differencing": [
+  "Relationship"
+ ],
+ "Disjoining": [
+  "Relationship"
+ ],
+ "Documentation": [
+  "Comment"
+ ],
+ "Element": [],
+ "ElementFilterMembership": [
+  "OwningMembership"
+ ],
+ "EndFeatureMembership": [
+  "FeatureMembership"
+ ],
+ "EnumerationDefinition": [
+  "AttributeDefinition"
+ ],
+ "EnumerationUsage": [
+  "AttributeUsage"
+ ],
+ "EventOccurrenceUsage": [
+  "OccurrenceUsage"
+ ],
+ "ExhibitStateUsage": [
+  "StateUsage",
+  "PerformActionUsage"
+ ],
+ "Expose": [
+  "Import"
+ ],
+ "Expression": [
+  "Step"
+ ],
+ "Feature": [
+  "Type"
+ ],
+ "FeatureChainExpression": [
+  "OperatorExpression"
+ ],
+ "FeatureChaining": [
+  "Relationship"
+ ],
+ "FeatureInverting": [
+  "Relationship"
+ ],
+ "FeatureMembership": [
+  "OwningMembership"
+ ],
+ "FeatureReferenceExpression": [
+  "Expression"
+ ],
+ "FeatureTyping": [
+  "Specialization"
+ ],
+ "FeatureValue": [
+  "OwningMembership"
+ ],
+ "Flow": [
+  "Connector",
+  "Step"
+ ],
+ "FlowDefinition": [
+  "Interaction",
+  "ActionDefinition"
+ ],
+ "FlowEnd": [
+  "Feature"
+ ],
+ "FlowUsage": [
+  "ConnectorAsUsage",
+  "Flow",
+  "ActionUsage"
+ ],
+ "ForLoopActionUsage": [
+  "LoopActionUsage"
+ ],
+ "ForkNode": [
+  "ControlNode"
+ ],
+ "FramedConcernMembership": [
+  "RequirementConstraintMembership"
+ ],
+ "Function": [
+  "Behavior"
+ ],
+ "IfActionUsage": [
+  "ActionUsage"
+ ],
+ "Import": [
+  "Relationship"
+ ],
+ "IncludeUseCaseUsage": [
+  "UseCaseUsage",
+  "PerformActionUsage"
+ ],
+ "IndexExpression": [
+  "OperatorExpression"
+ ],
+ "InstantiationExpression": [
+  "Expression"
+ ],
+ "Interaction": [
+  "Association",
+  "Behavior"
+ ],
+ "InterfaceDefinition": [
+  "ConnectionDefinition"
+ ],
+ "InterfaceUsage": [
+  "ConnectionUsage"
+ ],
+ "Intersecting": [
+  "Relationship"
+ ],
+ "Invariant": [
+  "BooleanExpression"
+ ],
+ "InvocationExpression": [
+  "InstantiationExpression"
+ ],
+ "ItemDefinition": [
+  "Structure",
+  "OccurrenceDefinition"
+ ],
+ "ItemUsage": [
+  "OccurrenceUsage"
+ ],
+ "JoinNode": [
+  "ControlNode"
+ ],
+ "LibraryPackage": [
+  "Package"
+ ],
+ "LiteralBoolean": [
+  "LiteralExpression"
+ ],
+ "LiteralExpression": [
+  "Expression"
+ ],
+ "LiteralInfinity": [
+  "LiteralExpression"
+ ],
+ "LiteralInteger": [
+  "LiteralExpression"
+ ],
+ "LiteralRational": [
+  "LiteralExpression"
+ ],
+ "LiteralString": [
+  "LiteralExpression"
+ ],
+ "LoopActionUsage": [
+  "ActionUsage"
+ ],
+ "Membership": [
+  "Relationship"
+ ],
+ "MembershipExpose": [
+  "MembershipImport",
+  "Expose"
+ ],
+ "MembershipImport": [
+  "Import"
+ ],
+ "MergeNode": [
+  "ControlNode"
+ ],
+ "Metaclass": [
+  "Structure"
+ ],
+ "MetadataAccessExpression": [
+  "Expression"
+ ],
+ "MetadataDefinition": [
+  "ItemDefinition",
+  "Metaclass"
+ ],
+ "MetadataFeature": [
+  "AnnotatingElement",
+  "Feature"
+ ],
+ "MetadataUsage": [
+  "ItemUsage",
+  "MetadataFeature"
+ ],
+ "Multiplicity": [
+  "Feature"
+ ],
+ "MultiplicityRange": [
+  "Multiplicity"
+ ],
+ "Namespace": [
+  "Element"
+ ],
+ "NamespaceExpose": [
+  "Expose",
+  "NamespaceImport"
+ ],
+ "NamespaceImport": [
+  "Import"
+ ],
+ "NullExpression": [
+  "Expression"
+ ],
+ "ObjectiveMembership": [
+  "FeatureMembership"
+ ],
+ "OccurrenceDefinition": [
+  "Definition",
+  "Class"
+ ],
+ "OccurrenceUsage": [
+  "Usage"
+ ],
+ "OperatorExpression": [
+  "InvocationExpression"
+ ],
+ "OwningMembership": [
+  "Membership"
+ ],
+ "Package": [
+  "Namespace"
+ ],
+ "ParameterMembership": [
+  "FeatureMembership"
+ ],
+ "PartDefinition": [
+  "ItemDefinition"
+ ],
+ "PartUsage": [
+  "ItemUsage"
+ ],
+ "PayloadFeature": [
+  "Feature"
+ ],
+ "PerformActionUsage": [
+  "ActionUsage",
+  "EventOccurrenceUsage"
+ ],
+ "PortConjugation": [
+  "Conjugation"
+ ],
+ "PortDefinition": [
+  "OccurrenceDefinition",
+  "Structure"
+ ],
+ "PortUsage": [
+  "OccurrenceUsage"
+ ],
+ "Predicate": [
+  "Function"
+ ],
+ "Redefinition": [
+  "Subsetting"
+ ],
+ "ReferenceSubsetting": [
+  "Subsetting"
+ ],
+ "ReferenceUsage": [
+  "Usage"
+ ],
+ "Relationship": [
+  "Element"
+ ],
+ "RenderingDefinition": [
+  "PartDefinition"
+ ],
+ "RenderingUsage": [
+  "PartUsage"
+ ],
+ "RequirementConstraintMembership": [
+  "FeatureMembership"
+ ],
+ "RequirementDefinition": [
+  "ConstraintDefinition"
+ ],
+ "RequirementUsage": [
+  "ConstraintUsage"
+ ],
+ "RequirementVerificationMembership": [
+  "RequirementConstraintMembership"
+ ],
+ "ResultExpressionMembership": [
+  "FeatureMembership"
+ ],
+ "ReturnParameterMembership": [
+  "ParameterMembership"
+ ],
+ "SatisfyRequirementUsage": [
+  "RequirementUsage",
+  "AssertConstraintUsage"
+ ],
+ "SelectExpression": [
+  "OperatorExpression"
+ ],
+ "SendActionUsage": [
+  "ActionUsage"
+ ],
+ "Specialization": [
+  "Relationship"
+ ],
+ "StakeholderMembership": [
+  "ParameterMembership"
+ ],
+ "StateDefinition": [
+  "ActionDefinition"
+ ],
+ "StateSubactionMembership": [
+  "FeatureMembership"
+ ],
+ "StateUsage": [
+  "ActionUsage"
+ ],
+ "Step": [
+  "Feature"
+ ],
+ "Structure": [
+  "Class"
+ ],
+ "Subclassification": [
+  "Specialization"
+ ],
+ "SubjectMembership": [
+  "ParameterMembership"
+ ],
+ "Subsetting": [
+  "Specialization"
+ ],
+ "Succession": [
+  "Connector"
+ ],
+ "SuccessionAsUsage": [
+  "ConnectorAsUsage",
+  "Succession"
+ ],
+ "SuccessionFlow": [
+  "Succession",
+  "Flow"
+ ],
+ "SuccessionFlowUsage": [
+  "SuccessionFlow",
+  "FlowUsage"
+ ],
+ "TerminateActionUsage": [
+  "ActionUsage"
+ ],
+ "TextualRepresentation": [
+  "AnnotatingElement"
+ ],
+ "TransitionFeatureMembership": [
+  "FeatureMembership"
+ ],
+ "TransitionUsage": [
+  "ActionUsage"
+ ],
+ "TriggerInvocationExpression": [
+  "InvocationExpression"
+ ],
+ "Type": [
+  "Namespace"
+ ],
+ "TypeFeaturing": [
+  "Relationship"
+ ],
+ "Unioning": [
+  "Relationship"
+ ],
+ "Usage": [
+  "Feature"
+ ],
+ "UseCaseDefinition": [
+  "CaseDefinition"
+ ],
+ "UseCaseUsage": [
+  "CaseUsage"
+ ],
+ "VariantMembership": [
+  "OwningMembership"
+ ],
+ "VerificationCaseDefinition": [
+  "CaseDefinition"
+ ],
+ "VerificationCaseUsage": [
+  "CaseUsage"
+ ],
+ "ViewDefinition": [
+  "PartDefinition"
+ ],
+ "ViewRenderingMembership": [
+  "FeatureMembership"
+ ],
+ "ViewUsage": [
+  "PartUsage"
+ ],
+ "ViewpointDefinition": [
+  "RequirementDefinition"
+ ],
+ "ViewpointUsage": [
+  "RequirementUsage"
+ ],
+ "WhileLoopActionUsage": [
+  "LoopActionUsage"
+ ]
+}

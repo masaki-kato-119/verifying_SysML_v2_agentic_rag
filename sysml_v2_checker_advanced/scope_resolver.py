@@ -355,6 +355,10 @@ class ScopeResolver:
             name = node["action_reference"]  # `entry action initial;` は initial という action を宣言する
         if node_type == "accept_action" and isinstance(node.get("actionName"), str):
             name = node["actionName"]  # `action triggerResponse accept incomingInquiry : M;`
+        if node_type == "assignment_stmt" and extra_of(node, "assignKeyword"):
+            # `assign x := v;` の name は代入先への参照。宣言するのは `action a assign x := v;` の a だけ
+            # （キーワードの無い `measurement = testVehicle.mass;` は measurement の宣言）
+            name = node["actionName"] if isinstance(node.get("actionName"), str) else None
         identification = node.get("identification")
         if node_type in ("comment", "documentation", "doc") and isinstance(identification, dict):
             # `comment cmt /* ... */` の名前は identification の中（`comment c2 about cmt` で参照される）
@@ -1802,6 +1806,19 @@ def unresolved_references(ast: dict, external_names: Optional[Iterable[str]] = N
                     missing = resolver.missing_chain_member(found, _chain_tail(node["reference"]))
                     if missing:
                         out.append((node, missing, _expression_chain_kind(node["reference"])))
+        if node.get("type") == "assignment_stmt" and extra_of(node, "assignKeyword")                 and isinstance(node.get("name"), str) and node["name"]:
+            # `assign i.b := null;` の代入先。式の名前と同じく、先頭が無ければ `Element`、連鎖の先は 2 つで
+            # `Element`・3 つ以上で `Feature`。protected・private のメンバーは見えない（参照実装で確認、2026-10-23）
+            target = _normalized_text(node, "name")
+            first = _chain_head(target)
+            if first and split_qualified(first)[0] not in local_names | _EXPRESSION_KEYWORDS:
+                status, found = resolver.resolve(first, owner, feature=True)
+                if status == NOT_FOUND:
+                    out.append((node, first, "Element"))
+                elif status == FOUND:
+                    missing = resolver.missing_chain_member(found, _chain_tail(target))
+                    if missing:
+                        out.append((node, missing, _expression_chain_kind(target)))
         if node.get("type") not in ("binary_interface_part", "binary_connector_part"):
             # 接続・allocate・satisfy の by などの端の連鎖（`a.b.c`）。`::` を含む端はアクセス範囲の
             # 判定（inaccessible_features）に任せ、ここでは `.` だけの連鎖を確かめる
