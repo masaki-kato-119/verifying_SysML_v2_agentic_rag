@@ -97,3 +97,6 @@ eval/pilot_parity/results/
 eval/pilot_parity/heldout/
 eval/pilot_parity/folders/
 eval/pilot_parity/heldout2/
+eval/pilot_parity/labels_*/
+eval/pilot_parity/results_*/
+eval/pilot_parity/version_diff.json

@@ -1445,8 +1445,9 @@ _usage_rule(["connection_usage"], "Association", "A connection must be typed by 
 _usage_rule(["interface_usage"], "InterfaceDef", "An interface must be typed by interface definitions.")
 _usage_rule(["allocation_usage"], "AllocationDef", "An allocation must be typed by allocation definitions.")
 # message の `of E` は運ぶものの型（AST では type_name）で、message 自身の型ではないので見ない
+# 0.63.0 で文言が変わった（0.62.0 は `A flow connection must be typed by flow connection definitions.`。段階 E）
 _usage_rule(["flow_usage"], "Interaction",
-            "A flow connection must be typed by flow connection definitions.")
+            "A flow usage must be typed by flow definitions.")
 _usage_rule(["individual_usage"], "IndividualDef", "An individual must be typed by one individual definition.", True)
 _usage_rule(["action_usage", "perform_action"], "Behavior", "An action must be typed by action definitions.")
 _usage_rule(["state_usage", "exhibit_state_usage"], "Behavior", "A state must be typed by state definitions.")

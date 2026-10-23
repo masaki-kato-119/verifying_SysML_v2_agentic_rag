@@ -26,8 +26,8 @@ def _messages(text: str) -> list:
     # flow def の端は 2 つまで（継承した端も数える）
     ("package Q { abstract flow def H { end a; } flow def I :> H { end a; end b; end c; } flow def J :> I; "
      "flow def K { end a; end b; } }",
-     ["A flow connection definition can have at most two ends.",
-      "A flow connection definition can have at most two ends."]),
+     ["A flow definition can have at most two ends.",  # Pilot 0.63.0 の文言
+      "A flow definition can have at most two ends."]),
     # interface の端は port
     ("package Q { interface def IF { end port a; end part b; } }", ["An interface end must be a port."]),
     # port def と port の中の port 以外の usage は ref

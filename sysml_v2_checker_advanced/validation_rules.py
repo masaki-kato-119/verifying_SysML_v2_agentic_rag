@@ -124,14 +124,14 @@ def validation_violations(ast: dict, external_names: Optional[Iterable[str]] = N
             if definitions and sum(1 for d in definitions if "IndividualDef" in (_classes_of(d) or ())) > 1:
                 out.append((node, "At most one individual definition is allowed."))
 
-        # 「A flow connection definition can have at most two ends.」
+        # 「A flow definition can have at most two ends.」（0.62.0 は `A flow connection definition ...`。0.63.0 で文言が変わった）
         if node_type == "flow_def" and element is not None:
             ends = own_ends(node)
             inherited = inherited_end_count(element)
             if len(ends) > 2:
-                out.extend((end, "A flow connection definition can have at most two ends.") for end in ends[2:])
+                out.extend((end, "A flow definition can have at most two ends.") for end in ends[2:])
             elif inherited is not None and inherited + len(ends) > 2:  # `flow def J :> I;` も
-                out.append((node, "A flow connection definition can have at most two ends."))
+                out.append((node, "A flow definition can have at most two ends."))
 
         # 「An interface end must be a port.」
         if node_type in ("interface_def", "interface_usage"):
