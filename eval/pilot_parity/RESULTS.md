@@ -1,10 +1,10 @@
-# 自作 SysML v2 チェッカーは Pilot 実装と同じ水準に到達できるか（研究の結果、2026-10-23。段階 E まで）
+# 自作 SysML v2 チェッカーは Pilot 実装と同じ水準に到達できるか（研究の結果、2026-10-23。段階 E と個別ルールの追加まで）
 
 ## 1. 問いと結論
 
 **問い**: 自作 SysML v2 チェッカー（`sysml_v2_checker_advanced`、ANTLR4 + Python）は、OMG SysML v2 Pilot 実装 0.62.0（以下 Pilot）と同じ水準の判定に到達できるか。
 
-**結論**: **Pilot に構文エラーの無いモデルについては、主な判定（名前解決・型の種類・参照先の種類・アクセス範囲）で Pilot の水準にほぼ到達した。正しいモデルをほとんど誤りとせず（適合率 97% 前後）、Pilot の指摘の 85〜92% を同じ行・同じ種類で出す。** ただし完全な同等ではない。構文エラーのあとの扱い、未実装の個別ルール、Pilot の版の追従が残る。
+**結論**: **Pilot に構文エラーの無いモデルについては、主な判定（名前解決・型の種類・参照先の種類・アクセス範囲）で Pilot の水準にほぼ到達した。正しいモデルをほとんど誤りとせず（適合率 97% 前後）、Pilot の指摘の 85〜92% を同じ行・同じ種類で出す。** 開発コーパスの目標（行 + 種類 ≥ 90% / ≥ 90%、unit 単位の見逃し ≤ 2%、変異体 ≥ 95%、xpect ≥ 95%）はすべて満たし、構文エラーの無い入力で unit ごと見逃すモデルは無くなった。ただし完全な同等ではない。構文エラーのあとの扱いが最大の残差で、汎化を確かめ直す新しいデータも要る。
 
 1. **開発に使ったコーパス**（519 件）: Pilot に構文エラーの無い入力で、「行 + エラーの種類」の再現率 **94.4%**・適合率 **97.5%**。正しいモデルの誤検出 0、変異体で入れた誤りは 112 / 112 を検出。Pilot 自身のテスト（xpect）の期待エラーのうち、Pilot 自身が同じ箇所に出すものの **96.2%**（127 / 132）を出す。研究前は全体で 11% / 15%、xpect は 31% だった。
 2. **開発に使っていない公開モデル（held-out、131 件）**: 規則を作るときに見ていない段階 D の時点で、再現率 3.4% → **81.4%**、適合率 21.7% → 84.9% と、改善の大部分が汎化した。ただし正しいモデルの誤検出が 96 件中 27 件あった。原因（名前解決の不足と文法の穴）を直して誤検出は **0 件**、行 + 種類は 84.3% / 97.6% になった。**この修正は held-out を見ながら行ったので、修正後の数値は汎化の証拠にならない。**
@@ -42,6 +42,7 @@ Pilot の層ごとに差を測り（`ROADMAP.md`）、層の順に埋めた。�
 | B スコープつき名前解決 | `scope_resolver.py`: 名前空間の木、import（可視性・`::*`・`::**`・filter）、継承メンバー、短い名前、式の中の名前と連鎖、アクセス範囲 | 未解決参照 17%（全体）→ 90%（構文エラーの無い unit）、アクセス範囲 26% → 95% |
 | C 解決結果を使う種類の判定 | Pilot の `checkAllTypes` / `checkOneType` を KerML のメタクラスの表で写した | 種類の判定 → 95%、参照先の種類 → 93% |
 | D 個別の検証ルール | `validation_rules.py`: objective の数、flow def の端の数、interface の端、モデルの水準で評価できる式 など | xpect 83% → 95.5%、行 + 種類 → 92% |
+| D' 残った個別ルール（10-23） | 再定義の方向、束縛の上書き、constant、`entry action x;`、`assign` の代入先と `Referent must be time varying`、呼び出しの引数（特化した定義も）、`Cannot annotate`、subject の位置、variant の連鎖、意味的メタデータの種類 | 行 + 種類 92.0% → 94.4%、unit 単位の見逃し 17 → 6 件（残りはすべて構文エラー）、変異体 110 → 112 / 112 |
 
 | 指標（開発コーパス） | 研究前 | 今 | 目標 |
 | --- | --- | --- | --- |
@@ -90,6 +91,8 @@ Pilot の層ごとに差を測り（`ROADMAP.md`）、層の順に埋めた。�
 
 AGV の初稿では、今の MCP は Pilot と同じ 4 件だけを出す（以前は 50 件中 46 件が誤検出）。
 
+（表は 2026-10-22 の時点の値。その後の個別ルールの追加を含めた全体は 83.2% / 99.8%、正しいファイルの誤検出は 0 のまま。）
+
 ## 6. 新しい held-out: LLM が書いたモデル（2026-10-23）
 
 今の held-out は誤検出の修正に使ったので、研究に使っていない題材（コーヒーマシン、電動アシスト自転車、エレベーター、人工衛星の電源サブシステム、輸液ポンプ。`C:\test\sysml_models\eval\heldout2\SPECS.md`）で、研究の文脈を持たないサブエージェント（開発に使った Opus ではなく Sonnet と Haiku）に 1 回で書かせた 10 モデル・53 ファイルを、**規則を変えずに**（コミット `6a1d61c`）フォルダ単位で Pilot と比べた。
@@ -109,7 +112,7 @@ AGV の初稿では、今の MCP は Pilot と同じ 4 件だけを出す（以�
 ## 7. 残る差
 
 - **Pilot に構文エラーがある入力**: Pilot（Xtext）は回復でファイルを早く閉じて残りを捨てることがあり（AGV の probe で `missing EOF at 'then'`）、ANTLR は読み続ける。その先の未解決・種類の連鎖は一致しない。どこで閉じるかは Xtext の回復の細部によるので、合わせる確かな方法が無い。LLM の初稿の大半が該当するので、生成の検証では最大の残差。
-- **未実装の個別ルール**: 方向の食い違う再定義・束縛した値の上書き・constant の再定義は 2026-10-23 に入れた（開発の unit 単位の見逃し 17 → 12 件）。同じ日に `assign` の代入先と `Referent must be time varying`、呼び出しの引数、メタデータの annotatedElement、`include use case` の subject の位置も入れた。続けて variation の usage の variant を `.` でたどる形、意味的メタデータの baseType による種類、特化した定義の呼び出しも入れ、構文エラーの無い入力での unit 単位の見逃しは 0 になった（12 → 6 件、残りはすべて Pilot に構文エラーのあるもの）。Pilot の検証メッセージ 186 種類のうち、コーパスに現れないものの多くは未対応。
+- **個別ルール**: 方向の食い違う再定義・束縛した値の上書き・constant の再定義は 2026-10-23 に入れた（開発の unit 単位の見逃し 17 → 12 件）。同じ日に `assign` の代入先と `Referent must be time varying`、呼び出しの引数、メタデータの annotatedElement、`include use case` の subject の位置も入れた。続けて variation の usage の variant を `.` でたどる形、意味的メタデータの baseType による種類、特化した定義の呼び出しも入れ、構文エラーの無い入力での unit 単位の見逃しは 0 になった（12 → 6 件、残りはすべて Pilot に構文エラーのあるもの）。Pilot の検証メッセージ 186 種類のうち、コーパスに現れないものの多くは未対応。
 - **さらに新しい held-out**: `entry action x;` の区別（新しい held-out の誤検出）と再定義の方向（同じく見逃し）を直したので、新しい held-out も汎化の証拠でなくなった。
 - **警告は比べていない**（例: 自作の共役ポートの警告、Pilot の `Duplicate of inherited member name`）。
 
@@ -133,16 +136,17 @@ AGV の初稿では、今の MCP は Pilot と同じ 4 件だけを出す（以�
 | `sysml_v2_checker_advanced/mcp_server.py` | `lint_sysml_file` / `lint_sysml_text` のフォルダ対応 |
 | 文法（`SysMLMin.g4`）・変換（`antlr_transformer.py`） | 文法の穴、参照の形、端と accept の行、エラー回復の木の読み方 |
 | `scripts/build_library_feature_names.py` | 標準ライブラリの型の本体で宣言される名前の表 |
+| `scripts/build_metaclass_supertypes.py` | SysML・KerML のメタクラスの特化の表（`Cannot annotate` に使う） |
 | `eval/pilot_parity/`（`build_corpus.py`・`build_heldout.py`・`build_folders.py`・`label_pilot*.py`・`run_local*.py`・`compare.py`・`analyze_*.py`） | 差分評価のハーネス |
-| `tests/test_scope_resolver.py`・`test_validation_rules.py`・`test_multi_file.py`・`test_pilot_parity_stage_a.py` ほか | 規則の単体テスト（Pilot で確かめた形） |
+| `tests/test_scope_resolver.py`・`test_validation_rules.py`・`test_multi_file.py`・`test_pilot_parity_stage_a.py`・`test_pilot_parity_more_rules.py` ほか | 規則の単体テスト（Pilot で確かめた形） |
 
-コミット（ブランチ `research/pilot-parity`）: `e54b426`（段階 A）、`dd1d8aa`・`0dad3de`（B）、`c0cf9e2`（C）、`ade1b60`（D）、`01a00dd`（まとめと held-out）、`9eca491`（held-out の誤検出の修正）、`07a03de`（複数ファイル対応）、`2ee3dbb`（フォルダ単位のコーパス）、`edca2ea`（`->` の呼び出し・文法の穴）、`6a1d61c`（frame）、`2e0ed0d`（新しい held-out）、`32d85dd`・`9322ca9`（段階 E）。MCP サーバの 0.63.0 への更新は SysMLv2_pilot の `14cd238`（ブランチ `mcp-multi-file`）。
+コミット（ブランチ `research/pilot-parity`）: `e54b426`（段階 A）、`dd1d8aa`・`0dad3de`（B）、`c0cf9e2`（C）、`ade1b60`（D）、`01a00dd`（まとめと held-out）、`9eca491`（held-out の誤検出の修正）、`07a03de`（複数ファイル対応）、`2ee3dbb`（フォルダ単位のコーパス）、`edca2ea`（`->` の呼び出し・文法の穴）、`6a1d61c`（frame）、`2e0ed0d`（新しい held-out）、`32d85dd`・`9322ca9`（段階 E）、`5d0c573`・`0d7f07e`・`efe0e50`（残った個別ルール）。MCP サーバの 0.63.0 への更新は SysMLv2_pilot の `14cd238`（ブランチ `mcp-multi-file`）。
 
 ## 10. 次の一手
 
 1. **新しい held-out を広げる**: 公開リポジトリのまだ集めていないモデル（ダウンロードの許可が要る）、Claude 以外の LLM が書いたモデル。構文エラーの無いファイルを増やす。
 2. 構文エラーのあとの扱い: LLM の初稿の大半が該当する。Pilot と同じ回復は難しいので、「構文エラーを先に直させる」使い方の案内（MCP の note）と合わせて考える。
-3. 未実装の個別ルール（方向の食い違う再定義など）と `entry action x;` の区別。直すたびに、使った held-out は開発用に回す。
+3. コーパスに現れない Pilot の検証メッセージ（186 種類のうち多く）。小さな例を Pilot に通して境界を確かめてから入れる。直すたびに、使った held-out は開発用に回す。
 4. Pilot の新しい版が出るたびに段階 E を繰り返す（ダウンロード → `.index.json` を消したライブラリでラベルを作り直す → `diff_pilot_versions.py` → 差を直す → MCP サーバも同じ版にする）。xpect は新しい版のソースのテストで作り直す。
 5. `rule_confidence.json`（各指摘に付ける信頼度）を新しいルールで測り直す。
 
