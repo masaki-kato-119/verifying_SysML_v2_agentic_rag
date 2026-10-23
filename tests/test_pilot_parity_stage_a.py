@@ -118,3 +118,37 @@ def test_short_name_of_the_enclosing_type_may_qualify_its_feature():
                "occurrence o : Other { ref part :>> company2 = PRJ::company; } }\n")
     assert _errors(inside)[1] == []
     assert [rule for _line, rule in _errors(outside)[1]] == ["_check_accessible_feature_paths"]
+
+
+def test_frame_without_concern_keyword_references_an_existing_concern():
+    # `frame c;`・`frame c : T;` は既にある concern への参照（継承したものも見える）。`frame concern c;` は宣言
+    # （参照実装で確認、2026-10-23）
+    text = """package F {
+    concern def CC;
+    concern c1 : CC;
+    requirement def R {
+        frame c1;
+        frame c2;
+        frame concern c1;
+        frame concern c3;
+        frame concern c4 : CC;
+        frame c5 : CC;
+        frame concern :CC;
+    }
+    requirement def R2 :> R {
+        frame c4;
+        frame c4x;
+    }
+    viewpoint vp {
+        frame c1;
+        frame nope;
+    }
+}
+"""
+    _ast, issues, dicts = lint_text_with_locations(text)
+    assert [(d["line"], d["message"]) for d in dicts if d["severity"] == "error"] == [
+        (6, "Couldn't resolve reference to Feature 'c2'."),
+        (10, "Couldn't resolve reference to Feature 'c5'."),
+        (15, "Couldn't resolve reference to Feature 'c4x'."),
+        (19, "Couldn't resolve reference to Feature 'nope'."),
+    ]

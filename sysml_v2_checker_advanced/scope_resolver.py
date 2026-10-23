@@ -39,8 +39,9 @@ UNKNOWN = "unknown"
 _REFERENCE_TYPES = {
     "import", "function_call", "then_stmt", "first_stmt", "else_stmt", "guarded_then_stmt",
     "new_instance", "named_argument", "identification", "arrow_lambda", "arrow_call",
-    "value_binding", "render_stmt", "frame_statement",
+    "value_binding", "render_stmt",
 }
+# frame は `frame concern c;` が宣言、`frame c;` が参照（_referenced_feature。2026-10-23）
 # 子要素を持ちうるが、メンバーの宣言ではない値のキー（参照の列・式）
 _NON_MEMBER_KEYS = {
     "redefines", "inheritance", "bases", "type_names", "type_spec", "multiplicity", "value",
@@ -839,6 +840,11 @@ def _referenced_feature(node: dict) -> Optional[str]:
     if node_type in ("do_action", "entry_action", "exit_action") and isinstance(node.get("action_reference"), str)             and node["action_reference"] and not node.get("type_name"):
         # state の `do senseTemperature { out temp; }` は既存の action を参照する（`senseTemperature.temp`）
         return node["action_reference"]
+    if node_type == "frame_statement" and not node.get("isConcern") and isinstance(node.get("name"), str) \
+            and node["name"]:
+        # `frame c;`・`frame c : T;`・`frame p :>> A::b;`（`concern` の無い形）は既存の concern を参照する。
+        # `frame concern c;` は宣言（参照実装で確認、2026-10-23）
+        return _normalized_text(node, "name") or node["name"]
     if node_type not in _REFERENCING_USAGE_TYPES:
         return None
     if isinstance(node.get("reference"), str) and node["reference"]:
@@ -955,7 +961,7 @@ def references_of(node: dict) -> List[Reference]:
         if isinstance(entry, dict) and isinstance(entry.get("target"), str) and entry["target"]:
             refs.append((_normalized_text(entry, "target") or entry["target"], "Feature", node, True))
     referenced = _referenced_feature(node)
-    if referenced and (node_type in ("satisfy_requirement_usage", "require_usage") or node.get("reference")
+    if referenced and (node_type in ("satisfy_requirement_usage", "require_usage", "frame_statement") or node.get("reference")
                        or extra_of(node, "referenceForm")):
         # キーワードの有無が AST に残らない形（`include u;` など）は、宣言と区別できないので
         # 報告しない（参照として継承元を探すのには使う）
@@ -1811,7 +1817,7 @@ def unresolved_references(ast: dict, external_names: Optional[Iterable[str]] = N
                         out.append((at, missing, "Feature"))
         referenced = _referenced_feature(node)
         if referenced and _chain_head(referenced) != referenced and (
-                node.get("type") in ("satisfy_requirement_usage", "require_usage") or node.get("reference")
+                node.get("type") in ("satisfy_requirement_usage", "require_usage", "frame_statement") or node.get("reference")
                 or extra_of(node, "referenceForm")):
             # 参照の連鎖（`perform transportTask.receiveCommand;`）: 先頭と 2 番目以降を確かめる
             head = _chain_head(referenced)

@@ -436,8 +436,14 @@ AGV の probe を調べる中で見つかった、1 ファイルでも起きる�
 
 ### 残した課題
 
-- `frame x;` の x は既にある concern への参照（Pilot は無ければ未解決）。自作は宣言として扱い、確かめない。
-- 構文エラーのあるファイルの回復の仕方が Pilot（Xtext）と違う。
+- ~~`frame x;` の x は既にある concern への参照~~ → 直した（2026-10-23）。`concern` の無い `frame c;`・
+  `frame c : T;`・`frame p :>> A::b;` は既にある concern を参照し（継承したものも見える）、`frame concern c;` は
+  宣言（Pilot で確認。`tests/test_pilot_parity_stage_a.py`）。開発・held-out・フォルダの数値は変わらない
+  （コーパスに存在しない concern を frame する例が無い）。
+- 構文エラーのあるファイルの回復の仕方が Pilot（Xtext）と違う。AGV の probe m02 では、Pilot は action の中の
+  セミコロン抜けのあとで `missing EOF at 'then'` を出してファイルを閉じ、残りの定義を捨てる。ANTLR は残りを
+  読み続ける。どこで閉じるかは Xtext のエラー回復の細部によるので、合わせる確かな方法が無い。既知の違いとして残す。
+- 新しい held-out での測定（今の held-out は誤検出の修正に使ったので、汎化の証拠にならない）。
 
 ## 再現手順
 
