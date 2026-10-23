@@ -545,6 +545,64 @@ sha256 をリリースの値と照合）を `C:\test\SysMLv2_pilot\pilot-0.63.0\
 - xpect のコーパスを 0.63.0 のソース（`Source code` の zip）のテストで作り直す。
 - 多重度の既定値の変更が実際にどんなモデルで違いを出すかを、Pilot のテスト（PR #815・#821）で確かめる。
 
+## 未実装だった個別ルールと `entry action x;`（2026-10-23）
+
+開発コーパスで unit ごと見逃していた 17 件のうち、構文エラーの無い 12 件の原因の規則と、新しい held-out の誤検出
+（`entry action x;`）を直した。どれも小さな例を Pilot 0.63.0（MCP サーバ）に通して境界を確かめてから入れた
+（`tests/test_validation_rules.py`・`tests/test_pilot_parity_stage_a.py`）。**新しい held-out の誤検出と見逃しを見て
+直したので、新しい held-out の数値もここから汎化の証拠でなくなる。**
+
+### 入れた規則（`validation_rules.py`）
+
+- **`Redefining feature must have a compatible direction`**: 方向の表（再定義される側 ← する側）は `in`←`in`、
+  `out`←`out`、`inout`←`in`/`out`/`inout`。方向のある feature を方向の無い feature で再定義すると食い違い
+  （`calc c : C { :>> x = 1.0; }`）。方向の無い feature はどれでも再定義できる。
+  - 振る舞い（action・calc・state・case・constraint・requirement）の usage の方向のある引数は、`:>>` の有無に
+    かかわらず型の引数を**順番どおりに**再定義する（`action s : Shoot { out item picture; }` の picture は Shoot の
+    最初の引数 image を再定義する）。ポート・part の中の feature は順番では再定義しない（sysmod で確認）。
+  - 共役のポート（`port q : ~P`）の中では P の feature の方向が反転する。型の無いポート（`port :>> p { ... }`）は
+    再定義の先のポートの型からたどる。
+- **`Cannot override a binding feature value`**: 再定義の先が `=` / `:=` の値を持つ（default ではない）とき、値を
+  持つ再定義（`=`・`:=`・`default` のどれでも）は誤り。先が default の値なら上書きできる。継承の途中の再定義
+  （`x1 : Base { :>> a = 20; }` を `x1sub :> x1 { :>> a = 25; }` が上書き）と、キーワードの無い束縛
+  （`p1 : P { :>> d = 2.0; }`、名前解決のメンバーにならない）も見る。
+- **`Subsetting/redefining feature must be constant if subsetted/redefined feature is constant`**: constant の
+  feature の再定義・部分集合は constant（値の無い `:>> w { }` も）。
+- 再定義の先が、継承ではなく再定義を囲む名前空間の要素として見つかったとき（型が解決できない・構文エラーの
+  回復で要素が別の本体に入った）は判定しない。フォルダ単位のコーパスの import の誤記の版と、構文エラーの
+  ある LLM のモデルで誤検出が出たため。
+
+### `entry action x;`
+
+`entry action x;`・`do action x : T;`・`exit action x;`（`action` キーワード付き）は action の宣言で、遷移の
+`first x` が解決する。キーワードの無い `entry x;` は既存の action への参照で、無ければ未解決（Pilot で確認）。
+文法に `isAction` を足し、AST の付帯情報 `declaresAction` で区別した。名前解決と、遷移の端の古い規則の両方に入れた。
+
+### 結果
+
+| 指標 | 前 | 後 |
+| --- | --- | --- |
+| 開発: 行 + 種類（構文エラーの無い 449 件） | 92.0% / 97.3% | **93.2% / 97.3%** |
+| 開発: unit 単位の見逃し | 17（5.7%） | **12（4.0%）** |
+| 開発: 変異体の検出 | 110 / 112 | **112 / 112** |
+| 開発: 正しいモデルの誤検出・xpect | 0・126 / 132 | 0・126 / 132 |
+| held-out: 行 + 種類（構文エラーの無い 127 件） | 84.3% / 97.6% | 84.4% / 99.2% |
+| フォルダ: 行 + 種類（構文エラーの無い 578 件） | 82.7% / 98.6% | 82.9% / 99.8% |
+| 新しい held-out: 行 + 種類（構文エラーの無い 12 件）・誤検出 | 85.4% / 97.2%・1 / 8 | 92.7% / 100%・0 / 8（見ながら直した） |
+
+- held-out の適合率が上がったのは、`entry nosuch;` の参照を名前解決で確かめるようにした副作用ではなく、
+  `entry action x;` を宣言として扱ったため（apollo-11 の誤検出 4 件が消えた）と、State-based Behavior の `entry`
+  の参照の当たりが増えたため。
+- 束縛の上書きの再現率は、開発で 13 / 15、フォルダで 9 / 25。フォルダで残るのは、構文エラーのあるファイルと、
+  再定義の先が囲む名前空間で見つかるもの（判定しない）。
+
+### 残した課題
+
+- 開発で残る見逃し（構文エラーの無いもの）: subject の位置（`include use case` の中）、invoke の引数の数、
+  メタデータの annotatedElement、メタデータの種類の制約、`assign` の `Referent must be time varying`、
+  variation の `.`。
+- **さらに新しい held-out**: 新しい held-out も見ながら直したので、汎化を確かめるには別のデータが要る。
+
 ## 再現手順
 
 ```

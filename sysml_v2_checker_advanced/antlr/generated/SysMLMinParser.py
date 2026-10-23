@@ -24411,6 +24411,7 @@ class SysMLMinParser ( Parser ):
         def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
             super().__init__(parent, invokingState)
             self.parser = parser
+            self.isAction = None # Token
             self.s16 = None # Token
             self.postKind = list() # of Tokens
             self.s17 = None # Token
@@ -24418,7 +24419,7 @@ class SysMLMinParser ( Parser ):
             self.s19 = None # Token
             self.s20 = None # Token
             self.s21 = None # Token
-            self._tset15020 = None # Token
+            self._tset15022 = None # Token
             self._namespacePathList = None # NamespacePathListContext
             self.postTarget = list() # of NamespacePathListContexts
             self.assign = None # AssignmentStmtContext
@@ -24489,7 +24490,7 @@ class SysMLMinParser ( Parser ):
                 _la = self._input.LA(1)
                 if _la==34:
                     self.state = 4800
-                    self.match(SysMLMinParser.T__33)
+                    localctx.isAction = self.match(SysMLMinParser.T__33)
 
 
                 self.state = 4804
@@ -24515,14 +24516,14 @@ class SysMLMinParser ( Parser ):
                 _la = self._input.LA(1)
                 while (((_la) & ~0x3f) == 0 and ((1 << _la) & 4128768) != 0):
                     self.state = 4810
-                    localctx._tset15020 = self._input.LT(1)
+                    localctx._tset15022 = self._input.LT(1)
                     _la = self._input.LA(1)
                     if not((((_la) & ~0x3f) == 0 and ((1 << _la) & 4128768) != 0)):
-                        localctx._tset15020 = self._errHandler.recoverInline(self)
+                        localctx._tset15022 = self._errHandler.recoverInline(self)
                     else:
                         self._errHandler.reportMatch(self)
                         self.consume()
-                    localctx.postKind.append(localctx._tset15020)
+                    localctx.postKind.append(localctx._tset15022)
                     self.state = 4811
                     localctx._namespacePathList = self.namespacePathList()
                     localctx.postTarget.append(localctx._namespacePathList)
@@ -24613,6 +24614,7 @@ class SysMLMinParser ( Parser ):
         def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
             super().__init__(parent, invokingState)
             self.parser = parser
+            self.isAction = None # Token
             self.s16 = None # Token
             self.postKind = list() # of Tokens
             self.s17 = None # Token
@@ -24620,7 +24622,7 @@ class SysMLMinParser ( Parser ):
             self.s19 = None # Token
             self.s20 = None # Token
             self.s21 = None # Token
-            self._tset15158 = None # Token
+            self._tset15160 = None # Token
             self._namespacePathList = None # NamespacePathListContext
             self.postTarget = list() # of NamespacePathListContexts
             self.payload = None # ExpressionContext
@@ -24691,7 +24693,7 @@ class SysMLMinParser ( Parser ):
                 _la = self._input.LA(1)
                 if _la==34:
                     self.state = 4844
-                    self.match(SysMLMinParser.T__33)
+                    localctx.isAction = self.match(SysMLMinParser.T__33)
 
 
                 self.state = 4848
@@ -24717,14 +24719,14 @@ class SysMLMinParser ( Parser ):
                 _la = self._input.LA(1)
                 while (((_la) & ~0x3f) == 0 and ((1 << _la) & 4128768) != 0):
                     self.state = 4854
-                    localctx._tset15158 = self._input.LT(1)
+                    localctx._tset15160 = self._input.LT(1)
                     _la = self._input.LA(1)
                     if not((((_la) & ~0x3f) == 0 and ((1 << _la) & 4128768) != 0)):
-                        localctx._tset15158 = self._errHandler.recoverInline(self)
+                        localctx._tset15160 = self._errHandler.recoverInline(self)
                     else:
                         self._errHandler.reportMatch(self)
                         self.consume()
-                    localctx.postKind.append(localctx._tset15158)
+                    localctx.postKind.append(localctx._tset15160)
                     self.state = 4855
                     localctx._namespacePathList = self.namespacePathList()
                     localctx.postTarget.append(localctx._namespacePathList)
@@ -24815,6 +24817,7 @@ class SysMLMinParser ( Parser ):
         def __init__(self, parser, parent:ParserRuleContext=None, invokingState:int=-1):
             super().__init__(parent, invokingState)
             self.parser = parser
+            self.isAction = None # Token
             self.s16 = None # Token
             self.postKind = list() # of Tokens
             self.s17 = None # Token
@@ -24822,7 +24825,7 @@ class SysMLMinParser ( Parser ):
             self.s19 = None # Token
             self.s20 = None # Token
             self.s21 = None # Token
-            self._tset15274 = None # Token
+            self._tset15276 = None # Token
             self._namespacePathList = None # NamespacePathListContext
             self.postTarget = list() # of NamespacePathListContexts
             self.payload = None # ExpressionContext
@@ -24888,7 +24891,7 @@ class SysMLMinParser ( Parser ):
                 _la = self._input.LA(1)
                 if _la==34:
                     self.state = 4888
-                    self.match(SysMLMinParser.T__33)
+                    localctx.isAction = self.match(SysMLMinParser.T__33)
 
 
                 self.state = 4892
@@ -24914,14 +24917,14 @@ class SysMLMinParser ( Parser ):
                 _la = self._input.LA(1)
                 while (((_la) & ~0x3f) == 0 and ((1 << _la) & 4128768) != 0):
                     self.state = 4898
-                    localctx._tset15274 = self._input.LT(1)
+                    localctx._tset15276 = self._input.LT(1)
                     _la = self._input.LA(1)
                     if not((((_la) & ~0x3f) == 0 and ((1 << _la) & 4128768) != 0)):
-                        localctx._tset15274 = self._errHandler.recoverInline(self)
+                        localctx._tset15276 = self._errHandler.recoverInline(self)
                     else:
                         self._errHandler.reportMatch(self)
                         self.consume()
-                    localctx.postKind.append(localctx._tset15274)
+                    localctx.postKind.append(localctx._tset15276)
                     self.state = 4899
                     localctx._namespacePathList = self.namespacePathList()
                     localctx.postTarget.append(localctx._namespacePathList)
@@ -27364,7 +27367,7 @@ class SysMLMinParser ( Parser ):
             self.s19 = None # Token
             self.s20 = None # Token
             self.s21 = None # Token
-            self._tset17001 = None # Token
+            self._tset17003 = None # Token
             self._namespacePathList = None # NamespacePathListContext
             self.preTarget = list() # of NamespacePathListContexts
             self.value = None # ExpressionContext
@@ -27374,7 +27377,7 @@ class SysMLMinParser ( Parser ):
             self.typeRefs = list() # of NamespacePathContexts
             self.postMult = None # MultiplicitySpecContext
             self.postKind = list() # of Tokens
-            self._tset17082 = None # Token
+            self._tset17084 = None # Token
             self.postTarget = list() # of NamespacePathListContexts
 
         def prefixMetadataAnnotation(self, i:int=None):
@@ -27515,14 +27518,14 @@ class SysMLMinParser ( Parser ):
             while _alt!=2 and _alt!=ATN.INVALID_ALT_NUMBER:
                 if _alt==1:
                     self.state = 5319
-                    localctx._tset17001 = self._input.LT(1)
+                    localctx._tset17003 = self._input.LT(1)
                     _la = self._input.LA(1)
                     if not((((_la) & ~0x3f) == 0 and ((1 << _la) & 4128768) != 0)):
-                        localctx._tset17001 = self._errHandler.recoverInline(self)
+                        localctx._tset17003 = self._errHandler.recoverInline(self)
                     else:
                         self._errHandler.reportMatch(self)
                         self.consume()
-                    localctx.preKind.append(localctx._tset17001)
+                    localctx.preKind.append(localctx._tset17003)
                     self.state = 5320
                     localctx._namespacePathList = self.namespacePathList()
                     localctx.preTarget.append(localctx._namespacePathList) 
@@ -27598,14 +27601,14 @@ class SysMLMinParser ( Parser ):
             _la = self._input.LA(1)
             while (((_la) & ~0x3f) == 0 and ((1 << _la) & 4128768) != 0):
                 self.state = 5350
-                localctx._tset17082 = self._input.LT(1)
+                localctx._tset17084 = self._input.LT(1)
                 _la = self._input.LA(1)
                 if not((((_la) & ~0x3f) == 0 and ((1 << _la) & 4128768) != 0)):
-                    localctx._tset17082 = self._errHandler.recoverInline(self)
+                    localctx._tset17084 = self._errHandler.recoverInline(self)
                 else:
                     self._errHandler.reportMatch(self)
                     self.consume()
-                localctx.postKind.append(localctx._tset17082)
+                localctx.postKind.append(localctx._tset17084)
                 self.state = 5351
                 localctx._namespacePathList = self.namespacePathList()
                 localctx.postTarget.append(localctx._namespacePathList)

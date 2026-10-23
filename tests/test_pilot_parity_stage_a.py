@@ -152,3 +152,35 @@ def test_frame_without_concern_keyword_references_an_existing_concern():
         (15, "Couldn't resolve reference to Feature 'c4x'."),
         (19, "Couldn't resolve reference to Feature 'nope'."),
     ]
+
+
+def test_entry_action_keyword_declares_an_action():
+    # `entry action x;`・`do action x : T;`・`exit action x;` は action の宣言（遷移の `first x` が解決する）。
+    # キーワードの無い `entry x;` は既存の action への参照（参照実装で確認、2026-10-23。新しい held-out の誤検出）
+    text = """package E {
+    action def Init;
+    action initA;
+    state def S1 {
+        entry action initial;
+        state standby;
+        transition first initial then standby;
+    }
+    state def S2 {
+        entry initA;
+        do action work : Init;
+        exit action cleanup;
+        state a;
+        transition first work then a;
+        transition first cleanup then a;
+    }
+    state def S3 {
+        entry nosuch;
+        do action w2 { }
+        state b;
+        transition first w2 then b;
+    }
+}
+"""
+    _ast, _issues, dicts = lint_text_with_locations(text)
+    assert [(d["line"], d["message"]) for d in dicts if d["severity"] == "error"] == [
+        (18, "Couldn't resolve reference to Feature 'nosuch'.")]

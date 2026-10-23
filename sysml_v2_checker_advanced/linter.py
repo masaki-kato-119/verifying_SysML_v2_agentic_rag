@@ -548,6 +548,13 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         elif node_type == "final_node":
             self.final_nodes.append(node)
         
+        # `entry action initial;`・`do action work : T;` は action を宣言する（遷移の `first initial` が解決する。
+        # キーワードの無い `entry x;` は参照なので登録しない。Pilot 0.63.0 で確認、2026-10-23）
+        if node_type in ("entry_action", "do_action", "exit_action") and extra_of(node, "declaresAction") \
+                and isinstance(node.get("action_reference"), str) and node["action_reference"]:
+            declared = node["action_reference"]
+            self.symbols[f"{namespace}::{declared}" if namespace else declared] = node
+
         # 再帰的に子ノードを処理
         # packageは上のif節で既に正しい名前空間(package_full_name)を使って
         # 子要素を再帰済みなので、ここで再度たどると誤った名前空間・重複登録
@@ -1713,6 +1720,10 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
         "occurrence_def",
         "occurrence_usage",
         "event_occurrence_usage",
+        # `entry action initial;`・`do action work : T;`・`exit action cleanup;`（action の宣言。_collect_symbols）
+        "entry_action",
+        "do_action",
+        "exit_action",
     )
 
     

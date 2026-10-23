@@ -3241,7 +3241,8 @@ actionFlowStmt
 // `{ actionBodyElement* }`本体を持つこともある（2026-08-29、235件
 // パース失敗の要因分析で発見）。
 entryActionMember
-    : 'entry' ('action')? qualifiedName? (':' ID)?
+    // `entry action x;`（action を宣言）と `entry x;`（既存の action を参照）を区別する（isAction。2026-10-23）
+    : 'entry' isAction='action'? qualifiedName? (':' ID)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' actionBodyElement* '}' | ';' )
     | 'entry' assign=assignmentStmt
@@ -3263,7 +3264,7 @@ entryActionMember
 // 参照直後に`;`終端の代わりに`{ actionBodyElement* }`本体を持つことも
 // ある（2026-08-29、235件パース失敗の要因分析で発見）。
 doActionMember
-    : 'do' ('action')? qualifiedName? (':' ID)?
+    : 'do' isAction='action'? qualifiedName? (':' ID)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' actionBodyElement* '}' | ';' )
     | 'do' 'send' payload=expression ( 'to' sendTarget=namespacePath | 'via' sendVia=namespacePath )? ';'
@@ -3274,7 +3275,7 @@ doActionMember
 // 参照直後に`;`終端の代わりに`{ actionBodyElement* }`本体を持つことも
 // ある（2026-08-29、235件パース失敗の要因分析で発見）。
 exitActionMember
-    : 'exit' ('action')? qualifiedName? (':' ID)?
+    : 'exit' isAction='action'? qualifiedName? (':' ID)?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' actionBodyElement* '}' | ';' )
     // `exit send new Status("recharged") via hmi;`（do と同じインラインの send。advent-of-sysml-v2 lesson18）

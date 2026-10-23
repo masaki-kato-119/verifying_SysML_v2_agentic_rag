@@ -163,11 +163,199 @@ def validation_violations(ast: dict, external_names: Optional[Iterable[str]] = N
                 if isinstance(child, dict) and _not_model_level(child.get("value")):
                     out.append((child, "Must be model-level evaluable"))
 
+        # 「Redefining feature must have a compatible direction」
+        check_directions(node, owner, element)
+        # 「Cannot override a binding feature value」「Subsetting/redefining feature must be constant ...」
+        check_overrides(node, owner, element)
+
         inner = element or owner
         for key, value in node.items():
             if key != "type" and isinstance(value, (dict, list)):
                 visit(value, inner)
 
+    reported_direction: set = set()
+
+    def check_directions(node: dict, owner: Scope, element: Optional[Scope]) -> None:
+        """再定義の方向（Pilot 0.63.0 で確かめた規則、2026-10-23）。
+
+        - 型付きの usage の方向のある引数は、`:>>` の有無にかかわらず、型の引数を**順番どおりに**再定義する
+          （`action s : Shoot { out item picture; }` の picture は Shoot の最初の引数 image を再定義する）。
+        - 明示的な再定義（`:>> x`・`redefines x`）は、その先の方向と比べる（`calc c : C { :>> x = 1.0; }` の
+          方向の無い再定義は、`in x` に対して食い違い）。
+        - 順番の再定義は振る舞い（action・calc・state・case・constraint・requirement）の usage だけ。ポート・part の
+          中の方向のある feature は順番では再定義しない（sysmod の `port p : PositionPort { out item _position; }`）。
+        - 共役のポート（`port q : ~P`）の中では、P の feature の方向が反転する（`in` ↔ `out`）。
+        型の引数の並びが分からないとき（型が特化を持つ・ライブラリの型）、共役か分からないときは判定しない。
+        """
+        node_type = node.get("type") or ""
+        if node_type in _BEHAVIOR_USAGE_TYPES:
+            type_names = explicit_types(node)
+            own = _directed_parameters(node)
+            if len(type_names) == 1 and own:
+                definitions = resolved_definitions(type_names, owner)
+                if definitions and len(definitions) == 1 and definitions[0].node is not None \
+                        and definitions[0].library is None and not definitions[0].supertypes:
+                    for redefined, redefining in zip(_directed_parameters(definitions[0].node), own):
+                        if not _direction_compatible(redefined.get("direction"), redefining.get("direction")):
+                            report_direction(redefining)
+        targets = []
+        if node_type == "value_binding" and node.get("kind") == "redefines" and isinstance(node.get("target"), str):
+            targets.append(node["target"])
+        for entry in node.get("redefines") or []:
+            if isinstance(entry, dict) and entry.get("kind") == "redefines" and isinstance(entry.get("target"), str):
+                targets.append(entry["target"])
+        if not targets or id(node) in reported_direction:
+            return
+        own_direction = node.get("direction") if node_type in ("param", "calc_parameter") else None
+        if own_direction == "return":
+            return
+        conjugated = port_conjugation(owner)
+        if conjugated is None:
+            return  # ポートの中だが、共役か分からない
+        for target in targets:
+            status, found = resolver.resolve(target, owner, feature=True, exclude=element)
+            if status != FOUND or len(found) != 1 or found_lexically(found[0], owner):
+                continue
+            redefined = resolver._dealias(found[0]).node or {}
+            direction = redefined.get("direction")
+            if conjugated:
+                direction = {"in": "out", "out": "in"}.get(direction, direction)
+            if redefined.get("type") in ("param", "calc_parameter") \
+                    and not _direction_compatible(direction, own_direction):
+                report_direction(node)
+                return
+
+    def port_conjugation(owner: Scope, depth: int = 0) -> Optional[bool]:
+        """owner がポートの usage なら、その型が共役（`~P`）か。ポートでなければ False、分からなければ None。"""
+        node = owner.node or {}
+        is_port = node.get("type") == "port_usage" or (node.get("type") in ("param",) and node.get("kind") == "port")
+        if not is_port:
+            return False
+        type_name = node.get("type_name")
+        if isinstance(type_name, str) and type_name:
+            return type_name.startswith("~")
+        # `port :>> fuelInPort { ... }`（型の無い再定義）: 再定義の先のポートの型から
+        if depth > 5:
+            return None
+        for reference in owner.supertypes:
+            status, found = resolver.resolve(reference, owner.parent or resolver.root, feature=True, exclude=owner)
+            if status == FOUND and len(found) == 1 and found[0].node is not None:
+                return port_conjugation(resolver._dealias(found[0]), depth + 1)
+        return None
+
+    def check_overrides(node: dict, owner: Scope, element: Optional[Scope]) -> None:
+        """値の上書きと constant（Pilot 0.63.0 で確かめた規則、2026-10-23）。
+
+        - 再定義の先が `=` / `:=` の値を持つ（default ではない）とき、値を持つ再定義（`=`・`:=`・`default`）は
+          `Cannot override a binding feature value`。先が default の値なら上書きできる。再定義の先は、継承の途中の
+          再定義（`x1 : Base { :>> a = 20; }` を `x1sub :> x1 { :>> a = 25; }` が上書き）も含む。
+        - constant の feature の再定義・部分集合は constant でなければならない（値の無い `:>> w { }` も）。
+        """
+        node_type = node.get("type") or ""
+        targets = []  # (種類, 先)
+        if node_type == "value_binding" and isinstance(node.get("target"), str):
+            targets.append((node.get("kind") or "redefines", node["target"]))
+        for entry in node.get("redefines") or []:
+            if isinstance(entry, dict) and entry.get("kind") in ("redefines", "subsets") \
+                    and isinstance(entry.get("target"), str):
+                targets.append((entry["kind"], entry["target"]))
+        if not targets:
+            return
+        has_value = node.get("value") is not None or node.get("defaultValue") is not None
+        is_constant = bool(node.get("isConstant"))
+        for kind, target in targets:
+            status, found = resolver.resolve(target, owner, feature=True, exclude=element)
+            if status != FOUND or len(found) != 1 or (kind == "redefines" and found_lexically(found[0], owner)):
+                continue
+            redefined = resolver._dealias(found[0])
+            if redefined.library is not None or redefined.node is None:
+                continue
+            target_node = redefined.node
+            if kind == "redefines" and has_value and (
+                    target_node.get("value") is not None
+                    or bound_in_supertypes(owner, split_last(target), redefined)):
+                out.append((node, "Cannot override a binding feature value"))
+            if target_node.get("isConstant") and not is_constant:
+                out.append((node, "Subsetting/redefining feature must be constant if subsetted/redefined feature is"
+                                  " constant"))
+
+    def found_lexically(found: Scope, owner: Scope) -> bool:
+        """再定義の先が、継承ではなく、再定義を囲む名前空間（owner かその外側）の要素として見つかったか。
+
+        再定義の先は継承した feature のはず。型が解決できないとき（import の誤記など）や、構文エラーの回復で
+        要素が別の本体に入ったとき、名前解決は外側の同じ名前に届いてしまう。そのときは判定しない
+        （フォルダ単位のコーパスの誤検出、2026-10-23）。
+        """
+        scope: Optional[Scope] = owner
+        while scope is not None:
+            if found.parent is scope:
+                return True
+            scope = scope.parent
+        return False
+
+    def split_last(reference: str) -> str:
+        return reference.split("::")[-1].split(".")[-1].strip("'")
+
+    def bound_in_supertypes(scope: Scope, name: str, stop: Scope, depth: int = 0) -> bool:
+        """継承の途中で、キーワードの無い束縛（`p1 : P { :>> d = 2.0; }`）が name に値を付けているか。
+
+        キーワードの無い `:>> d = 2.0;` は名前解決のメンバーにならないので、特化・型付けの先の本体を見る。
+        stop（解決した再定義の先）まで来たらやめる。
+        """
+        if depth > 6:
+            return False
+        for reference in scope.supertypes:
+            status, found = resolver.resolve(reference, scope.parent or resolver.root, exclude=scope)
+            if status != FOUND:
+                continue
+            for sup in (resolver._dealias(f) for f in found):
+                if sup is stop or sup.node is None or sup.library is not None:
+                    continue
+                for child in sup.node.get("children") or []:
+                    if isinstance(child, dict) and child.get("type") == "value_binding" \
+                            and child.get("kind") == "redefines" and child.get("value") is not None \
+                            and isinstance(child.get("target"), str) and split_last(child["target"]) == name:
+                        return True
+                if bound_in_supertypes(sup, name, stop, depth + 1):
+                    return True
+        return False
+
+    def report_direction(node: dict) -> None:
+        if id(node) not in reported_direction:
+            reported_direction.add(id(node))
+            out.append((node, "Redefining feature must have a compatible direction"))
+
     visit(ast, resolver.root)
     return out
+
+
+# 型の引数を順番に再定義する usage（振る舞い）
+_BEHAVIOR_USAGE_TYPES = frozenset({
+    "action_usage", "perform_action", "calculation_usage", "calc_usage", "state_usage", "exhibit_state_usage",
+    "case_usage", "analysis_case_usage", "verification_case_usage", "use_case_usage", "constraint_usage",
+    "assert_constraint_usage", "requirement_usage",
+})
+
+
+def _directed_parameters(node: dict) -> List[dict]:
+    """方向（in / out / inout）のある引数（宣言の順。return は除く）。"""
+    out = []
+    for key in ("params", "children"):
+        for child in node.get(key) or []:
+            if isinstance(child, dict) and child.get("type") in ("param", "calc_parameter") \
+                    and child.get("direction") in ("in", "out", "inout"):
+                out.append(child)
+    return out
+
+
+def _direction_compatible(redefined: Optional[str], redefining: Optional[str]) -> bool:
+    """Pilot 0.63.0 で確かめた表: in ← in、out ← out、inout ← in / out / inout。方向の無い feature はどれでも
+    再定義できるが、方向のある feature を方向の無い feature で再定義すると食い違い。"""
+    if redefined not in ("in", "out", "inout"):
+        return True
+    if redefining is None:
+        return False
+    if redefined == "inout":
+        return redefining in ("in", "out", "inout")
+    return redefining == redefined
 

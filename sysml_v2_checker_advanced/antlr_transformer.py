@@ -143,7 +143,9 @@ class AnnotatedNode(dict):
 _EXTRA_KEY_SUFFIX = "_source"
 # 端の行（flow・message の `from a.x to b.y` は先頭と違う行にありうる。参照実装は端の行に出す）
 _EXTRA_LINE_SUFFIX = "_line"
-_EXTRA_KEYS = frozenset({"referenceForm"})
+# declaresAction: `entry action x;`・`do action x : T;`・`exit action x;` の action キーワード（宣言。キーワードの
+# 無い `entry x;` は既存の action への参照。Pilot 0.63.0 で確認、2026-10-23）
+_EXTRA_KEYS = frozenset({"referenceForm", "declaresAction"})
 
 
 def _with_extra(node: Dict, extra: Dict) -> Dict:
@@ -2080,6 +2082,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "type": "entry_action",
             "kind": "entry",
             "action_reference": _optional_qualified_name_text(ctx.qualifiedName()),
+            **({"declaresAction": True} if getattr(ctx, "isAction", None) is not None else {}),
             "type_name": id_ctx.getText() if id_ctx is not None else None,
             "redefines": self._redefine_list_namespace(ctx.postKind, ctx.postTarget),
             "assign": None,
@@ -2129,6 +2132,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "type": "do_action",
             "kind": "do",
             "action_reference": _optional_qualified_name_text(ctx.qualifiedName()),
+            **({"declaresAction": True} if getattr(ctx, "isAction", None) is not None else {}),
             "type_name": id_ctx.getText() if id_ctx is not None else None,
             "redefines": self._redefine_list_namespace(ctx.postKind, ctx.postTarget),
             "send": None,
@@ -2160,6 +2164,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "type": "exit_action",
             "kind": "exit",
             "action_reference": _optional_qualified_name_text(ctx.qualifiedName()),
+            **({"declaresAction": True} if getattr(ctx, "isAction", None) is not None else {}),
             "type_name": id_ctx.getText() if id_ctx is not None else None,
             "redefines": self._redefine_list_namespace(ctx.postKind, ctx.postTarget),
             # `exit action applyParkingBrake { ... }`（State Actions.sysml）

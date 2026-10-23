@@ -350,6 +350,9 @@ class ScopeResolver:
                                             node=node))
             return
         name = node.get("name") if isinstance(node.get("name"), str) else None
+        if node_type in ("do_action", "entry_action", "exit_action") and extra_of(node, "declaresAction") \
+                and isinstance(node.get("action_reference"), str):
+            name = node["action_reference"]  # `entry action initial;` は initial という action を宣言する
         if node_type == "accept_action" and isinstance(node.get("actionName"), str):
             name = node["actionName"]  # `action triggerResponse accept incomingInquiry : M;`
         identification = node.get("identification")
@@ -837,7 +840,8 @@ def _referenced_feature(node: dict) -> Optional[str]:
     if node_type == "feature_usage" and node.get("variability") == "variant" and isinstance(node.get("name"), str)             and not node.get("type_name") and not node.get("redefines"):
         # variation の中の `variant '6cylEngine';`（キーワードも型も無い形）は既存の usage を参照する
         return node["name"]
-    if node_type in ("do_action", "entry_action", "exit_action") and isinstance(node.get("action_reference"), str)             and node["action_reference"] and not node.get("type_name"):
+    if node_type in ("do_action", "entry_action", "exit_action") and isinstance(node.get("action_reference"), str) \
+            and node["action_reference"] and not node.get("type_name") and not extra_of(node, "declaresAction"):
         # state の `do senseTemperature { out temp; }` は既存の action を参照する（`senseTemperature.temp`）
         return node["action_reference"]
     if node_type == "frame_statement" and not node.get("isConcern") and isinstance(node.get("name"), str) \
@@ -961,7 +965,7 @@ def references_of(node: dict) -> List[Reference]:
         if isinstance(entry, dict) and isinstance(entry.get("target"), str) and entry["target"]:
             refs.append((_normalized_text(entry, "target") or entry["target"], "Feature", node, True))
     referenced = _referenced_feature(node)
-    if referenced and (node_type in ("satisfy_requirement_usage", "require_usage", "frame_statement") or node.get("reference")
+    if referenced and (node_type in ("satisfy_requirement_usage", "require_usage", "frame_statement", "entry_action", "do_action", "exit_action") or node.get("reference")
                        or extra_of(node, "referenceForm")):
         # キーワードの有無が AST に残らない形（`include u;` など）は、宣言と区別できないので
         # 報告しない（参照として継承元を探すのには使う）
@@ -1818,7 +1822,7 @@ def unresolved_references(ast: dict, external_names: Optional[Iterable[str]] = N
                         out.append((at, missing, "Feature"))
         referenced = _referenced_feature(node)
         if referenced and _chain_head(referenced) != referenced and (
-                node.get("type") in ("satisfy_requirement_usage", "require_usage", "frame_statement") or node.get("reference")
+                node.get("type") in ("satisfy_requirement_usage", "require_usage", "frame_statement", "entry_action", "do_action", "exit_action") or node.get("reference")
                 or extra_of(node, "referenceForm")):
             # 参照の連鎖（`perform transportTask.receiveCommand;`）: 先頭と 2 番目以降を確かめる
             head = _chain_head(referenced)
