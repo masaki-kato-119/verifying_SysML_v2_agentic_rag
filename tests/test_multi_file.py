@@ -303,6 +303,7 @@ def test_reference_positions_found_by_the_folder_corpus():
     assert _errors(text) == [
         (11, "Couldn't resolve reference to Type 'Msgg'."),        # flow の `of T`
         (12, "Couldn't resolve reference to Element 'Vell'."),      # 式の中の呼び出し
+        (12, "Must invoke a behavior or a behavioral feature"),     # 呼び出す名前が無い（Pilot 0.63.0 も重ねる）
         (14, "Couldn't resolve reference to Element 'Msgx'."),      # new T(...)
         (15, "Couldn't resolve reference to Feature 'noo'."),       # 部分集合の先の連鎖
         (17, "Couldn't resolve reference to Type 'Sigg'."),         # action の中の accept
@@ -323,7 +324,9 @@ def test_library_functions_need_an_import():
 }
 """
     assert _errors(text) == [(5, "Couldn't resolve reference to Element 'sqrt'."),
-                             (7, "Couldn't resolve reference to Element 'Inner::Accx'.")]
+                             (5, "Must invoke a behavior or a behavioral feature"),
+                             (7, "Couldn't resolve reference to Element 'Inner::Accx'."),
+                             (7, "Must invoke a behavior or a behavioral feature")]
 
 
 def test_prefix_metadata_base_type_and_lambda_parameter_chains():

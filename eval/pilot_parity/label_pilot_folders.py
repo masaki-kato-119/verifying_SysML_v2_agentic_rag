@@ -28,7 +28,7 @@ def main() -> None:
     corpus = HERE / args.root / "corpus"
     args.out = args.out or HERE / args.root / "labels" / "pilot"
 
-    from sysml_mcp.backend import Config, SysMLDaemon, SysMLFile, SysMLService
+    from sysml_mcp.backend import Config, DaemonError, SysMLDaemon, SysMLFile, SysMLService
 
     config = Config.from_env()
     version = Path(config.jar).name if hasattr(config, "jar") else "unknown"
@@ -40,6 +40,7 @@ def main() -> None:
     daemon = SysMLDaemon(config)
     service = SysMLService(daemon)
     done = 0
+    failed: list[str] = []
     try:
         for n, (folder, entries) in enumerate(sorted(by_folder.items()), 1):
             if not args.force and all((args.out / f"{e['id']}.json").exists() for e in entries):
@@ -47,7 +48,13 @@ def main() -> None:
             directory = corpus / "folders" / folder
             files = [SysMLFile(path=p.name, text=p.read_text(encoding="utf-8"))
                      for p in sorted(directory.glob("*.sysml"))]
-            r = service.validate_files(files, targets=[e["file"] for e in entries])
+            try:
+                r = service.validate_files(files, targets=[e["file"] for e in entries])
+            except DaemonError as error:
+                # 時間切れ（大きなフォルダ）などは飛ばして記録する。ラベルの無い unit は compare.py が数えない
+                print(f"skipped {folder}: {str(error)[:80]}", flush=True)
+                failed.append(folder)
+                continue
             results = {f["path"]: f for f in r["files"]}
             for e in entries:
                 fr = results.get(e["file"], {"issues": []})
@@ -63,7 +70,10 @@ def main() -> None:
                 print(f"{n}/{len(by_folder)}", flush=True)
     finally:
         daemon.close()
-    print(f"labeled {done} folders ({len(by_folder)} in corpus) -> {args.out}")
+    if failed:
+        (args.out.parent / "pilot_failed.json").write_text(json.dumps(failed, ensure_ascii=False, indent=1),
+                                                          encoding="utf-8")
+    print(f"labeled {done} folders ({len(by_folder)} in corpus, {len(failed)} skipped) -> {args.out}")
 
 
 if __name__ == "__main__":

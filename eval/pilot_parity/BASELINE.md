@@ -681,12 +681,90 @@ sha256 をリリースの値と照合）を `C:\test\SysMLv2_pilot\pilot-0.63.0\
 | 指標 | 前 | 後 |
 | --- | --- | --- |
 | 開発: 行 + 種類（構文エラーの無い 449 件） | 94.1% / 97.5% | **94.4% / 97.5%** |
-| 開発: unit 単位の見逃し | 8（2.7%） | **6（2.0%）**、すべて Pilot に構文エラーのあるもの |
+| 開発: unit 単位の見逃し | 8（2.7%） | **6（2.0%）**、うち 5 件は Pilot に構文エラーのあるもの |
 | 開発: 変異体・正しいモデルの誤検出・xpect | 112 / 112・0・127 / 132 | 同じ |
 | held-out・フォルダ・新しい held-out | 84.9 / 99.3・83.2 / 99.8・92.7 / 100 | 同じ |
 
-開発コーパスの unit 単位の見逃し率は目標（≤ 2%）に届いた。残る 6 件はどれも Pilot が構文エラーを出す入力で、
-回復の仕方の違い（`BASELINE.md` の構文エラーの章、`RESULTS.md` の「残る差」）による。
+開発コーパスの unit 単位の見逃し率は目標（≤ 2%）に届いた。残る 6 件のうち 5 件は Pilot が構文エラーを出す入力で、
+回復の仕方の違い（`BASELINE.md` の構文エラーの章、`RESULTS.md` の「残る差」）による。（訂正 2026-10-29: 当初「6 件すべて」
+と書いたが、P12_ObjectiveLocalReq は構文エラーの無い見逃しだった。次の章で直した。）
+
+## Pilot 0.63.0 の xpect と、3 つ目の held-out（2026-10-29）
+
+### 0.63.0 の xpect
+
+Pilot のソースの tag `2026-09` から `org.omg.sysml.xpect.tests`・`org.omg.kerml.xpect.tests` だけを取得し
+（`C:\pilot_tmp\SysML-v2-Pilot-Implementation-2026-09`、sparse checkout）、開発コーパスを `corpus_063/` に作り直して
+Pilot 0.63.0 で正解を付けた（`labels_x063/`・`results_x063/`。今の開発コーパスはそのまま）。0.62.0 からの差は、
+接続と flow の端のテスト 3 つの追加（`ConnectionUsage_End_Invalid`・`FlowUsage_End_Invalid`・`FlowUsage_Invalid`、
+`FlowConnectionUsage_Invalid` は削除）と、3 つのテストの変更。
+
+| 指標 | 入れる前 | 後 |
+| --- | --- | --- |
+| xpect（Pilot 自身が同じ箇所に出すもの） | 127 / 134（94.8%、目標を下回った） | **129 / 134（96.3%）** |
+| 開発（0.63.0 の正解）: 行 + 種類・見逃し | — | 94.7% / 97.3%・5 件（すべて構文エラー） |
+
+入れた規則（どれも Pilot 0.63.0 で行と文言が同じになることを確かめた。`tests/test_pilot_parity_more_rules.py`）:
+
+- **`A connection definition end must be a usage.`・`A flow definition end must be a usage.`**: connection・interface・
+  flow の定義が、KerML の意味ライブラリの端を持つ型（`Links::BinaryLink`・`Transfers::Transfer`・
+  `Objects::BinaryLinkObject` など。`scripts/build_kerml_end_types.py` が作る `kerml_end_types.json`）を特化し、
+  自分では端を宣言していないとき。`Links::Link`（端が無い）・SysML の Connections・allocation の定義は通る。
+- **`A flow usage must be typed by flow definitions.`** を message にも: `message : A from b to c;` の `:` の型節だけが
+  message 自身の型（`of A` は運ぶものの型）。AST に付帯情報 `messageTyped` を足した。
+- **`Must invoke a behavior or a behavioral feature`**: 呼び出す名前が無いとき（未解決と重ねて出す。import して
+  いないライブラリの関数も）と、振る舞いでない定義・usage（attribute def・part def・part など）を呼んだとき。
+- **名前の無い objective は透過しない**: `objective { verify requirement r : R; }` の r は case の本体から見えない
+  （P12_ObjectiveLocalReq。これで開発の構文エラーの無い見逃しは 0）。
+
+### 3 つ目の held-out: 研究に使っていない公開リポジトリ
+
+GitHub の検索で、研究に使っていない公開リポジトリ 18 個を選び、`.sysml`・LICENSE・README だけを取得した
+（`C:\test\sysml_models\heldout3`、2026-10-29）。`.sysml` があったのは 16 個・約 490 ファイル・約 94,000 行。
+`build_folders.py --heldout3` で、`.sysml` のある各フォルダ（1 ファイルでも）を 1 unit 群にした（148 フォルダ・
+498 ファイル）。Pilot 0.63.0 で正解を付け、1 フォルダ（Bruce Douglass の ch9、15 ファイル）は Pilot が 300 秒で
+答えず飛ばした（`label_pilot_folders.py` が時間切れを記録して続けるようにした）。
+
+**規則を変えずに測った**（コミット `efe0e50`。`heldout3/results/frozen_efe0e50/`）。
+
+| 指標（483 ファイル） | 値 |
+| --- | --- |
+| 行 + 種類（Pilot に構文エラーの無い 464 ファイル） | **70.0% / 82.9%** |
+| 行 + 種類（全ファイル） | 68.5% / 83.0% |
+| Pilot がエラーを出さない 153 ファイルでの誤検出 | **43 ファイル** |
+| unit 単位の見逃し | 10（2.1%） |
+
+リポジトリごとの差が大きい。murillosva（139 ファイル）は Pilot の 6,486 件のうち 5,396 件を同じ行・同じ種類で
+出し、適合率 99.6%。一方、誤検出の大半は次のもの:
+
+- **文法の穴**: 構文エラーの誤検出が約 900 件（大半は Bruce Douglass の書籍の例）。
+- **型の種類**: ode4hera の attribute の種類の誤り 250 件。
+- **名前解決**: DE4SDV の `StandardViewDefinitions`（ライブラリにはある。import の形の扱いを調べる）と、それに続く
+  view の種類の誤り約 200 件、samyoon の `MissionImpact::MI-1`・`StrideCategory::tampering` 約 100 件、
+  DE4SDV のアクセス範囲 86 件。
+- FlyingCpp（学習教材、71 ファイル）で 28 ファイルの誤検出。
+
+**汎化の評価**: 開発・最初の held-out の水準（90% 前後 / 97% 以上）は、別の書き手の公開モデルには届かない。
+とくに正しいモデルでの誤検出（28%）が、生成の検証に使うときの問題になる。最初の held-out（段階 D 後に
+初めて測った 81.4% / 84.9%、誤検出 27 / 96）と同じく、知らない書き方に出会うと、まず文法の穴と名前解決の
+不足が誤検出になる。
+
+### 今日の修正のあと（heldout3 は見ていない修正だけ）
+
+| 指標 | 前 | 後 |
+| --- | --- | --- |
+| 開発（0.62.0 の正解）: 行 + 種類・見逃し | 94.4% / 97.5%・6 | **94.9% / 97.5%・5**（すべて構文エラー） |
+| held-out・フォルダ・新しい held-out | 84.9 / 99.3・83.2 / 99.8・92.7 / 100 | 85.0 / 99.3・83.5 / 99.8・92.7 / 100 |
+| 3 つ目の held-out | 70.0% / 82.9% | 70.0% / 82.9%（変わらない） |
+
+どのコーパスでも、変異体 112 / 112、Pilot がエラーを出さない unit での誤検出 0（3 つ目の held-out を除く）。
+
+### 残した課題
+
+- 3 つ目の held-out の誤検出を直す（直すと、この held-out も汎化の証拠でなくなる）。
+- （解消）Windows の更新（2026-10-29）のあと、Smart App Control が pywin32 の DLL を一時的に止め、MCP の統合テスト
+  5 ファイルが読み込めなかった。ユーザーが直したあとは、全テストが通る（`Must invoke` を重ねるようにしたので、
+  `test_multi_file.py` の 2 件の期待を Pilot 0.63.0 の出力に合わせて直した）。
 
 ## 再現手順
 

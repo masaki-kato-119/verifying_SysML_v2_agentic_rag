@@ -337,3 +337,108 @@ def test_semantic_metadata_base_type_gives_the_types_of_its_feature():
         (20, "An occurrence, item or part must be typed by occurrence definitions."),
         (23, "A port must be typed by port definitions."),
     ]
+
+
+_KERML_ENDS = """package V {
+    private import Links::*;
+    abstract connection def B1 :> Links::BinaryLink;
+    abstract connection def B2 :> Links::Link;
+    abstract connection def B3 :> Connections::BinaryConnection;
+    abstract flow def F1 :> Links::BinaryLink;
+    abstract flow def F2 :> Transfers::Transfer;
+    abstract interface def I1 :> Links::BinaryLink;
+    abstract allocation def A1 :> Links::BinaryLink;
+    abstract connection def B4 :> BinaryLink;
+    abstract connection def B5 :> B1;
+    abstract connection def B6 :> Links::SelfLink;
+    abstract flow def F3 :> Transfers::FlowTransfer;
+    abstract connection def B7 :> Objects::BinaryLinkObject;
+}
+"""
+
+
+def test_connection_and_flow_definition_ends_must_be_usages():
+    # KerML の端を持つ型（BinaryLink・Transfer・BinaryLinkObject など）を特化すると端が usage にならない。
+    # `Links::Link`（端が無い）・SysML の Connections・allocation def は通る（Pilot 0.63.0、2026-10-29）
+    assert _errors(_KERML_ENDS) == [
+        (3, "A connection definition end must be a usage."),
+        (6, "A flow definition end must be a usage."),
+        (7, "A flow definition end must be a usage."),
+        (8, "A connection definition end must be a usage."),
+        (10, "A connection definition end must be a usage."),
+        (11, "A connection definition end must be a usage."),
+        (12, "A connection definition end must be a usage."),
+        (13, "A flow definition end must be a usage."),
+        (14, "A connection definition end must be a usage."),
+    ]
+
+
+_MESSAGE_TYPES = """package P {
+    part def A;
+    abstract flow def F;
+    part apart : A {
+        part b;
+        part c;
+        message : F from b to c;
+        message :A from b to c;
+        message :apart from b to c;
+        message m2 : A from b to c;
+        message m3 of A from b to c;
+        message m4 : F of A from b to c;
+    }
+}
+"""
+
+
+def test_message_typed_by_non_flow_is_a_kind_error():
+    # `:` の型節だけが message 自身の型（`of A` は運ぶものの型）
+    assert _lines(_MESSAGE_TYPES, "A flow usage must be typed by flow definitions") == [8, 9, 10]
+
+
+_INVOKE_TARGET = """package V {
+    part def PD;
+    attribute def AD;
+    part pp : PD;
+    calc def F { in x; }
+    attribute a1 = sqrt(2.0);
+    attribute a2 = nosuch(1);
+    attribute a3 = AD(1);
+    attribute a4 = PD(1);
+    attribute a5 = pp(1);
+    attribute a6 = F(1);
+}
+"""
+
+
+def test_invoking_something_that_is_not_a_behavior():
+    # 呼び出す名前が無い（import していないライブラリの関数も）・振る舞いでない定義や usage を呼ぶ
+    assert _lines(_INVOKE_TARGET, "Must invoke a behavior or a behavioral feature") == [6, 7, 8, 9, 10]
+
+
+def test_requirement_declared_in_an_unnamed_objective_is_not_visible_outside():
+    text = """package P {
+    private import VerificationCases::*;
+    part def Sys;
+    requirement def R { subject s : Sys; }
+    verification def T {
+        subject s : Sys;
+        objective { verify requirement r : R; }
+        return verdict : VerdictKind = PassIf(r(s));
+    }
+}
+"""
+    assert _errors(text) == [(8, "Couldn't resolve reference to Element 'r'."),
+                             (8, "Must invoke a behavior or a behavioral feature")]
+
+
+def test_own_ends_redefine_inherited_kerml_ends():
+    # 自分で端を宣言すれば、継承した KerML の端を再定義する（SysML-v2-Release の training 41 の Causation。Pilot は通す）
+    text = """package P {
+    occurrence def Situation;
+    abstract connection def Causation :> Occurrences::HappensBefore {
+        end [*] ref cause : Situation;
+        end [*] ref effect : Situation;
+    }
+}
+"""
+    assert _errors(text) == []

@@ -381,7 +381,9 @@ class ScopeResolver:
         supertypes = list(_supertype_references(node))
         if referenced and referenced not in supertypes:
             supertypes.append(referenced)
-        if not name and not short and not supertypes:
+        if not name and not short and not supertypes and node_type != "objective_usage":
+            # 名前の無い objective（`objective { verify requirement r : R; }`）は透過しない。中の r は case の本体から
+            # 見えない（参照実装で確認、P12_ObjectiveLocalReq）
             self._build_children(node, owner)  # 透過
             return
         # 名前が無くても型付け・特化があれば名前空間（`require constraint : ML { in :>> limit; }`）。
@@ -1519,6 +1521,10 @@ def _usage_rule_of(node: dict) -> Optional[Tuple[str, str, bool]]:
         kind = node.get("kind")
         node_type = _PARAM_KIND_TYPES.get(kind, "feature_usage") if isinstance(kind, str) or kind is None \
             else "feature_usage"
+    if node_type == "message_usage":
+        # message は flow の一種。`:` の型節（`message : A from b to c;`）だけが message 自身の型
+        # （Pilot 0.63.0 の xpect FlowUsage_Invalid、2026-10-29）
+        return _USAGE_TYPE_RULES["flow_usage"] if extra_of(node, "messageTyped") else None
     return _USAGE_TYPE_RULES.get(node_type)
 
 

@@ -389,6 +389,10 @@ class SysMLAdvancedLinter(DefinitionUsageRulesMixin, MultiplicityRulesMixin, Sta
                             f"宣言しない（例: `item def {reference};` を定義して `accept {reference}` とする）")
             # 接続の端・accept のトリガーは、要素の先頭ではなく自分の行を持つ
             self.issues.append(LintIssue(SEVERITY_ERROR, message, node, line=extra_of(node, "line")))
+            if isinstance(node, dict) and node.get("type") == "function_call":
+                # 呼び出す名前が無ければ、参照実装は呼び出しの誤りも重ねて出す（`nosuch(1)`・import していない
+                # `sqrt(2.0)`。Pilot 0.63.0 で確認、2026-10-29）
+                self.issues.append(LintIssue(SEVERITY_ERROR, "Must invoke a behavior or a behavioral feature", node))
         self._check_usage_kinds_scoped(ast, known_external_types)
         self._check_accessible_features_scoped(ast, known_external_types)
         self._check_pilot_validations(ast, known_external_types)

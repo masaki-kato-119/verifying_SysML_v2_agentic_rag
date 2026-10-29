@@ -15,6 +15,8 @@ source:
   folder-heldout  held-out と同じ公開リポジトリのフォルダ（build_heldout.py と同じ除外）
   folder-heldout2 --heldout2: 研究に使っていない題材で、Sonnet / Haiku に 1 回で書かせたモデル
                   （C:\\test\\sysml_models\\eval\\heldout2\\<書き手>_<題材>。出力は heldout2/ 以下。2026-10-23）
+  folder-heldout3 --heldout3: 研究に使っていない公開リポジトリ（C:\\test\\sysml_models\\heldout3\\<owner>_<repo>。
+                  2026-10-29 に .sysml だけ取得）。.sysml のある各フォルダ（1 ファイルでも）。出力は heldout3/ 以下
   xfile-mutant    Pilot がエラーを出さないフォルダの 1 ファイルに、ほかのファイルで宣言された名前の誤記を 1 つ入れたもの
                   （operator: xfile_type_typo / xfile_feature_typo / xfile_import_typo。origin は元のフォルダの id）
 
@@ -38,7 +40,7 @@ HERE = Path(__file__).resolve().parent
 DEFAULT_MODELS = Path(r"C:\test\sysml_models")
 OUT = HERE / "folders" / "corpus"
 # held-out と同じ除外（build_heldout.py）
-EXCLUDED_TOP = {"eval", "verified", "memory_drafts", "analysis"}
+EXCLUDED_TOP = {"eval", "verified", "memory_drafts", "analysis", "heldout3"}
 EXCLUDED_PARTS = {"sysml.library"}
 # 開発で見たフォルダ（eval/blind* は eval/runs* の名前を伏せた写しなので入れない）
 DEV_GLOBS = ["eval/runs/*", "eval/runs_sonnet/*", "eval/linter_gen/model", "eval/linter_gen/round1_src",
@@ -70,6 +72,15 @@ def collect_heldout2(models: Path) -> list[tuple[str, Path, list[Path]]]:
         if len(files) >= 2:
             out.append(("folder-heldout2", directory, files))
     return out
+
+
+def collect_heldout3(models: Path) -> list[tuple[str, Path, list[Path]]]:
+    """3 つ目の held-out（heldout3 の公開リポジトリ）。.sysml のある各フォルダ（1 ファイルでも）。"""
+    by_dir: dict[Path, list[Path]] = {}
+    for path in sorted((models / "heldout3").rglob("*.sysml")):
+        if not (EXCLUDED_PARTS & set(path.relative_to(models).parts)):
+            by_dir.setdefault(path.parent, []).append(path)
+    return [("folder-heldout3", directory, files) for directory, files in sorted(by_dir.items())]
 
 
 def collect_folders(models: Path) -> list[tuple[str, Path, list[Path]]]:
@@ -190,9 +201,11 @@ def main() -> None:
                     help="Pilot がエラーを出さないフォルダ（<root>/labels/pilot）に誤りを入れた版を足す")
     ap.add_argument("--heldout2", action="store_true",
                     help="新しい held-out（eval/heldout2）を heldout2/ 以下に作る")
+    ap.add_argument("--heldout3", action="store_true",
+                    help="公開リポジトリの 3 つ目の held-out（heldout3）を heldout3/ 以下に作る")
     args = ap.parse_args()
     global OUT
-    root = HERE / ("heldout2" if args.heldout2 else "folders")
+    root = HERE / ("heldout2" if args.heldout2 else "heldout3" if args.heldout3 else "folders")
     OUT = root / "corpus"
     manifest_path = OUT / "manifest.json"
     if args.mutants:
@@ -221,7 +234,8 @@ def main() -> None:
             shutil.rmtree(OUT)
         (OUT / "units").mkdir(parents=True)
         manifest = []
-        collected = collect_heldout2(args.models) if args.heldout2 else collect_folders(args.models)
+        collected = (collect_heldout2(args.models) if args.heldout2 else
+                     collect_heldout3(args.models) if args.heldout3 else collect_folders(args.models))
         for source, directory, files in collected:
             rel = directory.relative_to(args.models).as_posix()
             texts = {f.name: read(f) for f in files}

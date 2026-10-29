@@ -144,6 +144,12 @@ def validation_violations(ast: dict, external_names: Optional[Iterable[str]] = N
             elif inherited is not None and inherited + len(ends) > 2:  # `flow def J :> I;` も
                 out.append((node, "A flow definition can have at most two ends."))
 
+        # 「A connection definition end must be a usage.」「A flow definition end must be a usage.」
+        # 自分で端を宣言していれば、継承した KerML の端を再定義する（`connection def Causation :>
+        # Occurrences::HappensBefore { end [*] ref cause : Situation; ... }`。Pilot は通す）
+        if node_type in _KERML_END_MESSAGES and element is not None and not own_ends(node)                 and inherits_kerml_ends(element):
+            out.append((node, _KERML_END_MESSAGES[node_type]))
+
         # 「An interface end must be a port.」
         if node_type in ("interface_def", "interface_usage"):
             for end in own_ends(node):
@@ -184,6 +190,7 @@ def validation_violations(ast: dict, external_names: Optional[Iterable[str]] = N
         # 「Must correspond to one input parameter of the invoked type」
         if node_type == "function_call" and isinstance(node.get("name"), str) and node["name"]:
             check_invocation(node, owner)
+            check_invoked_kind(node, owner)
         # 「Cannot annotate <メタクラス>」
         check_annotations(node, owner)
         # 「Must be a valid feature」: variation の usage の variant を `.` でたどる連鎖
@@ -397,6 +404,22 @@ def validation_violations(ast: dict, external_names: Optional[Iterable[str]] = N
         rest = [p for p in base_parameters[len(own):] if p.get("name") not in explicit]
         return own + rest, members | (base_members - replaced - explicit) | explicit
 
+    def check_invoked_kind(node: dict, owner: Scope) -> None:
+        """呼び出す先がこのファイルの振る舞いでなければ `Must invoke a behavior or a behavioral feature`
+        （`AD(1)` の attribute def・`PD(1)` の part def・`pp(1)` の part。Pilot 0.63.0 で確認、2026-10-29）。
+
+        呼び出す名前が無いときは、未解決と一緒に linter が出す。ライブラリの関数は確かめない。
+        """
+        status, found = resolver.resolve(node["name"], owner)
+        if status != FOUND or len(found) != 1:
+            return
+        invoked = resolver._dealias(found[0])
+        if invoked.library is not None or invoked.node is None:
+            return
+        invoked_type = invoked.node.get("type") or ""
+        if invoked_type in _NOT_INVOCABLE:
+            out.append((node, "Must invoke a behavior or a behavioral feature"))
+
     def check_invocation(node: dict, owner: Scope) -> None:
         """呼び出しの引数と、呼び出した型の引数の対応（Pilot 0.63.0 で確かめた規則、2026-10-23）。
 
@@ -491,6 +514,27 @@ def validation_violations(ast: dict, external_names: Optional[Iterable[str]] = N
                 metaclass = _METACLASS_OF.get((target or {}).get("type") or "")
                 if metaclass and not (_metaclass_ancestors(metaclass) & restrictions):
                     out.append((at, f"Cannot annotate {metaclass}"))
+
+    def inherits_kerml_ends(definition: Scope, depth: int = 0) -> bool:
+        """特化の先をたどって、KerML の意味ライブラリの端を持つ型（`Links::BinaryLink`・`Transfers::Transfer` など。
+        scripts/build_kerml_end_types.py）に届くか（Pilot 0.63.0 で確かめた規則、2026-10-29）。
+
+        その端は usage ではないので、connection・interface・flow の定義の端にならない。`Links::Link`（端が無い）と
+        SysML のライブラリ（`Connections::BinaryConnection`）は通る。allocation の定義は Pilot も出さない。
+        """
+        if depth > 6:
+            return False
+        for reference in definition.supertypes:
+            status, found = resolver.resolve(reference, definition.parent or resolver.root, exclude=definition)
+            if status != FOUND:
+                continue
+            for base in (resolver._dealias(f) for f in found):
+                if base.library is not None:
+                    if base.library in _kerml_end_types():
+                        return True
+                elif base.node is not None and inherits_kerml_ends(base, depth + 1):
+                    return True
+        return False
 
     def check_variant_chain(text: str, at: dict, owner: Scope) -> None:
         """`w.w1` の w が variation の usage で、w1 がその variant なら `Must be a valid feature`（Pilot 0.63.0 で
@@ -600,6 +644,23 @@ _METACLASS_OF: Dict[str, str] = {
 }
 
 
+# 端が usage でなければならない定義と、そのメッセージ
+_KERML_END_MESSAGES = {
+    "connection_def": "A connection definition end must be a usage.",
+    "interface_def": "A connection definition end must be a usage.",
+    "flow_def": "A flow definition end must be a usage.",
+}
+
+
+@lru_cache(maxsize=1)
+def _kerml_end_types() -> frozenset:
+    """scripts/build_kerml_end_types.py が作る、端を持つ KerML のライブラリの型の修飾名。"""
+    try:
+        return frozenset(json.loads(Path(__file__).with_name("kerml_end_types.json").read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return frozenset()
+
+
 @lru_cache(maxsize=1)
 def _metaclass_supertypes() -> Dict[str, List[str]]:
     """scripts/build_metaclass_supertypes.py が作る、メタクラス → 直接の特化の先。"""
@@ -621,6 +682,12 @@ def _metaclass_ancestors(metaclass: str) -> frozenset:
     return frozenset(seen)
 
 
+# 振る舞いでない定義・usage（呼び出すと `Must invoke a behavior or a behavioral feature`）
+_NOT_INVOCABLE = frozenset({
+    "part_def", "part_instance", "item_def", "item_usage", "attribute_def", "attribute_usage", "port_def",
+    "port_usage", "enum_def", "occurrence_def", "occurrence_usage", "connection_def", "connection_usage",
+    "interface_def", "interface_usage", "package",
+})
 # 呼び出せる振る舞いの定義
 _INVOCABLE_DEFINITIONS = frozenset({
     "calculation_def", "calc_def", "action_def", "constraint_def", "requirement_def", "concern_def", "case_def",
