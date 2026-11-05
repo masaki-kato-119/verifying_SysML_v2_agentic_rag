@@ -15,14 +15,19 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 from .antlr_transformer import extra_of
 from .scope_resolver import (
     FOUND,
+    NOT_FOUND,
     Scope,
     ScopeResolver,
     _classes_of,
     _normalized_text,
     _path_segments,
+    _unquote,
 )
 
 Violation = Tuple[dict, str]
+
+# 多重度の境界に使える整数の型（ScalarValues）
+_INTEGER_TYPES = frozenset({"Integer", "Natural", "Positive", "UnlimitedNatural"})
 
 _CASE_TYPES = frozenset({
     "case_def", "case_usage", "analysis_case_def", "analysis_case_usage", "verification_case_def",
@@ -179,6 +184,12 @@ def validation_violations(ast: dict, external_names: Optional[Iterable[str]] = N
             for child in node.get("children") or []:
                 if isinstance(child, dict) and _not_model_level(child.get("value")):
                     out.append((child, "Must be model-level evaluable"))
+            check_metadata_body(node, owner)
+        # 「Must have a Natural value」: 多重度の名前（`attribute t : Real [s];` の単位など）
+        check_multiplicity_names(node, owner)
+        # 「Must correspond to one feature of the instantiated type」: `new T(...)` の引数
+        if node_type == "new_instance" and isinstance(node.get("name"), str) and node["name"]:
+            check_constructor(node, owner)
 
         # 「Redefining feature must have a compatible direction」
         check_directions(node, owner, element)
@@ -203,6 +214,97 @@ def validation_violations(ast: dict, external_names: Optional[Iterable[str]] = N
                 visit(value, inner)
 
     reported_direction: set = set()
+
+    def check_multiplicity_names(node: dict, owner: Scope) -> None:
+        """多重度の境界に書いた名前（Pilot 0.63.0 で確かめた規則、2026-11-05）。
+
+        参照実装の checkMultiplicityRange: 境界がモデルの水準で評価でき、その値が自然数でなければ
+        `Must have a Natural value`。名前は、自然数のリテラルの値を持つ feature（`attribute n : Natural = 3;`
+        の n）だけが通る。単位（`[s]`・`['°C']`。LLM が `attribute t : Real [s];` と書く）、値の無い Integer、
+        Real の値、解決できない名前（未解決の指摘も重ねる）はエラー。
+        """
+        multiplicity = node.get("multiplicity")
+        size = multiplicity.get("size") if isinstance(multiplicity, dict) else None
+        if not isinstance(size, dict):
+            return
+        names = [b for b in dict.fromkeys((size.get("min"), size.get("max")))
+                 if isinstance(b, str) and b and b != "*"]
+        for name in names:
+            status, found = resolver.resolve(_unquote(name), owner, feature=True)
+            if status == NOT_FOUND:
+                out.append((node, f"Couldn't resolve reference to Element '{_unquote(name)}'."))
+                out.append((node, "Must have a Natural value"))
+                continue
+            if status != FOUND:
+                continue
+            natural = False
+            for target in found:
+                target = resolver._dealias(target)
+                owner_type = ((target.parent.node or {}).get("type") if target.parent is not None else None) or "root"
+                if target.library is None and owner_type not in ("package", "root"):
+                    # 型の中の feature（`attribute def A { attribute i : Integer; attribute x : A[i]; }`）は
+                    # モデルの水準で評価できない。参照実装は型が整数かだけを見る（MultiplicityTest.sysml で実測）
+                    type_name = (target.node or {}).get("type_name")
+                    if isinstance(type_name, str) and type_name.split("::")[-1] in _INTEGER_TYPES:
+                        natural = True
+                    continue
+                value = (target.node or {}).get("value") if target.library is None else None
+                if isinstance(value, dict) and value.get("type") == "literal" and value.get("literal_type") == "int"                         and isinstance(value.get("value"), int) and value["value"] >= 0:
+                    natural = True
+            if not natural:
+                out.append((node, "Must have a Natural value"))
+
+    def check_constructor(node: dict, owner: Scope) -> None:
+        """`new T(a, b)` の引数（Pilot 0.63.0 で確かめた規則、2026-11-05）。
+
+        参照実装の checkConstructionExpression: 引数は T の feature に対応する。T が解決できなければ
+        引数ごとにエラー（未解決は _check_scoped_references が出す）。名前付きの引数（`new T(x = v)`）は、
+        T に x が無ければ未解決とこのエラー。位置の引数の数が多すぎても、private の feature でもエラーには
+        ならない（実測）ので確かめない。
+        """
+        arguments = [a for a in node.get("arguments") or [] if isinstance(a, dict)]
+        if not arguments:
+            return
+        status, found = resolver.resolve(node["name"], owner)
+        if status == NOT_FOUND:
+            for argument in arguments:
+                out.append((argument, "Must correspond to one feature of the instantiated type"))
+            return
+        if status != FOUND:
+            return
+        definitions = [resolver._dealias(f) for f in found]
+        if any(d.library is not None or d.node is None or d.supertypes for d in definitions):
+            return
+        for argument in arguments:
+            name = argument.get("name") if argument.get("type") == "named_argument" else None
+            if isinstance(name, str) and name and not any(
+                    any(_unquote(name) in m.names() for m in d.members) for d in definitions):
+                out.append((argument, f"Couldn't resolve reference to Feature '{_unquote(name)}'."))
+                out.append((argument, "Must correspond to one feature of the instantiated type"))
+
+    def check_metadata_body(node: dict, owner: Scope) -> None:
+        """メタデータの本体の `x = v;` は、メタデータの型の feature を再定義する（Pilot 0.63.0 で確かめた規則、
+        2026-11-05）。型が解決できない（`@Risk { totalRisk = 1; }` で ModelingMetadata を import していない）か、
+        型にその名前の feature が無ければ `Must redefine an owning-type feature`（未解決の指摘と重ねて出る）。"""
+        type_name = node.get("type_name") or node.get("name")
+        if not isinstance(type_name, str) or not type_name:
+            return
+        status, found = resolver.resolve(type_name, owner)
+        if status not in (FOUND, NOT_FOUND):
+            return
+        definitions = [resolver._dealias(f) for f in found] if status == FOUND else []
+        if any(d.library is not None or d.node is None or d.supertypes for d in definitions):
+            return  # ライブラリの型・特化した型の feature は確かめない
+        for child in node.get("children") or []:
+            if not isinstance(child, dict) or child.get("type") != "feature_usage" or child.get("type_name"):
+                continue
+            name = child.get("name")
+            if not isinstance(name, str) or not name:
+                continue
+            if status == NOT_FOUND or not any(
+                    any(name in m.names() for m in d.members) for d in definitions):
+                out.append((child, f"Couldn't resolve reference to Feature '{_unquote(name)}'."))
+                out.append((child, "Must redefine an owning-type feature"))
 
     def check_directions(node: dict, owner: Scope, element: Optional[Scope]) -> None:
         """再定義の方向（Pilot 0.63.0 で確かめた規則、2026-10-23）。

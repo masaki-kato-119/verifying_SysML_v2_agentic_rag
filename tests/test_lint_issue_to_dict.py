@@ -107,10 +107,10 @@ def test_confidence_comes_with_its_basis_and_caveat_not_a_bare_number():
 
     confidence = issues[0].to_dict()["confidence"]
     assert set(confidence) == {
-        "value", "sole_agree", "sole_disagree", "basis", "caveat", "measured_at",
+        "value", "value_without_syntax_errors", "agree", "disagree", "basis", "caveat", "measured_at",
     }
     assert 0.0 <= confidence["value"] <= 1.0
-    assert confidence["sole_agree"] + confidence["sole_disagree"] >= 3
+    assert confidence["agree"] + confidence["disagree"] >= 5
     assert confidence["basis"] and confidence["caveat"]
 
 

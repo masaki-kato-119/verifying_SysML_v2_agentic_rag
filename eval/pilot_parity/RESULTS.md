@@ -1,19 +1,21 @@
-# 自作 SysML v2 チェッカーは Pilot 実装と同じ水準に到達できるか（研究の結果、2026-10-29。3 つ目の held-out まで）
+# 自作 SysML v2 チェッカーは Pilot 実装と同じ水準に到達できるか（研究の結果、2026-11-05。4 つ目の held-out まで）
 
 ## 1. 問いと結論
 
 **問い**: 自作 SysML v2 チェッカー（`sysml_v2_checker_advanced`、ANTLR4 + Python）は、OMG SysML v2 Pilot 実装 0.62.0（以下 Pilot）と同じ水準の判定に到達できるか。
 
-**結論**: **Pilot に構文エラーの無いモデルについては、主な判定（名前解決・型の種類・参照先の種類・アクセス範囲）で Pilot の水準にほぼ到達した。正しいモデルをほとんど誤りとせず（適合率 97% 前後）、Pilot の指摘の 85〜92% を同じ行・同じ種類で出す。** 開発コーパスの目標（行 + 種類 ≥ 90% / ≥ 90%、unit 単位の見逃し ≤ 2%、変異体 ≥ 95%、xpect ≥ 95%）はすべて満たし、構文エラーの無い入力で unit ごと見逃すモデルは無くなった。**ただし、研究に使っていない公開リポジトリ（3 つ目の held-out）では 70.0% / 82.9%、正しいファイルの 28% に誤検出が出て、開発の水準には汎化しなかった。** 知らない書き方に出会うと、まず文法の穴と名前解決の不足が誤検出になる。構文エラーのあとの扱いも残る。
+**結論**: **Pilot に構文エラーの無いモデルについては、主な判定（名前解決・型の種類・参照先の種類・アクセス範囲）で Pilot の水準にほぼ到達した。正しいモデルをほとんど誤りとせず（適合率 97〜100%）、Pilot の指摘の 88〜95% を同じ行・同じ種類で出す。** 開発コーパスの目標（行 + 種類 ≥ 90% / ≥ 90%、unit 単位の見逃し ≤ 2%、変異体 ≥ 95%、xpect ≥ 95%）はすべて満たす。 研究に使っていない公開リポジトリ（3 つ目の held-out）では、規則を変えずに測ったとき 70.0% / 82.9%・正しいファイルの 28% に誤検出で、開発の水準に汎化しなかった。その誤検出の原因（短い名前・前置メタデータの位置・式などの文法の穴、解決できないメタデータの扱い）を直して 88.0% / 97.7%・誤検出 2 ファイルになった（この値は汎化の証拠ではない）。**直したあとに、Claude 以外の LLM（OpenAI の 2 モデル）が研究に使っていない題材で書いた 4 つ目の held-out を規則を変えずに測ると、全ファイルで 80.9% / 86.4%。ただし全 50 ファイルに Pilot の構文エラーがあり、構文エラーの無いモデルでの汎化はこのデータでは測れなかった。** LLM の生成の検証という用途では、構文エラーのあとの扱いが最大の残差のまま。
 
-1. **開発に使ったコーパス**（519 件）: Pilot に構文エラーの無い入力で、「行 + エラーの種類」の再現率 **94.9%**・適合率 **97.5%**。正しいモデルの誤検出 0、変異体で入れた誤りは 112 / 112 を検出。Pilot 自身のテスト（xpect）の期待エラーのうち、Pilot 自身が同じ箇所に出すものの **96.2%**（127 / 132）を出す（0.63.0 のテストでは **96.3%**、129 / 134）。研究前は全体で 11% / 15%、xpect は 31% だった。
+1. **開発に使ったコーパス**（519 件）: Pilot に構文エラーの無い入力で、「行 + エラーの種類」の再現率 **95.3%**・適合率 **97.5%**（2026-11-05。10-29 は 94.9% / 97.5%）。正しいモデルの誤検出 0、変異体で入れた誤りは 112 / 112 を検出。Pilot 自身のテスト（xpect）の期待エラーのうち、Pilot 自身が同じ箇所に出すものの **96.2%**（127 / 132）を出す（0.63.0 のテストでは **96.3%**、129 / 134）。研究前は全体で 11% / 15%、xpect は 31% だった。
 2. **開発に使っていない公開モデル（held-out、131 件）**: 規則を作るときに見ていない段階 D の時点で、再現率 3.4% → **81.4%**、適合率 21.7% → 84.9% と、改善の大部分が汎化した。ただし正しいモデルの誤検出が 96 件中 27 件あった。原因（名前解決の不足と文法の穴）を直して誤検出は **0 件**、行 + 種類は 84.3% / 97.6% になった。**この修正は held-out を見ながら行ったので、修正後の数値は汎化の証拠にならない。**
 3. **新しい held-out**（研究に使っていない 5 つの題材で、研究の文脈を持たない Sonnet / Haiku が 1 回で書いた 10 モデル・53 ファイル。**規則を変えずに測った**）: Pilot に構文エラーの無いファイルで **85.4% / 97.2%**、全ファイルで **87.7% / 95.6%**。Pilot がエラーを出さない 8 ファイルでの誤検出は **1 件**。汎化の証拠になるが、規模は小さい。その後、この held-out の誤検出（`entry action x;`）と見逃し（再定義の方向）を見て直したので、直した後の値（92.7% / 100%）は汎化の証拠にならない。
 4. **複数ファイルのモデル**: 研究の当初のコーパスは 1 テキストずつで、複数ファイルを測っていなかった。自作のリンターで 4 ファイルのモデルを生成すると、1 ファイルずつの検証では、ファイルをまたぐ正しい参照がすべて誤検出になり、実用にならなかった（AGV の初稿でエラー 50 件中 46 件が誤検出）。Pilot と同じくフォルダを一緒に読む名前解決を入れ、フォルダ単位のコーパス（113 フォルダ・478 ファイル）で、正しいファイルの誤検出は 98 / 373 → **0 / 373**、ファイルをまたぐ誤記は Pilot が出した 117 版の **117 版すべて**を同じ行・同じ種類で出す。
 5. **3 つ目の held-out**（研究に使っていない公開リポジトリ 16 個・483 ファイル、2026-10-29。**規則を変えずに測った**）: Pilot に構文エラーの無いファイルで **70.0% / 82.9%**。Pilot がエラーを出さない 153 ファイルのうち **43 ファイル**に誤検出。リポジトリごとの差が大きく（murillosva は適合率 99.6%、Bruce Douglass の書籍の例は文法の穴で約 900 件の構文エラーの誤検出）、誤検出の原因は文法の穴・型の種類・名前解決の不足（`BASELINE.md` の「3 つ目の held-out」）。
-6. **LLM の初稿の 77% に Pilot の構文エラーがある**（新しい held-out の 41 / 53 ファイル）。構文エラーのあとの判定は、Pilot（Xtext）と ANTLR のエラー回復の仕方の違いで一致しない。LLM の生成の検証という用途では、ここが最大の残差。
-7. **Pilot の新しい版への追従**（段階 E、0.62.0 → 0.63.0）: 正解を 0.63.0 で作り直しても、4 つのコーパスの数値は変わらなかった。変わったのは flow の 2 つのメッセージの文言だけで、自作も合わせた。差分評価のハーネスで、追従はほぼ機械的に済んだ（`BASELINE.md` の「段階 E」）。あわせて MCP サーバ（sysml-mcp-server）の Pilot も 0.63.0 にし、`validate_sysml` と自作のリンターの文言をそろえた。
-8. **方法**: Pilot をオラクルにした差分評価で、Pilot のロジック（KerML の名前解決、`SysMLValidator` の検証ルール）を読んで写し、境界を Pilot に小さな例を通して確かめる、というやり方が有効だった。当初の見積もり（2.5〜3.5 か月）に対し、段階 A〜D は Claude と一緒の作業で 2 日（2026-10-15〜16）、複数ファイル対応と新しい held-out までで計 4 日（〜10-23）だった。
+6. **3 つ目の held-out の誤検出の修正**（2026-11-05）: 構文エラーの誤検出の大半は、KerML の短い名前（`item <'DS-1'> c`・`enum <S> 'spoofing'`）を一部の要素にしか受理していなかったこと、前置メタデータを修飾子の後（`abstract #x part def`）に書けなかったことなど、文法の穴 30 種類。名前解決では、解決できない前置メタデータ（`#feature`）で要素の中身を「不明」にして、中の名前を確かめていなかった。直したあと **88.0% / 97.7%**（Pilot がエラーを出さない 153 ファイルのうち誤検出 2）。開発・最初の held-out・フォルダ単位も下がらず、最初の held-out は 85.0% → **94.0%** / 99.3%、フォルダ単位は 83.5% → **90.5% / 99.8%**、誤検出 0（`BASELINE.md` の「3 つ目の held-out の修正」）。
+7. **4 つ目の held-out**（2026-11-05、**規則を変えずに測った**）: 研究に使っていない 5 題材（ロボット掃除機・スマート温室・踏切・風力発電のピッチ制御・3D プリンター）を、OpenAI の gpt-5.6-terra と gpt-5.4-mini が 1 回で書いた 10 モデル・50 ファイル。**50 ファイルすべてに Pilot の構文エラー**（`state machine def`・`calculation def`・`let`・`literal` など SysML v2 に無い書き方、可視性の無い import）。全ファイルで **80.9% / 86.4%**。自作も 50 ファイルすべてに構文エラーを出し、構文エラーの行の 79% を同じ行に出す。
+8. **LLM の初稿の 77〜100% に Pilot の構文エラーがある**（2 つ目の held-out の 41 / 53、4 つ目の 50 / 50 ファイル）。構文エラーより後ろの判定は、Pilot（Xtext）と ANTLR のエラー回復の仕方の違いで一致しないことがあるが、測ると LLM の初稿では自作の指摘の 92〜96% が Pilot と同じ行・同じ種類だった（要素をまとめて落とす書き方のファイルでは 53%）。そこで MCP の lint は、構文エラーがあっても行ごとの構文エラーと読めた部分の指摘を返し、構文エラーより後ろの指摘に `after_syntax_error` を付けて「先に構文エラーを直す」よう案内するようにした（以前は構文エラーの文字列を 1 つ返すだけだった。§7）。
+9. **Pilot の新しい版への追従**（段階 E、0.62.0 → 0.63.0）: 正解を 0.63.0 で作り直しても、4 つのコーパスの数値は変わらなかった。変わったのは flow の 2 つのメッセージの文言だけで、自作も合わせた。差分評価のハーネスで、追従はほぼ機械的に済んだ（`BASELINE.md` の「段階 E」）。あわせて MCP サーバ（sysml-mcp-server）の Pilot も 0.63.0 にし、`validate_sysml` と自作のリンターの文言をそろえた。
+10. **方法**: Pilot をオラクルにした差分評価で、Pilot のロジック（KerML の名前解決、`SysMLValidator` の検証ルール）を読んで写し、境界を Pilot に小さな例を通して確かめる、というやり方が有効だった。当初の見積もり（2.5〜3.5 か月）に対し、段階 A〜D は Claude と一緒の作業で 2 日（2026-10-15〜16）、複数ファイル対応と新しい held-out までで計 4 日（〜10-23）だった。
 
 ## 2. 方法
 
@@ -110,19 +112,77 @@ AGV の初稿では、今の MCP は Pilot と同じ 4 件だけを出す（以�
 - **LLM の初稿の 77%（41 / 53 ファイル）に Pilot の構文エラーがある。** 全ファイルの見逃しの大半は、その回復の連鎖（`A usage must be typed by definitions.` 52 件、`extraneous input ... expecting EOF` 34 件など）。
 - Pilot がエラーを出さないフォルダが無かったので、ファイルをまたぐ誤記の版は作れなかった。
 
+### 3 つ目の held-out の修正（2026-11-05）
+
+3 つ目の held-out（公開リポジトリ 16 個、§1 の 5）の誤検出と見逃しを、リポジトリ × 種類 × メッセージで集計し、多いものから直した。
+どの修正も、小さな例を Pilot 0.63.0 に通して境界を確かめた（`tests/test_pilot_parity_heldout3.py`）。
+
+- **文法の穴（30 種類）**: KerML の短い名前を宣言名そのもの（`simpleName`）に持たせた（以前は part def・requirement などにだけ。
+  `item <'DS-1'> c`・`enum <S> 'spoofing'`・`assert constraint <'C-1'> c`・`flow <'DF-01'> f of T`、短い名前だけの `part <p1>;`）。
+  前置メタデータを修飾子の後（`abstract #x part def`・`derived #x attribute`・`end #x requirement ::> r`）、`view v : A::B::gv`、
+  `perform action :>> g[1]`・`perform action g redefines g : T, U`、`frame Pkg::c;`・`frame c { ... }`、`first` の無い transition の始点
+  （`transition Actions::Action::start then s;`。以前は名前として読んでいた）、`??`・前置の `istype`・`.metadata`・`->f({in o; ...})`、
+  `render rendering : T :>> x`、`private doc`、`send "Command" via p`、`@tag : T`、定義の本体の中の定義（`viewpoint v { view def V; }`）など。
+- **名前解決**: 解決できない前置メタデータ（`#feature`。import 先がフォルダに無い）で要素の中身を「不明」にしていた。参照実装と同じく
+  何も足さないようにし、中の名前を確かめる。dependency の両端を確かめる（以前はまったく確かめていなかった）。同じ要求を 2 回 satisfy すると、
+  satisfy 同士が同じ名前で互いに解決して型の判定を諦めていた。`frame c;` は参照する concern の型を持つ。`Base::Anything` の型は種類の判定から外す。
+- **個別の規則**: `Must have a Natural value`・`Must redefine an owning-type feature`・`Must correspond to one feature of the instantiated type`（§8）。
+
+| 指標（Pilot に構文エラーの無いファイルの行 + 種類） | 10-29 | 11-05 |
+| --- | --- | --- |
+| 開発（449 件） | 94.9% / 97.5% | **95.3% / 97.5%** |
+| 最初の held-out（127 件） | 85.0% / 99.3% | **94.0% / 99.3%** |
+| フォルダ単位（578 ファイル） | 83.5% / 99.8% | **90.5% / 99.8%** |
+| 2 つ目の held-out（12 ファイル） | 92.7% / 100% | 92.7% / 100% |
+| 3 つ目の held-out（464 ファイル） | 70.0% / 82.9% | **88.0% / 97.7%** |
+| 3 つ目の held-out: Pilot がエラーを出さない 153 ファイルでの誤検出 | 43 ファイル | **2 ファイル** |
+| xpect（Pilot 0.62.0 のテスト、同じ行・同じ種類） | 127 | **129** |
+
+変異体は 112 / 112 のまま、開発・最初の held-out・フォルダ単位で Pilot がエラーを出さない unit での誤検出は 0 のまま。
+
+### 4 つ目の held-out: Claude 以外の LLM が書いたモデル（2026-11-05）
+
+2 つ目の held-out と同じ形式で、研究に使っていない 5 題材（`C:\test\sysml_models\eval\heldout4\SPECS.md`）を、OpenAI の
+gpt-5.6-terra と gpt-5.4-mini に 1 回で書かせた（`generate_heldout4.py`。研究の文脈・検証ツールは渡さない）。10 モデル・50 ファイル。
+3 つ目の held-out の修正を終えた時点のコードで、中身を見ずに測った（その後この held-out を見て規則は変えていない）。
+
+| 指標 | 値 |
+| --- | --- |
+| Pilot に構文エラーのあるファイル | **50 / 50**（gpt-5.4-mini 368 件、gpt-5.6-terra 176 件） |
+| 行 + 種類（全ファイル） | **80.9% / 86.4%** |
+| 自作も構文エラーを出したファイル | 50 / 50 |
+| 構文エラーの行（再現率 / 適合率） | 79.4% / 66.2% |
+| Pilot の最初の構文エラーより後ろの意味の指摘（同じ行・同じ種類） | 適合率 91.9%・再現率 81.3% |
+
+構文エラーの書き方は、可視性の無い import のほか、`state machine def`・`calculation def`・`event def`・`let x : T;`・`literal a;`・
+`reference u : U;`・`input x = ...;`・`require constraint`、`connection a.b to c.d via l;` など SysML v2 に無い書き方。
+Sonnet / Haiku（2 つ目の held-out、77%）より崩れ方が大きい。**Pilot に構文エラーの無いファイルが無いので、構文エラーの無いモデルでの汎化は
+このデータでは測れない。**
+
+### 確信度（`rule_confidence.json`）の作り直し（2026-11-05）
+
+各指摘に付ける確信度を、730 件コーパスの「そのルールだけが error を出したファイルを参照実装も不正とした割合」（ファイル単位の一致の上限）から、
+差分評価の全コーパスでの「このルールの指摘のうち、Pilot が同じ行に同じ種類のエラーを出した割合」（指摘単位）に作り直した
+（`build_rule_confidence.py`。指摘 5 件以上のルール 18 個。Pilot に構文エラーの無いファイルだけの値 `value_without_syntax_errors` も持つ）。
+主なもの: `_check_scoped_references` 0.916（構文エラー無し 0.986、16,806 件）、`_check_usage_kinds_scoped` 0.900（0.974）、
+`_check_pilot_validations` 0.941（0.992）、`_check_accessible_features_scoped` 0.534（0.646）。低いもの（`_check_transition_trigger_type` 0 / 10、
+`_check_event_references` 0 / 6、`_check_verify_requirement_placement` 0.278）は、Pilot と違う種類・違う行に出しているか誤検出で、見直しの候補。
+
 ## 7. 残る差
 
-- **知らない書き方への汎化**: 3 つ目の held-out で、正しいファイルの 28% に誤検出（文法の穴・型の種類・名前解決）。直せば、この held-out も汎化の証拠でなくなる。
+- **知らない書き方への汎化**: 3 つ目の held-out（公開リポジトリ）の誤検出は直したが、直したので汎化の証拠でなくなった。4 つ目の held-out（OpenAI の LLM）は全ファイルに構文エラーがあり、構文エラーの無いモデルでの汎化はまだ確かめられていない。3 つ目の held-out の再現率（88.0%）の残りは、書籍の例のメタデータの本体から別の feature を参照する書き方（`Must be model-level evaluable` 160 件）、アクセス範囲（`_check_accessible_features_scoped` は Pilot に構文エラーの無いファイルでも指摘の一致が 65%）など。
 
-- **Pilot に構文エラーがある入力**: Pilot（Xtext）は回復でファイルを早く閉じて残りを捨てることがあり（AGV の probe で `missing EOF at 'then'`）、ANTLR は読み続ける。その先の未解決・種類の連鎖は一致しない。どこで閉じるかは Xtext の回復の細部によるので、合わせる確かな方法が無い。LLM の初稿の大半が該当するので、生成の検証では最大の残差。
-- **個別ルール**: 方向の食い違う再定義・束縛した値の上書き・constant の再定義は 2026-10-23 に入れた（開発の unit 単位の見逃し 17 → 12 件）。同じ日に `assign` の代入先と `Referent must be time varying`、呼び出しの引数、メタデータの annotatedElement、`include use case` の subject の位置も入れた。続けて variation の usage の variant を `.` でたどる形、意味的メタデータの baseType による種類、特化した定義の呼び出しも入れ、構文エラーの無い入力での unit 単位の見逃しは 0 になった（12 → 6 件、残りはすべて Pilot に構文エラーのあるもの）。Pilot の検証メッセージ 186 種類のうち、コーパスに現れないものの多くは未対応。
+- **Pilot に構文エラーがある入力**: Pilot（Xtext）は回復でファイルを早く閉じて残りを捨てることがあり（AGV の probe で `missing EOF at 'then'`）、ANTLR は読み続ける。その先の未解決・種類の連鎖は一致しない。どこで閉じるかは Xtext の回復の細部によるので、合わせる確かな方法が無い。**扱い（2026-11-05）**: Pilot の最初の構文エラーより後ろの行で、自作の指摘が Pilot と同じ行・同じ種類だった割合は、2 つ目の held-out（Sonnet / Haiku）96.2%、4 つ目（OpenAI）91.9%、フォルダ単位のコーパスの構文エラーのある 18 ファイル 52.7%（大半は Pilot が要素をまとめて落とす書き方）。LLM の初稿では後ろの指摘もほとんど正しいので捨てず、MCP の lint で `after_syntax_error: true`（暫定）を付けて返す。構文エラーそのもの（自作の文法は寛容なので、可視性の無い import など参照実装では構文エラーになる書き方の指摘も含める）は `syntax_error: true`・`summary.syntax_errors` で数え、note で「先に構文エラーを直す」よう案内する（`sysml_v2_mcp_usage.md`）。
+- **個別ルール**: 方向の食い違う再定義・束縛した値の上書き・constant の再定義は 2026-10-23 に入れた（開発の unit 単位の見逃し 17 → 12 件）。同じ日に `assign` の代入先と `Referent must be time varying`、呼び出しの引数、メタデータの annotatedElement、`include use case` の subject の位置も入れた。続けて variation の usage の variant を `.` でたどる形、意味的メタデータの baseType による種類、特化した定義の呼び出しも入れ、構文エラーの無い入力での unit 単位の見逃しは 0 になった（12 → 6 件、残りはすべて Pilot に構文エラーのあるもの）。Pilot の検証メッセージ 186 種類のうち、コーパスに現れないものの多くは未対応。2026-11-05 に、コーパスに現れていて未実装だった `Must have a Natural value`（多重度に単位を書く `attribute t : Real [s];`。LLM がよく書く）、`Must redefine an owning-type feature`（メタデータの本体の名前がメタデータの型に無い、型を import していない）、`Must correspond to one feature of the instantiated type`（`new T(...)` の T が無い、名前付きの引数が T に無い）を入れた。
 - **さらに新しい held-out**: `entry action x;` の区別（新しい held-out の誤検出）と再定義の方向（同じく見逃し）を直したので、新しい held-out も汎化の証拠でなくなった。
 - **警告は比べていない**（例: 自作の共役ポートの警告、Pilot の `Duplicate of inherited member name`）。
 
 ## 8. 妥当性への脅威
 
-- **開発と評価のデータの重なり**: 段階 A〜D の規則は開発コーパスを見ながら作った。最初の held-out は段階 D の後に誤検出の修正に使ったので、修正後の数値は汎化の証拠にならない。フォルダ単位のコーパスの held-out 側も同じリポジトリ。**汎化の証拠になるのは、最初の held-out の段階 D 後の値、新しい held-out（LLM）の値、3 つ目の held-out（公開リポジトリ、`efe0e50` で測った値）だけ。**
+- **開発と評価のデータの重なり**: 段階 A〜D の規則は開発コーパスを見ながら作った。最初の held-out は段階 D の後に誤検出の修正に使ったので、修正後の数値は汎化の証拠にならない。フォルダ単位のコーパスの held-out 側も同じリポジトリ。**汎化の証拠になるのは、最初の held-out の段階 D 後の値、新しい held-out（LLM）の値、3 つ目の held-out（公開リポジトリ、`efe0e50` で測った値）、4 つ目の held-out（OpenAI の LLM）の値だけ。** 3 つ目の held-out の修正後の値（88.0% / 97.7%）は、その held-out を見て直したので汎化の証拠ではない。
 - **新しい held-out の規模と偏り**: 構文エラーの無いファイル 12 件、正しいファイル 8 件と小さい。書き手は Opus ではないが同じ Claude の系統で、題材の仕様は私が書いた。
+- **4 つ目の held-out**: 書き手は Claude 以外（OpenAI）だが、題材の仕様は Claude（このセッション）が書いた。全ファイルに構文エラーがあるので、行 + 種類の値は構文エラーの回復の違いを含む。最初に測ったあと、ほかのコーパスの誤検出（`attribute def A { attribute i : Integer; attribute x : A[i]; }`）を直して測り直したが、この held-out の値は変わらなかった（80.9% / 86.4%）。この held-out を見て直したものは無い。
+- **確信度の表はすべてのコーパスで測った**: 規則づくりに使ったコーパスも含むので、値は新しいモデルでの精度より高めに出うる。
 - **オラクルの版**: Pilot 0.62.0 の判定を正解とし、段階 E で 0.63.0 でも測った（数値は同じ）。xpect の期待エラーは 0.62.0 のソースのテストのまま。0.63.0 のラベルは、配布物の `sysml.library/.index.json`（継承した feature の解決を誤らせることがある）を含むライブラリで作った。版の差に未解決の増加は無く、影響は見つかっていない。
 - **基準の読み替え**: xpect の基準は「期待エラー 164 件の 95%」から「Pilot 自身が同じ箇所に出す 132 件の 95%」に読み替えた（Pilot 自身が 164 件を満たさないため）。
 - **連鎖の数え方**: Pilot が重ねて出すエラーを、自作が原因を出していれば当たりとした（開発で 214 件）。使わなければ再現率は下がる。
@@ -136,22 +196,25 @@ AGV の初稿では、今の MCP は Pilot と同じ 4 件だけを出す（以�
 | `sysml_v2_checker_advanced/scope_resolver.py`（約 1,900 行） | スコープつき名前解決（複数ファイル）、アクセス範囲、種類の判定 |
 | `sysml_v2_checker_advanced/validation_rules.py` | 個別の検証ルール |
 | `sysml_v2_checker_advanced/model_files.py` | 一緒に検証するファイルを集める（validate_sysml と同じ決まり、エラー回復） |
-| `sysml_v2_checker_advanced/mcp_server.py` | `lint_sysml_file` / `lint_sysml_text` のフォルダ対応 |
+| `sysml_v2_checker_advanced/mcp_server.py` | `lint_sysml_file` / `lint_sysml_text` のフォルダ対応、構文エラーのあるテキストの返し方（`syntax_error`・`after_syntax_error`） |
+| `sysml_v2_checker_advanced/rule_confidence.json` | 指摘単位の確信度の表（`eval/pilot_parity/build_rule_confidence.py` が作る） |
+| `eval/pilot_parity/generate_heldout4.py` | 4 つ目の held-out の生成（OpenAI） |
 | 文法（`SysMLMin.g4`）・変換（`antlr_transformer.py`） | 文法の穴、参照の形、端と accept の行、エラー回復の木の読み方 |
 | `scripts/build_library_feature_names.py` | 標準ライブラリの型の本体で宣言される名前の表 |
 | `scripts/build_metaclass_supertypes.py` | SysML・KerML のメタクラスの特化の表（`Cannot annotate` に使う） |
 | `eval/pilot_parity/`（`build_corpus.py`・`build_heldout.py`・`build_folders.py`・`label_pilot*.py`・`run_local*.py`・`compare.py`・`analyze_*.py`） | 差分評価のハーネス |
-| `tests/test_scope_resolver.py`・`test_validation_rules.py`・`test_multi_file.py`・`test_pilot_parity_stage_a.py`・`test_pilot_parity_more_rules.py` ほか | 規則の単体テスト（Pilot で確かめた形） |
+| `tests/test_scope_resolver.py`・`test_validation_rules.py`・`test_multi_file.py`・`test_pilot_parity_stage_a.py`・`test_pilot_parity_more_rules.py`・`test_pilot_parity_heldout3.py`・`test_mcp_syntax_errors.py` ほか | 規則の単体テスト（Pilot で確かめた形） |
 
 コミット（ブランチ `research/pilot-parity`）: `e54b426`（段階 A）、`dd1d8aa`・`0dad3de`（B）、`c0cf9e2`（C）、`ade1b60`（D）、`01a00dd`（まとめと held-out）、`9eca491`（held-out の誤検出の修正）、`07a03de`（複数ファイル対応）、`2ee3dbb`（フォルダ単位のコーパス）、`edca2ea`（`->` の呼び出し・文法の穴）、`6a1d61c`（frame）、`2e0ed0d`（新しい held-out）、`32d85dd`・`9322ca9`（段階 E）、`5d0c573`・`0d7f07e`・`efe0e50`（残った個別ルール）。MCP サーバの 0.63.0 への更新は SysMLv2_pilot の `14cd238`（ブランチ `mcp-multi-file`）。
 
 ## 10. 次の一手
 
-1. **3 つ目の held-out の誤検出を直す**（文法の穴、attribute の種類、`StandardViewDefinitions` などの名前解決）。直したら、汎化を確かめる 4 つ目のデータを用意する（Claude 以外の LLM が書いたモデルなど）。
-2. 構文エラーのあとの扱い: LLM の初稿の大半が該当する。Pilot と同じ回復は難しいので、「構文エラーを先に直させる」使い方の案内（MCP の note）と合わせて考える。
-3. コーパスに現れない Pilot の検証メッセージ（186 種類のうち多く）。小さな例を Pilot に通して境界を確かめてから入れる。直すたびに、使った held-out は開発用に回す。
+2026-11-05 に、10-29 の次の一手の 1〜4（3 つ目の held-out の修正と 4 つ目の held-out、構文エラーのあとの扱い、コーパスに現れていた未実装のメッセージ、確信度の作り直し）を済ませた。
+
+1. **構文エラーの無いモデルでの汎化を確かめる**: 4 つ目の held-out は全ファイルに構文エラーがあった。LLM に構文エラーを直させた版（自作の MCP の指摘で 1〜2 回直させる）を 5 つ目の held-out にすると、生成の検証の実際の流れにも近い。
+2. **確信度の低いルールを見直す**: `_check_accessible_features_scoped`（構文エラーの無いファイルでも 65%）、`_check_transition_trigger_type`・`_check_event_references`（0 件一致）、`_check_verify_requirement_placement`。違う種類・違う行に出しているのか、誤検出なのかを Pilot の小さな例で確かめる。
+3. 3 つ目の held-out の残りの見逃し（メタデータの本体から別の feature を参照する書き方の `Must be model-level evaluable`、アクセス範囲）と、コーパスに現れない Pilot の検証メッセージ。小さな例を Pilot に通して境界を確かめてから入れる。直すたびに、使った held-out は開発用に回す。
 4. Pilot の新しい版が出るたびに段階 E を繰り返す（ダウンロード → `.index.json` を消したライブラリでラベルを作り直す → `diff_pilot_versions.py` → 差を直す → MCP サーバも同じ版にする）。xpect は新しい版のソースのテストで作り直す。
-5. `rule_confidence.json`（各指摘に付ける信頼度）を新しいルールで測り直す。
 
 ## 再現手順
 

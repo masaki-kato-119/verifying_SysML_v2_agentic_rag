@@ -744,6 +744,11 @@ class SysMLMinVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by SysMLMinParser#metadataAccessExpr.
+    def visitMetadataAccessExpr(self, ctx:SysMLMinParser.MetadataAccessExprContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by SysMLMinParser#parenExpr.
     def visitParenExpr(self, ctx:SysMLMinParser.ParenExprContext):
         return self.visitChildren(ctx)
@@ -811,6 +816,16 @@ class SysMLMinVisitor(ParseTreeVisitor):
 
     # Visit a parse tree produced by SysMLMinParser#bareRangeExpr.
     def visitBareRangeExpr(self, ctx:SysMLMinParser.BareRangeExprContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by SysMLMinParser#nullCoalesceExpr.
+    def visitNullCoalesceExpr(self, ctx:SysMLMinParser.NullCoalesceExprContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by SysMLMinParser#implicitClassificationExpr.
+    def visitImplicitClassificationExpr(self, ctx:SysMLMinParser.ImplicitClassificationExprContext):
         return self.visitChildren(ctx)
 
 

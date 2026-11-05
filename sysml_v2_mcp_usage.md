@@ -69,10 +69,19 @@ SysMLファイルをリント（構文チェック）して問題を報告しま
 - `file_path`: SysMLファイルのパス
 
 **戻り値:**
-- `success`: リント成功/失敗
+- `success`: リント成功/失敗（構文エラーがあっても、ツールが動けば true）
 - `error`: エラーメッセージ（失敗時）
-- `issues`: 検出された問題のリスト
-- `summary`: 問題の集計（total, errors, warnings, info）
+- `issues`: 検出された問題のリスト（各要素に行番号 `line`）
+- `summary`: 問題の集計（total, errors, warnings, info, syntax_errors）
+- `note`: 結果を読むときの注意
+
+**構文エラーがあるとき（2026-11-05 から）:** 以前は `success: false` とパースエラーの文字列だけを返した。今は、
+行ごとの構文エラー（`syntax_error: true`。rule は `parse`、または可視性の無い import など自作の文法は読めるが
+参照実装では構文エラーになる書き方の `_check_official_syntax_constraints`）と、エラー回復で読めた部分の指摘を
+返す。最初の構文エラーより後ろの行の指摘には `after_syntax_error: true` が付く。これは暫定の指摘で、構文エラーを
+直すと変わることがある（参照実装とはエラー回復の仕方が違う）。**先に構文エラーを直す**のが使い方の基本。
+参照実装との一致は、LLM の初稿では構文エラーより後ろでも 92〜96%、要素をまとめて落とす書き方では 53%
+（`eval/pilot_parity/RESULTS.md` の「構文エラーのあと」）。
 
 ### 4. `lint_sysml_text`
 SysMLテキストを直接リント（構文チェック）して問題を報告します。
@@ -85,6 +94,7 @@ SysMLテキストを直接リント（構文チェック）して問題を報告
 - `error`: エラーメッセージ（失敗時）
 - `issues`: 検出された問題のリスト
 - `summary`: 問題の集計
+- 構文エラーがあるときの返し方は `lint_sysml_file` と同じ
 
 ### 5. `get_ast_json`
 SysMLファイルのASTをJSON形式で取得します（RAG用）。
@@ -203,7 +213,8 @@ asyncio.run(analyze_sysml())
 
 3. **パースエラー**: SysML構文に問題がある
    - SysML v2の構文に準拠しているか確認
-   - エラーメッセージを参考に構文を修正
+   - `syntax_error: true` の指摘（行番号付き）から直す。`after_syntax_error: true` の指摘は、構文エラーを直してから
+     もう一度確かめる
 
 ## 技術仕様
 

@@ -799,16 +799,16 @@ function renderFindingConfidence(finding) {
     row.classList.add("finding-confidence-unmeasured");
     row.textContent = "　確信度: 未測定";
     row.title =
-      "このルールは、参照実装との一致率を算出できる件数（そのルールだけが" +
-      "発火したファイルが3件以上）に達していないため確信度を出していません。" +
+      "このルールは、参照実装との一致率を算出できる件数（評価コーパスでの" +
+      "指摘が5件以上）に達していないため確信度を出していません。" +
       "推定値で埋めることはしません。";
     return row;
   }
 
-  const decided = confidence.sole_agree + confidence.sole_disagree;
+  const decided = confidence.agree + confidence.disagree;
   row.textContent =
     `　確信度: ${confidence.value.toFixed(3)}` +
-    `（このルールだけが指摘した${decided}件中${confidence.sole_agree}件で参照実装と一致）`;
+    `（このルールの指摘${decided}件中${confidence.agree}件で参照実装が同じ行・同じ種類を指摘）`;
   row.title = `${confidence.caveat}\n算出日: ${confidence.measured_at} / 基準: ${confidence.basis}`;
   return row;
 }

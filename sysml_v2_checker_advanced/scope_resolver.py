@@ -225,6 +225,11 @@ class ScopeResolver:
             if depth > 8:
                 return "unknown", []
             status, found = self.resolve(name, context)
+            if status == NOT_FOUND:
+                # 解決できないメタデータ（`#feature`。import 先の PLEML がフォルダに無い）は何も足さない。
+                # 参照実装は名前を未解決にし、中の名前もそのまま確かめる（3 つ目の held-out の
+                # de4sdv・MBSE4U、2026-11-05）
+                return "none", []
             if status != FOUND or not found:
                 return "unknown", []
             bases: List[Scope] = []
@@ -981,6 +986,15 @@ def references_of(node: dict) -> List[Reference]:
             refs.append((metadata, "Type", node, False))  # `#refinement dependency ...` の refinement
     if node_type == "metadata_usage" and not node.get("type_name") and isinstance(node.get("name"), str):
         refs.append((node["name"], "Type", node, False))  # `@Rationale { ... }` の Rationale
+    if node_type == "dependency":
+        # `dependency a to Pkg::'SHN-N003';` の両端（参照実装は未解決を Element で報告する。3 つ目の
+        # held-out の murillosva、2026-11-05）。`.` で書いた端は feature の連鎖なので確かめない
+        for key in ("clients", "suppliers"):
+            sources = node.get(f"{key}_source") or []
+            for index, target in enumerate(node.get(key) or []):
+                source = sources[index] if index < len(sources) else target
+                if isinstance(target, str) and target and "." not in source:
+                    refs.append((target, "Element", node, False))
     for target in node.get("about") or []:
         if isinstance(target, str) and target:
             refs.append((target, "Element", node, False))
@@ -1464,7 +1478,10 @@ _usage_rule(["state_usage", "exhibit_state_usage"], "Behavior", "A state must be
 _usage_rule(["calculation_usage"], "Function", "A calculation must be typed by one calculation definition.", True)
 _usage_rule(["constraint_usage", "assert_constraint_usage"], "Predicate",
             "A constraint must be typed by one constraint definition.", True)
-_usage_rule(["requirement_usage", "concern_usage", "satisfy_requirement_usage", "verify_requirement_usage"],
+# frame（`frame c;` は既存の concern を参照し、その型を持つ。型が解決できなければ参照実装はこの文言を
+# frame の行に出す。3 つ目の held-out の de4sdv、2026-11-05）
+_usage_rule(["requirement_usage", "concern_usage", "satisfy_requirement_usage", "verify_requirement_usage",
+             "frame_statement"],
             "RequirementDef",
             "A requirement must be typed by one requirement definition.", True)
 _usage_rule(["case_usage"], "CaseDef", "A case must be typed by one case definition.", True)
@@ -1566,6 +1583,10 @@ def kind_violations(ast: dict, external_names: Optional[Iterable[str]] = None,
             status, found = resolve_path(target, owner, element)
             if status != FOUND:
                 return None
+            # 参照する usage は参照先の名前を持つ（_name_referencing_usages）ので、同じ要求を 2 回
+            # satisfy すると `'r2'` がもう一方の satisfy にも解決し、互いをたどって型が分からなくなって
+            # いた。宣言そのものがあればそちらだけを見る（3 つ目の held-out の murillosva、2026-11-05）
+            found = [f for f in found if not resolver._dealias(f).referenced] or found
             for feature in found:
                 feature = resolver._dealias(feature)
                 if feature.library is not None or feature.node is None:
@@ -1680,6 +1701,10 @@ def kind_violations(ast: dict, external_names: Optional[Iterable[str]] = None,
             return
         verdicts = []
         for t in types:
+            if t is not _PROXY and getattr(t, "library", None) == "Base::Anything":
+                # `attribute a : Base::Anything;` は参照実装でエラーにならない（すべての型の根。3 つ目の
+                # held-out の ode4hera で実測、2026-11-05）
+                continue
             classes = None if t is _PROXY else _classes_of(t)
             if t is _PROXY:
                 verdicts.append(False)

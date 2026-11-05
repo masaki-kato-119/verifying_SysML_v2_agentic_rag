@@ -40,6 +40,10 @@ PILOT_CATEGORIES: list[tuple[str, re.Pattern[str]]] = [
     ("ownership", re.compile(r"Owned usages of a port definition|Nested usages in a port usage")),
     ("time_varying", re.compile(r"Referent must be time varying")),
     ("invocation", re.compile(r"Must invoke|model-level evaluable|input parameter of the invoked")),
+    # 2026-11-05 に入れた規則（3 つ目の held-out）。以前は other で、一致を数えていなかった
+    ("metadata_body", re.compile(r"Must redefine an owning-type feature")),
+    ("multiplicity_bound", re.compile(r"Must have a Natural value")),
+    ("constructor_argument", re.compile(r"Must correspond to one feature of the instantiated type")),
     ("annotation", re.compile(r"Cannot annotate|metadata")),
     ("expression_result", re.compile(r"Must have a Boolean result|Must be a Boolean expression|must be a DurationValue")),
     ("end_kind", re.compile(r"An interface end must be a port")),

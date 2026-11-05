@@ -161,17 +161,19 @@ class LintIssue:
         """このルールが参照実装とどれだけ一致したかの実測値（測っていなければNone）。
 
         構想書§12-4「AIは結論だけでなく、対象、根拠、影響、確信度を示す」に
-        対応する。数値の供給源は**730件コーパスの参照実装比較の実測のみ**で、
+        対応する。数値の供給源は**参照実装（Pilot）との差分評価の実測のみ**
+        （eval/pilot_parity/build_rule_confidence.py。2026-11-05 に、730件コーパスの
+        ファイル単位の一致から、行 + 種類の指摘単位の一致へ作り直した）で、
         LLMにもヒューリスティックにも由来しない（GraphRAG側のconfidenceは
         0.9/0.6/0.3のベタ書き等、測定に基づかない手置きの定数なので流用しない）。
 
-        値だけでなく `basis`・`caveat`・単独発火の内訳を必ず一緒に返す。
-        `value` は「参照実装も同じファイルを不正と判定した割合」であって
-        「同じ箇所を同じ理由で指摘した割合」ではなく、一致率の**上限**である。
+        値だけでなく `basis`・`caveat`・内訳（agree / disagree）を必ず一緒に返す。
+        `value` は「このルールの指摘のうち、参照実装が同じ行に同じ種類のエラーを
+        出した割合」で、文言まで同じとは限らない。
         呼び出し側が数値だけを切り出して提示できてしまうと、この区別が
         利用者へ伝わらない。
 
-        単独発火が閾値（テーブルの `min_samples`）に満たないルールは
+        指摘の件数が閾値（テーブルの `min_samples`）に満たないルールは
         テーブルに載っておらず、Noneが返る。**推定で埋めない**（「未測定」と
         「測ったが低い」を混同させないため）。
         """
@@ -183,8 +185,11 @@ class LintIssue:
             return None
         return {
             "value": measured["value"],
-            "sole_agree": measured["sole_agree"],
-            "sole_disagree": measured["sole_disagree"],
+            # 2026-09-25 の表（ファイル単位）は sole_agree / sole_disagree。表の作り直しの途中でも読めるようにする
+            "agree": measured.get("agree", measured.get("sole_agree", 0)),
+            "disagree": measured.get("disagree", measured.get("sole_disagree", 0)),
+            # Pilot に構文エラーの無いファイルだけの値（件数が足りなければ None）
+            "value_without_syntax_errors": measured.get("value_without_syntax_errors"),
             "basis": document.get("basis"),
             "caveat": document.get("caveat"),
             "measured_at": document.get("generated_at"),

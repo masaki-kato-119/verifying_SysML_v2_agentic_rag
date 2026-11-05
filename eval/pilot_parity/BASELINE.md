@@ -761,10 +761,86 @@ GitHub の検索で、研究に使っていない公開リポジトリ 18 個を
 
 ### 残した課題
 
-- 3 つ目の held-out の誤検出を直す（直すと、この held-out も汎化の証拠でなくなる）。
+- （解消、2026-11-05）3 つ目の held-out の誤検出を直す（直すと、この held-out も汎化の証拠でなくなる）。次の章。
 - （解消）Windows の更新（2026-10-29）のあと、Smart App Control が pywin32 の DLL を一時的に止め、MCP の統合テスト
   5 ファイルが読み込めなかった。ユーザーが直したあとは、全テストが通る（`Must invoke` を重ねるようにしたので、
   `test_multi_file.py` の 2 件の期待を Pilot 0.63.0 の出力に合わせて直した）。
+
+## 3 つ目の held-out の修正、構文エラーのあと、4 つ目の held-out、確信度（2026-11-05）
+
+RESULTS.md の 10-29 の「次の一手」1〜4。
+
+### 3 つ目の held-out の修正
+
+誤検出・見逃しをリポジトリ × 種類 × メッセージで集計し（構文エラーは Pilot に構文エラーの無いファイルの行を全部並べて形で分類）、
+多いものから直した。境界はどれも `scripts/probe_reference.py --cases` で Pilot 0.63.0 に通して確かめた（`tests/test_pilot_parity_heldout3.py`）。
+
+- 文法: 短い名前を `simpleName` に持たせ（`('<' shortName '>')? name | '<' shortName '>'`。名前の文字列は `_simple_name_text`、
+  短い名前は visit() が `shortName` に入れる）、修飾子の後の前置メタデータを 59 規則に足した（`abstract #x part def` など）。
+  そのほか、`end #x requirement ::> r`、`view v : A::B::gv`、perform の特化・型付け・多重度をどの順にも、`frame Pkg::c;`・`frame c { }`、
+  `first` の無い transition の始点（以前は名前として読み、`initial` が始点として確かめられていなかった。テストの期待を Pilot の実測に合わせて直した）、
+  `??`・前置の `istype`・`.metadata`・`->f({...})`、`render rendering : T :>> x`、`private doc`、`send "s" via p`、`@tag : T`、
+  多重度の `'°C'`、`abstract flow f [*] : T`、定義の本体の中の定義 18 種類、`connect a ::> b to ...`、`port p : T = v;`、`enum e [*] : E;`、
+  `assert constraint c : T [*]`、`enum X = 1 { doc }`。
+- 名前解決: 解決できない前置メタデータは何も足さない（`_drop_plain_metadata_opaque`。以前は中身を不明にし、de4sdv・MBSE4U の
+  `#feature occurrence :>> linux[1];` の linux などを確かめていなかった）。dependency の両端（`to Pkg::'SHN-N003'`。`.` で書いた端は除く）。
+  satisfy を 2 回書いた要求（satisfy 同士が互いに解決して型が分からなくなっていた。`all_types` で参照する usage を外す）。
+  `frame c;` の型（requirement の規則）。`Base::Anything` の型は種類の判定から外す。包み（special_stmt）に前置メタデータを付けない
+  （`#refinement` の未解決を 2 回出していた）。
+- 規則（`validation_rules.py`）: `Must have a Natural value`（package の直下の名前は自然数のリテラルの値を持つときだけ通る。型の中の
+  feature は型が Integer 系なら通る。単位・未解決もエラー）、`Must redefine an owning-type feature`（メタデータの本体の `x = v;` が
+  メタデータの型に無い、型が解決できない。未解決も重ねる）、`Must correspond to one feature of the instantiated type`（`new T(...)` の
+  T が解決できない → 引数ごと、名前付きの引数が T に無い → 未解決も重ねる。位置の引数が多すぎる・private はエラーにならない）。
+  compare.py の種類にこの 3 つを足した（以前は other で、一致を数えていなかった）。
+
+| 指標（Pilot に構文エラーの無いファイルの行 + 種類） | 前（10-29） | 後 |
+| --- | --- | --- |
+| 開発 | 94.9% / 97.5% | 95.3% / 97.5% |
+| 最初の held-out | 85.0% / 99.3% | 94.0% / 99.3% |
+| フォルダ単位 | 83.5% / 99.8% | 90.5% / 99.8% |
+| 2 つ目の held-out | 92.7% / 100% | 92.7% / 100% |
+| 3 つ目の held-out | 70.0% / 82.9%・誤検出 43 ファイル | 88.0% / 97.7%・誤検出 2 ファイル |
+
+残りの誤検出 2 ファイル（m-scotti）は `typesOfCAs.NotProvided`（enum の usage の値）と flow の端 `controllers.ownedPorts`。
+
+### 構文エラーのあと
+
+Pilot の最初の構文エラーの行より前・後ろで、自作の意味の指摘（構文の種類を除く）が同じ行・同じ種類だった割合:
+
+| コーパス | 前（適合率 / 再現率） | 後ろ（適合率 / 再現率） |
+| --- | --- | --- |
+| 2 つ目の held-out（Sonnet / Haiku、41 ファイル） | 100% / 89.7% | 96.2% / 91.6% |
+| 4 つ目の held-out（OpenAI、50 ファイル） | — | 91.9% / 81.3% |
+| フォルダ単位（18 ファイル） | 100% / 57.1% | 52.7% / 90.7% |
+
+フォルダ単位の後ろの低さは、Pilot が `mismatched input 'import' expecting '}'` のあと要素をまとめて落とすファイル（VehicleModel で
+自作 247 件・Pilot 65 件など）。LLM の初稿では後ろもほぼ当たるので、捨てずに印を付ける方針にした（MCP の `after_syntax_error`）。
+以前の MCP は構文エラーがあると `success: false` と文字列 1 つだけで、行ごとの構文エラーも意味の指摘も返していなかった
+（評価のハーネスは `recover=True` で読めた部分も lint していたので、評価と MCP で振る舞いが違っていた）。
+
+### 4 つ目の held-out
+
+`generate_heldout4.py` で生成（gpt-5.6-terra・gpt-5.4-mini × 5 題材、`C:\test\sysml_models\eval\heldout4`）。
+`build_folders.py --heldout4`、`label_pilot_folders.py --root heldout4`（Pilot 0.63.0）。中身を見ずに測り、80.9% / 86.4%（全ファイル）。
+全 50 ファイルに Pilot の構文エラー。
+
+### 確信度
+
+`build_rule_confidence.py` が、6 つのコーパスの labels/pilot と labels/local から、ルールごとの指摘単位の一致（同じ行に同じ種類）を数えて
+`rule_confidence.json` を作る（指摘 5 件以上）。キーは `value`・`agree`・`disagree`・`value_without_syntax_errors`。
+`LintIssue.confidence()`・Viewer の表示（`app.js`）・`viewer/COVERAGE.md` を合わせた（古い表の `sole_agree` も読める）。
+
+### 再現手順（追加分）
+
+```
+.venv\Scripts\python.exe eval\pilot_parity\generate_heldout4.py
+.venv\Scripts\python.exe eval\pilot_parity\build_folders.py --heldout4
+C:\test\SysMLv2_pilot\sysml-mcp-server\.venv\Scripts\python.exe -I eval\pilot_parity\label_pilot_folders.py --root heldout4
+.venv\Scripts\python.exe -I eval\pilot_parity\run_local_folders.py --root heldout4
+.venv\Scripts\python.exe -I eval\pilot_parity\compare.py --corpus eval\pilot_parity\heldout4\corpus --labels eval\pilot_parity\heldout4\labels --out eval\pilot_parity\heldout4\results\multi
+:: すべてのコーパスの labels/local を作り直してから
+.venv\Scripts\python.exe -I eval\pilot_parity\build_rule_confidence.py
+```
 
 ## 再現手順
 

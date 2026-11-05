@@ -110,7 +110,15 @@ def _simple_name_text(ctx) -> str:
     引用符を外し、`\\'` `\\\\` のエスケープを解除する
     （参照: KerMLExpressions.xtext の terminal UNRESTRICTED_NAME）。
     """
-    text = ctx.getText()
+    # `<S> 'spoofing'` のように短い名前が前に付くことがある（KerML の Identification）。名前は
+    # 最後の終端記号。短い名前だけの宣言（`part <p1>;`）は短い名前を名前として扱う
+    short = getattr(ctx, "shortName", None)
+    if short is not None:
+        names = [c for c in ctx.getChildren()
+                 if getattr(c, "symbol", None) is not None and c.symbol is not short and c.getText() not in ("<", ">")]
+        text = names[-1].getText() if names else short.text
+    else:
+        text = ctx.getText()
     return _unquote_text(text)
 
 
@@ -217,11 +225,24 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             node = _move_extra(node)
         if isinstance(node, dict) and "type" in node:
             self._register(tree, node)
+        # special_stmt は中身（dependency など）を包むだけ。前置メタデータ・短い名前は中身が持つ
+        # （包みにも付けると `#refinement` の未解決を 2 回報告していた。2026-11-05）
+        if isinstance(node, dict) and "type" in node and node["type"] != "special_stmt":
             # `#logical part def C;` の前置メタデータ。規則ごとの visitXxx で拾い漏れていたもの
             # （part def など）をここでまとめて補う（2026-10-16、段階 B の名前解決で発見）
             annotations = getattr(tree, "prefixMetadataAnnotation", None)
             if not node.get("prefixMetadata") and callable(annotations) and annotations():
                 node["prefixMetadata"] = [_namespace_path_text(a.namespacePath()) for a in annotations()]
+            # 宣言名の短い名前（`item <'DS-1'> credentials`。simpleName の中にある）。規則が自分で
+            # 短い名前を持つもの（part def など）はそのまま
+            if not node.get("shortName"):
+                simple = getattr(tree, "simpleName", None)
+                simple_ctx = simple() if callable(simple) else None
+                if isinstance(simple_ctx, list):
+                    simple_ctx = simple_ctx[0] if len(simple_ctx) == 1 else None
+                short = getattr(simple_ctx, "shortName", None) if simple_ctx is not None else None
+                if short is not None:
+                    node["shortName"] = short.text
         return node
 
     def _register(self, ctx, node: Dict) -> None:
@@ -476,7 +497,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
             "prefixMetadata": prefix_metadata,
             "value": self.visit(ctx.value),
-            "children": [],
+            "children": [self.visit(el) for el in ctx.enumBodyElement()],
         }
 
     def visitEnumLiteralBody(self, ctx: SysMLMinParser.EnumLiteralBodyContext) -> Dict:
@@ -915,7 +936,7 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # 検索するため、第1代替の`ofMult`ノードも拾ってしまい判別に
         # 使えない（2026-08-29、add_interfaceusage_nary_connect_form
         # 対応中に連鎖的に発見）。
-        if ctx.typeRef is not None or ctx.typeMult is not None or len(ctx.postKind) > 0 or ctx.isAbstract is not None:
+        if ctx.typeRef is not None or ctx.typeMult is not None or ctx.nameMult is not None or len(ctx.postKind) > 0                 or ctx.isAbstract is not None:
             # `flow :>> publish_message: Transfers::MessageTransfer { ... }`
             # のように、preKind（名前の代わりに型節前に置くredefine）も
             # 持ちうる（2026-08-29、連鎖的に発見）。
@@ -926,7 +947,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 "type": "flow_usage",
                 "name": _optional_simple_name_text(ctx.flowName),
                 "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
-                "multiplicity": self._multiplicity_dict(ctx.typeMult),
+                # `flow f [*] : T` の多重度は名前の後
+                "multiplicity": self._multiplicity_dict(ctx.typeMult if ctx.typeMult is not None else ctx.nameMult),
                 "isAbstract": ctx.isAbstract is not None,
                 "redefines": redefines,
                 # `flow : FuelFlow of Fuel from tankAssy... to eng...;`
@@ -1203,6 +1225,9 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         （visitNewExprと同型）を返す2択にする。"""
         if ctx.payload is not None:
             return _namespace_path_text(ctx.payload)
+        if getattr(ctx, "payloadLiteral", None) is not None:
+            # `send "Command" via p;`（文字列を送る。3 つ目の held-out、Bruce Douglass の書籍の例）
+            return self.visit(ctx.payloadLiteral)
         return {
             "type": "new_instance",
             "name": _qualified_name_text(ctx.newPayloadType),
@@ -1383,7 +1408,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
                 # `perform a.b;` の `.` は正規化で `::` になる。`::` と書いたときだけ元の文字列を残す
                 **_colon_source("reference", npath_ctx),
                 # `perform deliver : Deliver;`（参照に型を書く形）
-                **({"type_name": _namespace_path_text(ctx.bareTypeRef)} if ctx.bareTypeRef is not None else {}),
+                **({"type_name": _namespace_path_text(ctx.bareTypeRef or ctx.postTypes[0])}
+                   if ctx.bareTypeRef is not None or ctx.postTypes else {}),
+                # `perform generateThrust[1];`（3 つ目の held-out、ode4hera）
+                **({"multiplicity": self._multiplicity_dict(ctx.bareMult or ctx.postMult)}
+                   if ctx.bareMult is not None or ctx.postMult is not None else {}),
                 "redefines": redefines,
                 "params": params,
                 "children": children,
@@ -1413,11 +1442,13 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return {
             "type": "perform_action",
             "name": _optional_simple_name_text(ctx.actionName),
-            "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
+            # `perform action g redefines g : T, U;`（型節が特化の後。3 つ目の held-out、ode4hera）
+            "type_name": (_namespace_path_text(ctx.typeRef) if ctx.typeRef is not None
+                          else _namespace_path_text(ctx.postTypes[0]) if ctx.postTypes else None),
             # `perform action takePicture[*] :> PictureTaking::takePicture;`
             # （camera.sysml）のように、名前直後に多重度が付くことがある
-            # （2026-08-29、235件パース失敗の要因分析で発見）。
-            "multiplicity": self._multiplicity_dict(ctx.mult),
+            # （2026-08-29、235件パース失敗の要因分析で発見）。`perform action :>> g[1];` のように特化の後にも付く
+            "multiplicity": self._multiplicity_dict(ctx.mult if ctx.mult is not None else ctx.postMult),
             "redefines": redefines,
             "params": params,
             "children": children,
@@ -2264,7 +2295,9 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return {
             "type": "transition",
             "name": _simple_name_text(ctx.simpleName()) if ctx.simpleName() is not None else None,
-            "source": _namespace_path_text(ctx.source) if ctx.source is not None else None,
+            # `first` の無い形（`transition initial then off;`）の名前に見えるものは始点
+            "source": (_namespace_path_text(ctx.source) if ctx.source is not None
+                       else _namespace_path_text(ctx.bareSource) if ctx.bareSource is not None else None),
             "target": _namespace_path_text(ctx.target),
             "trigger": trigger,
             "guard": guard,
@@ -2379,7 +2412,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             # `= value`で値代入できる（2026-08-29、730件ベースライン154件
             # エラー要因分析で発見）。既存のexact-equality辞書テストを
             # 壊さないよう、無い場合はキー自体を省略する。
-            **({"value": self.visit(ctx.value)} if ctx.value is not None else {}),
+            **({"value": self.visit(ctx.value if ctx.value is not None else ctx.postValue)}
+               if ctx.value is not None or ctx.postValue is not None else {}),
             "children": children,
         }
 
@@ -2992,6 +3026,19 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "children": [],
         }
 
+    def visitMetadataAccessExpr(self, ctx: SysMLMinParser.MetadataAccessExprContext) -> Dict:
+        # `owner.metadata`（KerML の MetadataAccessExpression。2026-11-05）
+        return {"type": "metadata_access", "base": self.visit(ctx.expression()), "children": []}
+
+    def visitNullCoalesceExpr(self, ctx: SysMLMinParser.NullCoalesceExprContext) -> Dict:
+        # `a ?? b`（2026-11-05）
+        return self._binary_expr(ctx)
+
+    def visitImplicitClassificationExpr(self, ctx: SysMLMinParser.ImplicitClassificationExprContext) -> Dict:
+        # `istype T`（左辺の無い分類判定。filter・expose の条件。2026-11-05）
+        return {"type": "classification_expr", "op": ctx.op.text, "base": None,
+                "type_name": _namespace_path_text(ctx.typeRef), "children": []}
+
     def visitMemberAccessExpr(self, ctx: SysMLMinParser.MemberAccessExprContext) -> Dict:
         # 任意の式に対する後置`.member`アクセス（例: `(that as Action).this`、
         # `(edges#(i).vertices#(2) as Item).matingOccurrences`）。裸の名前
@@ -3477,10 +3524,12 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         # renderingへの単純な参照かを区別するフラグとして残す。
         return {
             "type": "render_stmt",
-            "name": _namespace_path_text(ctx.ref),
+            # `render rendering :>> asTable;` のように名前が無いことがある（2026-11-05、3 つ目の held-out）
+            "name": _namespace_path_text(ctx.ref) if ctx.ref is not None else None,
             "isRendering": ctx.isRendering is not None,
-            "type_name": _unquote_text(ctx.typeRef.text) if ctx.typeRef is not None else None,
+            "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
             "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
+            **({"redefines": self._redefine_list_namespace(ctx.postKind, ctx.postTarget)} if ctx.postKind else {}),
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 
@@ -3503,6 +3552,8 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "inheritance": None,
             "isAbstract": False,
             **({"about": [_namespace_path_text(t) for t in about_targets]} if about_targets else {}),
+            # `@tag1 : TwoColumnTag { }` の宣言名（2026-11-05、3 つ目の held-out）
+            **({"declaredName": _simple_name_text(ctx.declaredName)} if ctx.declaredName is not None else {}),
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
 
@@ -3705,6 +3756,11 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
             "type": "dependency",
             "clients": clients,
             "suppliers": suppliers,
+            # 元の書き方（`.` で書いた端は feature の連鎖。名前空間としては確かめない）。既存の完全一致の
+            # テストを壊さないよう、`.` で書いた端があるときだけキーを足す
+            **{f"{key}_source": texts for key, texts in (
+                ("clients", [q.getText() for q in ctx.clients.namespacePath()]),
+                ("suppliers", [q.getText() for q in ctx.suppliers.namespacePath()])) if any("." in t for t in texts)},
             "prefixMetadata": prefix_metadata,
             "children": [self.visit(el) for el in ctx.partBodyElement()],
         }
@@ -3826,9 +3882,13 @@ class SysMLMinASTVisitor(SysMLMinVisitor):
         return {
             "type": "frame_statement",
             "isConcern": ctx.isConcern is not None,
-            "name": _simple_name_text(ctx.name) if ctx.name is not None else None,
+            # `frame StakeholderReqPkg::CommandValidation;`（修飾名で既存の concern を参照する。3 つ目の held-out）
+            "name": _namespace_path_text(ctx.name) if ctx.name is not None else None,
+            **_colon_source("name", ctx.name),
             "multiplicity": self._multiplicity_dict(ctx.multiplicitySpec()),
             "type_name": _namespace_path_text(ctx.typeRef) if ctx.typeRef is not None else None,
+            # `frame WorkoutUsabilityNeed { ... }`（本体のある形）
+            **({"children": [self.visit(el) for el in ctx.partBodyElement()]} if ctx.partBodyElement() else {}),
             # `frame p :>> A::b :> C::d;`（既存の完全一致のテストを壊さないよう、無ければキーを足さない）
             **({"redefines": self._redefine_list_namespace(ctx.postKind, ctx.postTarget)} if ctx.postKind else {}),
         }

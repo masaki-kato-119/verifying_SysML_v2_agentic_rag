@@ -98,6 +98,7 @@ eval/pilot_parity/heldout/
 eval/pilot_parity/folders/
 eval/pilot_parity/heldout2/
 eval/pilot_parity/heldout3/
+eval/pilot_parity/heldout4/
 eval/pilot_parity/corpus_*/
 eval/pilot_parity/labels_*/
 eval/pilot_parity/results_*/

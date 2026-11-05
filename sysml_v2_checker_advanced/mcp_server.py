@@ -4,6 +4,7 @@ SysML v2 Advanced Checker MCP Server
 fastmcpを使用してSysML v2チェッカーをMCPサーバーとして公開
 """
 
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -154,33 +155,69 @@ def _scope_fields(others: OtherFiles, file_path: Optional[str], directory: Optio
     return fields
 
 
-def _lint_result(text: str, others: OtherFiles, file_path: Optional[str], directory: Optional[str]) -> Dict[str, Any]:
-    # パースとリント。指摘に行番号を付けるため、source_range を持つ経路でパースする
-    ast, issues, issue_dicts = lint_text_with_locations(text, other_asts=others.asts)
+_SYNTAX_POSITION = re.compile(r"\(line (\d+), column (\d+)\)")
 
-    if ast.get("type") == "error":
-        return {
-            "success": False,
-            "error": f"パースエラー: {ast.get('message')}",
-            "issues": [],
-            "summary": {"total": 0, "errors": 0, "warnings": 0, "info": 0},
-            **_scope_fields(others, file_path, directory),
-        }
+# 構文エラーのあるテキストへの注意（2026-11-05）。以前は構文エラーがあると success=False と 1 つの
+# 文字列だけを返し、行ごとの構文エラーも意味の指摘も返さなかった。LLM の初稿の 77% に参照実装の
+# 構文エラーがある（eval/pilot_parity の 2 つ目の held-out）ので、エラー回復で読めた部分も検証して返す。
+# 構文エラーより後ろの指摘は、参照実装と自作でエラー回復の仕方が違うため一致しないことがある
+# （LLM の初稿では 96% 一致、要素をまとめて落とす書き方のファイルでは 52%。RESULTS.md の「構文エラーのあと」）
+_SYNTAX_NOTE = ("構文エラーが {n} 件あります。先に構文エラー（syntax_error が true の指摘）を直してください。"
+                "最初の構文エラー（{first} 行目）より後ろの指摘（after_syntax_error が true）は、エラー回復で"
+                "読めた部分にもとづく暫定のもので、構文エラーを直すと変わることがあります。")
+
+
+def _syntax_issues(message: str) -> list:
+    """パースエラーの文字列（`; ` 区切り）を、行の付いた指摘に分ける。"""
+    out = []
+    for part in (message or "").split("; "):
+        if not part.strip():
+            continue
+        match = _SYNTAX_POSITION.search(part)
+        out.append({"severity": "error", "message": part, "rule": "parse", "element_id": None,
+                    "source_range": None, "line": int(match.group(1)) if match else None, "syntax_error": True})
+    return out
+
+
+def _lint_result(text: str, others: OtherFiles, file_path: Optional[str], directory: Optional[str]) -> Dict[str, Any]:
+    # パースとリント。指摘に行番号を付けるため、source_range を持つ経路でパースする。構文エラーがあっても
+    # エラー回復で読めた部分を検証する（recover）
+    ast, issues, issue_dicts = lint_text_with_locations(text, other_asts=others.asts, recover=True)
+    syntax = _syntax_issues(ast.get("message", "")) if ast.get("type") == "error" else []
+    # 自作の文法は参照実装より寛容で、`import X::*;`（可視性の無い import）などは読めたうえで
+    # _check_official_syntax_constraints が指摘する。参照実装では構文エラーなので、構文エラーとして数える
+    for data in issue_dicts:
+        if data.get("rule") == "_check_official_syntax_constraints" and data.get("severity") == "error":
+            data["syntax_error"] = True
+    official = [d for d in issue_dicts if d.get("syntax_error")]
+    note_extra = None
+    if syntax or official:
+        lines = [i["line"] for i in syntax + official if i.get("line") is not None]
+        first = min(lines) if lines else 1
+        for data in issue_dicts:
+            if not data.get("syntax_error"):
+                data["after_syntax_error"] = data.get("line") is None or data["line"] > first
+        note_extra = _SYNTAX_NOTE.format(n=len(syntax) + len(official), first=first)
+    all_issues = syntax + issue_dicts
 
     # 問題の集計
     summary = {
-        "total": len(issues),
-        "errors": len([i for i in issues if i.severity == "error"]),
-        "warnings": len([i for i in issues if i.severity == "warning"]),
-        "info": len([i for i in issues if i.severity == "info"])
+        "total": len(all_issues),
+        "errors": len([i for i in all_issues if i.get("severity") == "error"]),
+        "warnings": len([i for i in all_issues if i.get("severity") == "warning"]),
+        "info": len([i for i in all_issues if i.get("severity") == "info"]),
+        "syntax_errors": len(syntax) + len(official),
     }
-    return {
+    result = {
         "success": True,
         "error": None,
-        "issues": issue_dicts,
+        "issues": all_issues,
         "summary": summary,
         **_scope_fields(others, file_path, directory),
     }
+    if note_extra:
+        result["note"] = note_extra + (result.get("note") or "")
+    return result
 
 
 @mcp.tool()
@@ -202,7 +239,10 @@ def lint_sysml_file(file_path: str, directory: Optional[str] = None) -> Dict[str
         rule・element_id・source_range に加え、指摘の行番号 `line`（1始まり。
         位置の分からない指摘は None）を持つ。scope は "file"（そのファイルだけで検証）か
         "directory"（ほかのファイルと一緒に検証）。loaded は一緒に読み込んだファイル、
-        unparsable_files は構文エラーで読めなかったファイル。note は結果を読むときの注意
+        unparsable_files は構文エラーで読めなかったファイル。note は結果を読むときの注意。
+        構文エラーがあると、行ごとの構文エラー（rule が "parse"、syntax_error が true）と、エラー回復で
+        読めた部分の指摘を返す。最初の構文エラーより後ろの指摘は after_syntax_error が true（暫定）。
+        summary.syntax_errors は構文エラーの件数
     """
     try:
         # ファイルの存在確認

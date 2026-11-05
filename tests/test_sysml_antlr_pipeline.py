@@ -886,16 +886,18 @@ def test_antlr_transition_minimal_source_and_target():
 
 def test_antlr_transition_omitted_source_initial_pseudostate_form():
     """`transition initial then off;`（5-State-based Behavior-1.sysml L77,136,171）は
-    初期疑似状態からの遷移を表す省略形で、`first source`節を持たない。
-    source=Noneとしてパースされ、_check_transitionはsourceチェックをスキップする。
+    `first` の無い形。公式文法（`'transition' (UsageDeclaration 'first')? FeatureChainMember ...`）
+    では `initial` は名前ではなく始点（参照実装は `entry action initial;` が無いと
+    `Couldn't resolve reference to Element 'initial'` を出す。2026-11-05 に実測して、
+    名前として読んでいた以前の期待を改めた）。
     """
     ast = parse_sysml_antlr(
-        "state def S { state off; transition initial then off; }"
+        "state def S { entry action initial; state off; transition initial then off; }"
     )
-    transition = ast["children"][0]["children"][1]
+    transition = ast["children"][0]["children"][2]
     assert transition["type"] == "transition"
-    assert transition["name"] == "initial"
-    assert transition["source"] is None
+    assert transition["name"] is None
+    assert transition["source"] == "initial"
     assert transition["target"] == "off"
     assert lint_ast(ast) == []
 

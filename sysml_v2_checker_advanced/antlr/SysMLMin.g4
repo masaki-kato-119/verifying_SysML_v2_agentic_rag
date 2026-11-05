@@ -323,7 +323,7 @@ portionUsageStmt
 // （2026-08-28、参照実装比較レポートP0-3で発見）。
 occurrenceDef
     // `#project occurrence def <PRJ> 'Delivery Drone Project' { ... }`（フォルダ単位のコーパスの sysmod・advent-of-sysml-v2。参照実装は構文エラーを出さない。2026-10-23）
-    : prefixMetadataAnnotation* isIndividual='individual'? isAbstract='abstract'? 'occurrence' 'def'
+    : prefixMetadataAnnotation* isIndividual='individual'? isAbstract='abstract'? prefixMetadataAnnotation* 'occurrence' 'def'
       ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
@@ -353,7 +353,7 @@ occurrenceDef
 // （2026-08-29、add_occurrenceusage_itemdef_prefix_metadata対応中に発見）。
 occurrenceUsage
     // `ref occurrence project :>> this : Project;`（型の前の再定義）・`occurrence xs[*] : X;`（フォルダ単位のコーパスの sysmod・advent-of-sysml-v2。参照実装は構文エラーを出さない。2026-10-23）
-    : prefixMetadataAnnotation* direction? isIndividual='individual'? isAbstract='abstract'? isConstant='constant'? isRef='ref'? 'occurrence' simpleName?
+    : prefixMetadataAnnotation* direction? isIndividual='individual'? isAbstract='abstract'? isConstant='constant'? isRef='ref'? prefixMetadataAnnotation* 'occurrence' simpleName?
       preMult=multiplicitySpec?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
@@ -379,7 +379,7 @@ occurrenceUsage
 // `_check_individual_definition`（「多重度が無ければLintIssue」）は、
 // まさにその唯一の正しい形を落としていたため削除した。
 individualDef
-    : isAbstract='abstract'? 'individual' 'def' simpleName inheritanceClause? (emptyMult='[' ']')? ( '{' partBodyElement* '}' | ';' )
+    : isAbstract='abstract'? prefixMetadataAnnotation* 'individual' 'def' simpleName inheritanceClause? (emptyMult='[' ']')? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // `individual two_types : A_1, B_1;`（IndividualUsage_Invalid.sysml）の
@@ -398,7 +398,7 @@ individualDef
 // `:>>`/subsets/redefines）一式を欠いていた（2026-08-29、730件
 // ベースライン154件エラー要因分析で発見）。
 individualUsage
-    : isAbstract='abstract'? isRef='ref'? 'individual' simpleName?
+    : isAbstract='abstract'? isRef='ref'? prefixMetadataAnnotation* 'individual' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       ( ':' typeRef=(ID | QUOTED_NAME) (',' extraTypeRefs+=(ID | QUOTED_NAME))* )?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
@@ -413,7 +413,7 @@ individualUsage
 // fragment/operand）のみ実装する。linter.py側に対応するチェック関数は
 // 無い（構文的完全性のみ）。
 interactionDef
-    : isAbstract='abstract'? 'interaction' 'def' simpleName inheritanceClause? ( '{' interactionBodyElement* '}' | ';' )
+    : isAbstract='abstract'? prefixMetadataAnnotation* 'interaction' 'def' simpleName inheritanceClause? ( '{' interactionBodyElement* '}' | ';' )
     ;
 
 interactionBodyElement
@@ -467,7 +467,8 @@ commentStmt
 // 発見）。
 documentationStmt
     // `doc <B> /* */`（短い名前の付いた文書。KerML の ShortName_Scoping_Valid2 で実測）
-    : 'doc' ('<' docShortName=(ID | QUOTED_NAME) '>')? simpleName? ('locale' locale=STRING_LITERAL)? DOC_COMMENT
+    // `private doc ontologyDefinition /* ... */`（可視性の付いた文書）（3 つ目の held-out。参照実装は構文エラーを出さない。2026-11-05）
+    : visibilityIndicator? 'doc' ('<' docShortName=(ID | QUOTED_NAME) '>')? simpleName? ('locale' locale=STRING_LITERAL)? DOC_COMMENT
     ;
 
 textualRepresentationStmt
@@ -527,7 +528,7 @@ aliasStmt
 // この17構文は全て`inheritanceClause?`を持つ（_def/_usage問わず。共有
 // ヘルパー`_named_simple_node`側で一括対応する）。
 caseDef
-    : isAbstract='abstract'? 'case' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : isAbstract='abstract'? prefixMetadataAnnotation* 'case' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // `ref analysis self : AnalysisCase :>> Case::self;`（AnalysisCases.sysml）
@@ -543,7 +544,7 @@ caseDef
 // の複数型を取ることがある（calculationUsageと同じ理由。2026-08-28、
 // 730件パース失敗の要因分析で発見）。
 caseUsage
-    : variability=('variation' | 'variant')? visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'case' simpleName?
+    : variability=('variation' | 'variant')? visibilityIndicator? isAbstract='abstract'? isRef='ref'? prefixMetadataAnnotation* 'case' simpleName?
       (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' ID (',' extraTypeRefs+=ID)*)?
       multiplicitySpec?
@@ -562,7 +563,7 @@ caseUsage
 // bodyの要素種別をcalcBodyElementへ差し替える（2026-08-29、730件
 // ベースライン154件エラー要因分析で発見）。
 analysisCaseDef
-    : isIndividual='individual'? isAbstract='abstract'? 'analysis' 'def' simpleName inheritanceClause? ( '{' calcBodyElement* '}' | ';' )
+    : isIndividual='individual'? isAbstract='abstract'? prefixMetadataAnnotation* 'analysis' 'def' simpleName inheritanceClause? ( '{' calcBodyElement* '}' | ';' )
     ;
 
 // `variation analysis a1;`（VariabilityTest.sysml）のように、Variability
@@ -579,7 +580,7 @@ analysisCaseDef
 // を持ちうるため、bodyの要素種別をcalcBodyElementへ差し替える
 // （2026-08-29、730件ベースライン154件エラー要因分析で発見）。
 analysisCaseUsage
-    : variability=('variation' | 'variant')? visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? isRef='ref'? 'analysis' simpleName?
+    : variability=('variation' | 'variant')? visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? isRef='ref'? prefixMetadataAnnotation* 'analysis' simpleName?
       (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' ID (',' extraTypeRefs+=ID)*)?
       multiplicitySpec?
@@ -593,14 +594,14 @@ analysisCaseUsage
 // bodyの要素種別をcalcBodyElementへ差し替える（2026-08-29、730件
 // ベースライン154件エラー要因分析で発見）。
 verificationCaseDef
-    : isAbstract='abstract'? 'verification' 'def' simpleName inheritanceClause? ( '{' calcBodyElement* '}' | ';' )
+    : isAbstract='abstract'? prefixMetadataAnnotation* 'verification' 'def' simpleName inheritanceClause? ( '{' calcBodyElement* '}' | ';' )
     ;
 
 // `variation verification v1;`（VariabilityTest.sysml）のように、
 // Variability機能の先頭修飾子がここにも付く（2026-08-28、730件パース
 // 失敗の要因分析で発見）。
 verificationCaseUsage
-    : variability=('variation' | 'variant')? visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'verification' simpleName?
+    : variability=('variation' | 'variant')? visibilityIndicator? isAbstract='abstract'? isRef='ref'? prefixMetadataAnnotation* 'verification' simpleName?
       (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' ID)?
       multiplicitySpec?
@@ -622,7 +623,7 @@ useCaseDef
     // パースできており、実際には「use case 本体が制御フローを受け付けない」
     // という単一の原因だった。
     // `#systemUseCase use case def DeliverPackage { ... }`（フォルダ単位のコーパスの sysmod・advent-of-sysml-v2。参照実装は構文エラーを出さない。2026-10-23）
-    : prefixMetadataAnnotation* isAbstract='abstract'? 'use' 'case' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')?
+    : prefixMetadataAnnotation* isAbstract='abstract'? prefixMetadataAnnotation* 'use' 'case' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')?
       simpleName inheritanceClause? ( '{' actionBodyElement* '}' | ';' )
     ;
 
@@ -645,7 +646,7 @@ useCaseDef
 useCaseUsage
     // `use case :>> deliverPackage : UseCases::DeliverPackage { ... }`（修飾名の型）・
     // `use case useCases [0..*] : SystemUseCase { ... }`（名前の後の多重度）（フォルダ単位のコーパスの sysmod・advent-of-sysml-v2。参照実装は構文エラーを出さない。2026-10-23）
-    : variability=('variation' | 'variant')? isThen='then'? visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'use' 'case' simpleName?
+    : variability=('variation' | 'variant')? isThen='then'? visibilityIndicator? isAbstract='abstract'? isRef='ref'? prefixMetadataAnnotation* 'use' 'case' simpleName?
       preMult=multiplicitySpec?
       (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
@@ -686,7 +687,7 @@ bareIncludeStmt
 // `view def <gv> GeneralView { ... }`のように、view defもShortName注釈を
 // 取りうる（公式コーパスで8件、`StandardViewDefinitions.sysml`）。
 viewDef
-    : isAbstract='abstract'? 'view' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : isAbstract='abstract'? prefixMetadataAnnotation* 'view' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // `ref view :>> self : View;`・`abstract ref view subviews : View[0..*] :>
@@ -701,20 +702,22 @@ viewDef
 // 既に行っているID→QUOTED_NAME許容拡張と同型。2026-08-31、
 // add_viewusage_quoted_type_ref対応中に発見）。
 viewUsage
-    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'view' simpleName?
+    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? prefixMetadataAnnotation* 'view' simpleName?
       (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
-      (':' typeRef=(ID | QUOTED_NAME))?
+      // `view v : StandardViewDefinitions::GeneralView`・`: DS_Views::SymbolicViews::gv`（3 つ目の held-out。
+      // 修飾名の型。2026-11-05）
+      (':' typeRef=namespacePath)?
       multiplicitySpec?
       (postKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       ( '{' partBodyElement* '}' | ';' )
     ;
 
 viewpointDef
-    : isAbstract='abstract'? 'viewpoint' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : isAbstract='abstract'? prefixMetadataAnnotation* 'viewpoint' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 viewpointUsage
-    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'viewpoint' simpleName?
+    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? prefixMetadataAnnotation* 'viewpoint' simpleName?
       (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' ID)?
       multiplicitySpec?
@@ -723,14 +726,14 @@ viewpointUsage
     ;
 
 renderingDef
-    : isAbstract='abstract'? 'rendering' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : isAbstract='abstract'? prefixMetadataAnnotation* 'rendering' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // `rendering :>> subrenderings[0..*] = columnView.viewRendering;`
 // （Views.sysml）のように、redefine対象へ`default`ではなく`=`で直接式を
 // 代入する形もある（他のusage規則(attribute/item/ref等)と同じ`=`値代入）。
 renderingUsage
-    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'rendering' simpleName?
+    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? prefixMetadataAnnotation* 'rendering' simpleName?
       (preKind+=('specializes' | ':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' ID)?
       multiplicitySpec?
@@ -749,7 +752,11 @@ renderingUsage
 // （asTreeDiagram等）・既存宣言済みrenderingへの単純な参照。
 // 2026-08-29、730件ベースライン154件エラー要因分析で発見。
 renderStmt
-    : 'render' isRendering='rendering'? ref=namespacePath (':' typeRef=ID)? multiplicitySpec? ( '{' partBodyElement* '}' | ';' )
+    // `render rendering : StringCellRendering :>> asTableCell { }`・`render rendering :>> asTable;`（名前の無い
+    // rendering、修飾名の型、特化）（3 つ目の held-out。参照実装は構文エラーを出さない。2026-11-05）
+    : 'render' isRendering='rendering'? ref=namespacePath? (':' typeRef=namespacePath)? multiplicitySpec?
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
+      ( '{' partBodyElement* '}' | ';' )
     ;
 
 // --- metadata (8.2.2.27) --------------------------------------------------------
@@ -759,7 +766,7 @@ renderStmt
 // metadata defもShortName注釈を取りうる（公式コーパスで10件、最頻出）。
 // `#MetaOnly metadata def MD;`（前置メタデータ注釈。参照実装は受理する、2026-10-23）
 metadataDef
-    : prefixMetadataAnnotation* isAbstract='abstract'? 'metadata' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : prefixMetadataAnnotation* isAbstract='abstract'? prefixMetadataAnnotation* 'metadata' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // `@Classified { classificationLevel = ...; }`/`@Security;`
@@ -778,7 +785,7 @@ metadataDef
 // 頻出パターンに対応する（従来型節・about節のいずれも無かった。
 // 2026-08-29、730件ベースライン154件エラー要因分析で発見）。
 metadataUsage
-    : prefixMetadataAnnotation* isAbstract='abstract'? 'metadata' simpleName (':' typeRef=namespacePath)? inheritanceClause?
+    : prefixMetadataAnnotation* isAbstract='abstract'? prefixMetadataAnnotation* 'metadata' simpleName (':' typeRef=namespacePath)? inheritanceClause?
       ('about' aboutTargets+=namespacePath (',' aboutTargets+=namespacePath)*)?
       ( '{' partBodyElement* '}' | ';' )  # metadataUsageKeyword
     // `@Rationale about engineTradeOffAnalysis::vehicle_b_engine4cyl{ ... }`・
@@ -787,7 +794,8 @@ metadataUsage
     // キーワード形（上の代替）には既にあったのに短縮形には無い、という
     // 実装の非対称性だった（2026-09-04、比較レポートv2 §v2-6 G3。参照実装は
     // 同ファイル全体に対して診断0件＝この記法を受理する）。
-    | '@' typeRef=namespacePath
+    // `@tag1 : TwoColumnTag { }`（名前の付いた短縮形）（3 つ目の held-out。参照実装は構文エラーを出さない。2026-11-05）
+    | '@' (declaredName=simpleName ':')? typeRef=namespacePath
       ('about' aboutTargets+=namespacePath (',' aboutTargets+=namespacePath)*)?
       ( '{' partBodyElement* '}' | ';' )                                                                 # metadataUsageShorthand
     ;
@@ -802,11 +810,11 @@ metadataUsage
 // protected）が付く形がある（公式コーパス全体で3件のみ、attributeUsage等と
 // 同じ順序でabstractより前）。
 calculationDef
-    : visibilityIndicator? isAbstract='abstract'? 'calc' 'def' simpleName inheritanceClause? ( '{' calcBodyElement* '}' | ';' )
+    : visibilityIndicator? isAbstract='abstract'? prefixMetadataAnnotation* 'calc' 'def' simpleName inheritanceClause? ( '{' calcBodyElement* '}' | ';' )
     ;
 
 constraintDef
-    : visibilityIndicator? isAbstract='abstract'? 'constraint' 'def' simpleName inheritanceClause? ( '{' calcBodyElement* '}' | ';' )
+    : visibilityIndicator? isAbstract='abstract'? prefixMetadataAnnotation* 'constraint' 'def' simpleName inheritanceClause? ( '{' calcBodyElement* '}' | ';' )
     ;
 
 calcBodyElement
@@ -907,9 +915,13 @@ calcParameter
 // 取ることがある（constraintUsageと同じ理由。2026-08-28、730件パース
 // 失敗の要因分析で発見）。
 assertConstraintUsage
+    // `assert constraint c : T [*] :> d { }`・`assert constraint :>> d [*] { }`（多重度）（3 つ目の held-out。参照実装は構文エラーを出さない。2026-11-05）
     : visibilityIndicator? assertKind=('assert' | 'require' | 'assume') prefixMetadataAnnotation* ('not')? 'constraint' simpleName?
+      nameMult=multiplicitySpec?
       ( ':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)* )?
+      typeMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
+      postMult=multiplicitySpec?
       ( '{' documentationStmt* resultExpr=expression '}' | '{' calcBodyElement* '}' | ';' )
     // `assert mc { in totalMass = m; ... }`・`assert not massLimitation
     // { :>> mass = vehicle3.mass; ... }`（MassConstraintExample.sysml、
@@ -945,7 +957,7 @@ assertConstraintUsage
 // 共通する一般的なKerMLのFeatureTyping機構。2026-08-28、730件パース失敗の
 // 要因分析で発見）。
 calculationUsage
-    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'calc' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
+    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? prefixMetadataAnnotation* 'calc' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       // `calc 'Solve for Pressure1' : 'Ideal Gas Law';`（Turbojet Stage
       // Analysis.sysml）のように、型節がQUOTED_NAME型参照を取ることも
@@ -972,7 +984,7 @@ calculationUsage
 // 失敗の要因分析で発見）。
 // `#g constraint c1;`（前置メタデータ注釈。参照実装は受理する、2026-10-23）
 constraintUsage
-    : visibilityIndicator? prefixMetadataAnnotation* isAbstract='abstract'? isRef='ref'? 'constraint' simpleName?
+    : visibilityIndicator? prefixMetadataAnnotation* isAbstract='abstract'? isRef='ref'? prefixMetadataAnnotation* 'constraint' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' ID (',' extraTypeRefs+=ID)*)?
       multiplicitySpec?
@@ -1091,7 +1103,7 @@ requireUsage
 // 単一型のみだった。2026-09、参照実装比較レポートで発見）。
 interfaceUsage
     // `interface <asis> actorSystemInterfaces[1..*] : ActorSystemInterface connect ...`（フォルダ単位のコーパスの sysmod・advent-of-sysml-v2。参照実装は構文エラーを出さない。2026-10-23）
-    : isAbstract='abstract'? 'interface' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName namedMult=multiplicitySpec?
+    : isAbstract='abstract'? prefixMetadataAnnotation* 'interface' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName namedMult=multiplicitySpec?
       ':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*
       // `interface wheelToleftHalAxleInterface:WheelHubInterface
       //     connect [1] rearWheel1.lugNutCompositePort to [1] rearAxle.leftHalfAxle.shankCompositePort;`
@@ -1134,7 +1146,7 @@ interfaceUsage
     // usage自身の多重度は`usageMult`ラベル経由で読むこと（無ラベルの
     // `ctx.multiplicitySpec()`は参照が複数になるとリストを返すようになる）。
     // `interface :Interfaces::PositionInterface connect a.p to b.q;`（名前の無い形の修飾名の型）（フォルダ単位のコーパスの sysmod・advent-of-sysml-v2。参照実装は構文エラーを出さない。2026-10-23）
-    | isAbstract='abstract'? 'interface' simpleName?
+    | isAbstract='abstract'? prefixMetadataAnnotation* 'interface' simpleName?
       (':' bareTypeRef=namespacePath)?
       usageMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
@@ -1170,7 +1182,7 @@ interfaceUsage
 // ある（他の多くのUsage規則と同様simpleNameを省略可能にする。2026-09、
 // 参照実装比較レポートで発見）。
 allocationUsage
-    : isAbstract='abstract'? 'allocation' simpleName?
+    : isAbstract='abstract'? prefixMetadataAnnotation* 'allocation' simpleName?
       ( ':' ID )?
       multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
@@ -1197,7 +1209,7 @@ allocationUsage
 // （CauseAndEffectExample.sysml）のような`#Type`プレフィックス注釈
 // （2026-08-28、730件回帰チェックで発見）。
 connectionDef
-    : prefixMetadataAnnotation* isAbstract='abstract'? 'connection' 'def' simpleName inheritanceClause? ( '{' connectionBodyElement* '}' | ';' )
+    : prefixMetadataAnnotation* isAbstract='abstract'? prefixMetadataAnnotation* 'connection' 'def' simpleName inheritanceClause? ( '{' connectionBodyElement* '}' | ';' )
     ;
 
 connectionBodyElement
@@ -1249,7 +1261,9 @@ connectionBodyElement
 connectionEndMember
     : 'end' prefixMetadataAnnotation*
       endName=simpleName? endMult=multiplicitySpec?
-      kind=('occurrence' | 'port' | 'item' | 'part')?
+      // `end #original requirement ::> credentialSecurityReq;`（3 つ目の held-out、Bruce Douglass の書籍の例。
+      // requirement def の端。参照実装は構文エラーを出さない。2026-11-05）
+      kind=('occurrence' | 'port' | 'item' | 'part' | 'requirement' | 'action' | 'attribute' | 'concern')?
       isRef='ref'?
       innerName=simpleName?
       // `end heatPortSource : Interfaces::HeatPort;`
@@ -1290,13 +1304,13 @@ connectionEndMember
 // part_defと同じ簡略形のみ実装する。`allocation_usage`
 // （`allocate x to y;`、connector_partを使う複雑な形）は未対応。
 allocationDef
-    : isAbstract='abstract'? 'allocation' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : isAbstract='abstract'? prefixMetadataAnnotation* 'allocation' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // `_check_activity_def`（linter.py:462）はaction_defと全く同じフィールド
 // （name, params[].type_spec.name）を読むため、action_defと同型で実装する。
 activityDef
-    : isAbstract='abstract'? 'activity' 'def' simpleName inheritanceClause? ( '{' actionBodyElement* '}' | ';' )
+    : isAbstract='abstract'? prefixMetadataAnnotation* 'activity' 'def' simpleName inheritanceClause? ( '{' actionBodyElement* '}' | ';' )
     ;
 
 // 参照: KerML.xtext の `Type`（`TypePrefix 'type' TypeDeclaration TypeBody`）。
@@ -1304,7 +1318,7 @@ activityDef
 // 実サンプルで必要性が確認できていないため未対応）。`attributes` は常に
 // 空リスト（body の中身は `children` に入る）。
 typeDef
-    : isAbstract='abstract'? 'type' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : isAbstract='abstract'? prefixMetadataAnnotation* 'type' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // `#service def APISService { ... }`（AHFNorwayTopics.sysml）のように、
@@ -1313,7 +1327,7 @@ typeDef
 // 無しの汎用usage形）のdef版。2026-08-29、
 // add_ahfnorwaytopics_composite_gaps対応中に発見）。
 featureDef
-    : prefixMetadataAnnotation* isAbstract='abstract'? 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : prefixMetadataAnnotation* isAbstract='abstract'? prefixMetadataAnnotation* 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // `specializes`/`subsets`両キーワードと複数基底（カンマ区切り、
@@ -1363,7 +1377,7 @@ inheritanceClause
 // （calculationDef/constraintDefは既に対応済みで非対称だった。
 // 2026-08-29、235件パース失敗の要因分析で発見）。
 partDef
-    : visibilityIndicator? variability=('variation' | 'variant')? prefixMetadataAnnotation* isIndividual='individual'? isAbstract='abstract'? 'part' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : visibilityIndicator? variability=('variation' | 'variant')? prefixMetadataAnnotation* isIndividual='individual'? isAbstract='abstract'? prefixMetadataAnnotation* 'part' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // 参照: SysML.xtext の `ItemDefinition`（`OccurrenceDefinitionPrefix
@@ -1383,7 +1397,7 @@ partDef
 // （portDef/attributeDef等と同型。2026-08-29、
 // add_occurrenceusage_itemdef_prefix_metadata対応中に発見）。
 itemDef
-    : visibilityIndicator? prefixMetadataAnnotation* isIndividual='individual'? isAbstract='abstract'? 'item' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : visibilityIndicator? prefixMetadataAnnotation* isIndividual='individual'? isAbstract='abstract'? prefixMetadataAnnotation* 'item' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // `ref item :>> localClock : Clock[1] default Time::universalClock { ... }`
@@ -1415,7 +1429,7 @@ itemDef
 // あいまい性に負けるため。2026-08-31、add_itemusage_prefix_metadata対応中に
 // 発見）。
 itemUsage
-    : visibilityIndicator? prefixMetadataAnnotation* isRefPre='ref'? isIndividual='individual'? isDerived='derived'? isAbstract='abstract'? isRef='ref'? 'item' simpleName?
+    : visibilityIndicator? prefixMetadataAnnotation* isRefPre='ref'? isIndividual='individual'? isDerived='derived'? isAbstract='abstract'? isRef='ref'? prefixMetadataAnnotation* 'item' simpleName?
       preMult=multiplicitySpec?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       // `item redefines payload [0..1] : BottomlessGiftBag;`（再定義の後ろに多重度。advent-of-sysml-v2）
@@ -1457,7 +1471,7 @@ itemUsage
 // 直後に多重度、その後に型節という順序もある（partUsage/portUsageと同じ
 // preMult/postMult設計。2026-08-28、730件パース失敗の要因分析で発見）。
 requirementUsage
-    : variability=('variation' | 'variant')? prefixMetadataAnnotation* visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'requirement' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
+    : variability=('variation' | 'variant')? prefixMetadataAnnotation* visibilityIndicator? isAbstract='abstract'? isRef='ref'? prefixMetadataAnnotation* 'requirement' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       // `requirement references vehicleMass1 { ... }`（8-Requirements.sysml
       // L162）のように、名前無しの`requirement`直後に`references`
       // キーワード（connectionEndMemberのdirectKindと同じ記号的な同義語）+
@@ -1490,7 +1504,7 @@ requirementUsage
     ;
 
 concernUsage
-    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'concern' simpleName?
+    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? prefixMetadataAnnotation* 'concern' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' ID)?
       multiplicitySpec?
@@ -1507,7 +1521,7 @@ concernUsage
 // ように、`subject`/`objective`はitemUsageと同型の設計に加え、
 // attributeUsageと同じインライン`= expression`値代入も持つ。
 subjectUsage
-    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'subject' simpleName?
+    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? prefixMetadataAnnotation* 'subject' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       // `subject miningcorporation : Domain::MiningCorporation;`
       // （MiningCorporationRequirementsDecl.sysml等）のように、型節が`::`
@@ -1526,7 +1540,7 @@ subjectUsage
 // stakeholder宣言（subjectUsageと同型の設計。2026-08-28、730件パース
 // 失敗の要因分析で発見）。
 stakeholderUsage
-    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'stakeholder' simpleName?
+    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? prefixMetadataAnnotation* 'stakeholder' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' typeRef=namespacePath)?
       multiplicitySpec?
@@ -1550,7 +1564,7 @@ stakeholderUsage
 // 来ることがある（他の多くの規則とは異なり、キーワードより前ではない
 // 位置。2026-08-29、add_generic_tag_def_usage_shorthand対応中に発見）。
 actorUsage
-    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'actor' prefixMetadataAnnotation* simpleName?
+    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? prefixMetadataAnnotation* 'actor' prefixMetadataAnnotation* simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' typeRef=namespacePath)?
       multiplicitySpec?
@@ -1561,7 +1575,7 @@ actorUsage
     ;
 
 objectiveUsage
-    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? 'objective' simpleName?
+    : visibilityIndicator? isAbstract='abstract'? isRef='ref'? prefixMetadataAnnotation* 'objective' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' ID)?
       multiplicitySpec?
@@ -1611,7 +1625,8 @@ enumBodyElement
 // [enumLiteralValue]のみで確認、body形[enumLiteralBody]は名前必須の
 // ままとする）。
 enumLiteral
-    : prefixMetadataAnnotation* 'enum'? simpleName? (':' typeRef=namespacePath)? '=' value=expression ';'              # enumLiteralValue
+    // `enum Development = 1 { doc /* ... */ }`（値と本体）（3 つ目の held-out。参照実装は構文エラーを出さない。2026-11-05）
+    : prefixMetadataAnnotation* 'enum'? simpleName? (':' typeRef=namespacePath)? '=' value=expression ( '{' enumBodyElement* '}' | ';' )  # enumLiteralValue
     | prefixMetadataAnnotation* 'enum'? simpleName (':' typeRef=namespacePath)? ( '{' enumBodyElement* '}' | ';' )      # enumLiteralBody
     ;
 
@@ -1628,8 +1643,10 @@ enumLiteral
 // のように型節がカンマ区切り複数型を取りうる（他のUsage規則と同じ設計。
 // 2026-09、参照実装比較レポートで発見）。
 enumUsage
-    : prefixMetadataAnnotation* 'enum' simpleName
+    // `enum typesOfCAs [*] : TypesOfCA;`（名前の後の多重度）（3 つ目の held-out。参照実装は構文エラーを出さない。2026-11-05）
+    : prefixMetadataAnnotation* 'enum' simpleName nameMult=multiplicitySpec?
       (':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
+      typeMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
       (('=' | ':=') value=expression)?
       ( '{' enumBodyElement* '}' | ';' )
@@ -1642,7 +1659,7 @@ enumUsage
 // （Variation Definitions.sysml）のように、Variability機能の`variation`/
 // `variant`先頭修飾子がここにも付く（partDefと同じ理由、2026-08-28）。
 attributeDef
-    : variability=('variation' | 'variant')? prefixMetadataAnnotation* isAbstract='abstract'? 'attribute' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : variability=('variation' | 'variant')? prefixMetadataAnnotation* isAbstract='abstract'? prefixMetadataAnnotation* 'attribute' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 partBodyElement
@@ -1814,6 +1831,26 @@ partBodyElement
     // ショートハンド）もpackageBodyElementだけでなくpartBodyElement内に
     // 書ける（2026-08-28、参照実装比較レポートP0-4で発見）。
     | metadataUsage
+    // 定義の本体の中の定義（`viewpoint DefineLosses { view def LossTree { ... } }`、`part def P { part def Q; }`）。
+    // 公式文法の DefinitionBodyItem はどの定義も持てる（3 つ目の held-out の m-scotti、2026-11-05）
+    | partDef
+    | actionDef
+    | viewDef
+    | viewpointDef
+    | renderingDef
+    | metadataDef
+    | requirementDef
+    | connectionDef
+    | interfaceDef
+    | allocationDef
+    | flowDef
+    | caseDef
+    | analysisCaseDef
+    | verificationCaseDef
+    | useCaseDef
+    | occurrenceDef
+    | individualDef
+    | interactionDef
     // `part def VehicleA { exhibit state 'vehicle states': 'Vehicle States'; }`
     // （5-State-based Behavior-1a.sysml）のように、exhibitStateUsageStmtは
     // packageBodyElementだけでなくpartBodyElement内にも書ける
@@ -1879,8 +1916,11 @@ partBodyElement
 frameStatement
     // `frame concern :DD_STAKEHOLDERNEEDS::LowDeliveryCost;`（名前の無い形）・
     // `frame problemStatement :>> Project::stakeholderNeeds::problemStatement :> PRJ::problemStatement;`（フォルダ単位のコーパスの sysmod・advent-of-sysml-v2。参照実装は構文エラーを出さない。2026-10-23）
-    : 'frame' isConcern='concern'? name=simpleName? multiplicitySpec? (':' typeRef=namespacePath)?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)* ';'
+    // `frame StakeholderReqPkg::CommandValidation;`・`frame WorkoutUsabilityNeed { ... }`（3 つ目の held-out、
+    // Bruce Douglass の書籍の例。修飾名の参照と本体。参照実装は構文エラーを出さない。2026-11-05）
+    : 'frame' isConcern='concern'? name=namespacePath? multiplicitySpec? (':' typeRef=namespacePath)?
+      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
+      ( '{' partBodyElement* '}' | ';' )
     ;
 
 // 公式コーパスには`ref self: Part :>> Item::self;`や`ref stateSpace:
@@ -1927,7 +1967,7 @@ frameStatement
 // （既存のfeatureUsageの裸形をそのまま使う）にもVariability機能の先頭
 // 修飾子が付く（2026-08-28）。
 featureUsage
-    : variability=('variation' | 'variant')? visibilityIndicator? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
+    : variability=('variation' | 'variant')? visibilityIndicator? isAbstract='abstract'? isConstant='constant'? isRef='ref'? prefixMetadataAnnotation*
       prefixMetadataAnnotation*
       // `#systemObjective <'OBJ-B1'> 'Market Leader' { ... }`
       // （ForestFireDetectionSystemModel.sysml）のように、キーワード無し
@@ -2000,7 +2040,7 @@ featureUsage
 // 型節前のリストには`::>`だけ、connectionEndMemberは専用のdirectKindを
 // 持つので触らない。
 partUsage
-    : visibilityIndicator? variability=('variation' | 'variant')? prefixMetadataAnnotation* isIndividual='individual'? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
+    : visibilityIndicator? variability=('variation' | 'variant')? prefixMetadataAnnotation* isIndividual='individual'? isAbstract='abstract'? isConstant='constant'? isRef='ref'? prefixMetadataAnnotation*
       'part' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       preMult=multiplicitySpec?
@@ -2071,7 +2111,7 @@ partUsage
 // 名前の直後に多重度、その後に型節という順序もある（partUsage/itemUsageと
 // 同じpreMult/postMult設計。2026-08-28、730件パース失敗の要因分析で発見）。
 attributeUsage
-    : variability=('variation' | 'variant')? prefixMetadataAnnotation* visibilityIndicator? isDerived='derived'? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
+    : variability=('variation' | 'variant')? prefixMetadataAnnotation* visibilityIndicator? isDerived='derived'? isAbstract='abstract'? isConstant='constant'? isRef='ref'? prefixMetadataAnnotation*
       'attribute' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       preMult=multiplicitySpec?
       // `attribute ::> m = ms.totalMass;`（CalculationTest.sysml）のように、
@@ -2160,6 +2200,8 @@ multiplicityBound
     : INT_LITERAL
     | '*'
     | ID
+    // `Real ['°C']`（単位のつもりの名前。参照実装は `Must have a Natural value`）（3 つ目の held-out。参照実装は構文エラーを出さない。2026-11-05）
+    | QUOTED_NAME
     ;
 
 // --- フェーズ2: connect (8.2.2.13) -----------------------------------------
@@ -2238,7 +2280,7 @@ connectionUsage
     // （`namedTypeRef`）を使う（`ctx.typeRef is not None`が代替の判別に
     // 使われているため、同じラベルを再利用すると判別が壊れる）。2026-09、
     // 参照実装比較レポートで発見）。
-    | variability=('variation' | 'variant')? prefixMetadataAnnotation* isAbstract='abstract'? 'connection' simpleName?
+    | variability=('variation' | 'variant')? prefixMetadataAnnotation* isAbstract='abstract'? prefixMetadataAnnotation* 'connection' simpleName?
       preMult=multiplicitySpec?
       (':' namedTypeRef=namespacePath (',' namedExtraTypeRefs+=namespacePath)*)?
       postMult=multiplicitySpec?
@@ -2259,8 +2301,9 @@ connectionUsage
 
 // ConnectorEnd の `(declaredName=Name ReferencesKeyword)? OwnedReferenceSubsetting` を
 // 反映。名前付き end (`end1 references a`) と素の参照 (`a`) の両方を許可する。
+// `connect payload ::> emitter to mount ::> mount`（名前の付いた端を `::>` でも書ける）（3 つ目の held-out。参照実装は構文エラーを出さない。2026-11-05）
 connectorEnd
-    : (ID 'references')? qualifiedName
+    : (ID ('references' | '::>'))? qualifiedName
     ;
 
 // `connectorEnd`と同型だが、`connectUsage`専用に`.`/`::`両対応の
@@ -2349,7 +2392,9 @@ flowUsage
       | fromEnd=namespacePath 'to' toEnd=namespacePath
       )?
       ( '{' partBodyElement* '}' | ';' )
-    | isAbstract='abstract'? 'flow' flowName=simpleName?
+    | isAbstract='abstract'? prefixMetadataAnnotation* 'flow' flowName=simpleName?
+      // `abstract flow controlActions [*] : ControlAction;`（多重度が型節の前）（3 つ目の held-out。参照実装は構文エラーを出さない。2026-11-05）
+      nameMult=multiplicitySpec?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       // `flow :>> publish_message: Transfers::MessageTransfer { ... }`の
       // ように、型節が`::`修飾名を取ることもあるため`ID`単体ではなく
@@ -2375,7 +2420,7 @@ flowUsage
 // 4件）のように、`flow def`という定義形は他の`*Def`規則（partDef等）と
 // 同型（`abstract`修飾子・継承節・body）である。
 flowDef
-    : isAbstract='abstract'? 'flow' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : isAbstract='abstract'? prefixMetadataAnnotation* 'flow' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // --- フェーズ2: action の item パラメータ (8.2.2.17) ------------------------
@@ -2388,7 +2433,7 @@ flowDef
 // （VariabilityTest.sysml）のように、Variability機能の先頭修飾子がここにも
 // 付く（partDefと同じ理由、2026-08-28）。
 actionDef
-    : variability=('variation' | 'variant')? isIndividual='individual'? isAbstract='abstract'? 'action' 'def' simpleName inheritanceClause? ( '{' actionBodyElement* '}' | ';' )
+    : variability=('variation' | 'variant')? isIndividual='individual'? isAbstract='abstract'? prefixMetadataAnnotation* 'action' 'def' simpleName inheritanceClause? ( '{' actionBodyElement* '}' | ';' )
     ;
 
 // `abstract calc getNextState: GetNextState;`（StateSpaceRepresentation.
@@ -2623,7 +2668,7 @@ assignmentStmt
 // も持ちうる（2026-08-28、730件パース失敗の要因分析で発見）。
 sendActionStmt
     : isThen='then'? 'action' name=simpleName 'send'
-      ( payload=namespacePath | 'new' newPayloadType=qualifiedName '(' (newPayloadArgs+=newArgument (',' newPayloadArgs+=newArgument)*)? ')' )
+      ( payload=namespacePath | payloadLiteral=literal | 'new' newPayloadType=qualifiedName '(' (newPayloadArgs+=newArgument (',' newPayloadArgs+=newArgument)*)? ')' )
       // `action turnVehicleOn send ignitionCmd via driver.p1{ in ignitionCmd:IgnitionCmd; }`
       // （SysML v2 Spec Annex A SimpleVehicleModel.sysml:755,765）のように、
       // payload・to/via をインラインで書いたうえで本体も持つ形がある
@@ -2649,7 +2694,7 @@ sendActionStmt
     // named形と同じ先頭の裸`then`（直前ノードとの暗黙の連鎖）を持ちうる
     // （2026-08-29、730件ベースライン154件エラー要因分析で発見）。
     | isThen='then'? 'send'
-      ( payload=namespacePath | 'new' newPayloadType=qualifiedName '(' (newPayloadArgs+=newArgument (',' newPayloadArgs+=newArgument)*)? ')' )
+      ( payload=namespacePath | payloadLiteral=literal | 'new' newPayloadType=qualifiedName '(' (newPayloadArgs+=newArgument (',' newPayloadArgs+=newArgument)*)? ')' )
       ( 'to' toTarget=qualifiedName | 'via' viaTarget=qualifiedName )
       ( '{' actionBodyElement* '}' | ';' )                              # sendActionAnonymous
     ;
@@ -2735,8 +2780,13 @@ performActionStmt
     // に連鎖的に発見）。
     // `perform deliver : Deliver;`（`action` 無しで型を書く LLM の書き方）。参照実装は受け付け、
     // deliver を参照として解決する（2026-10-16、perform_drop_action の変異体）
-    : variability=('variation' | 'variant')? isThen='then'? 'perform' namespacePath (':' bareTypeRef=namespacePath)?
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
+    : variability=('variation' | 'variant')? isThen='then'? 'perform' namespacePath bareMult=multiplicitySpec? (':' bareTypeRef=namespacePath)?
+      ( postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList
+      // `perform action :>> generateThrust[1];`・`perform action redefines g : T, U;`（3 つ目の held-out、ode4hera。
+      // KerML の FeatureSpecializationPart は特化・型付け・多重度をどの順にも書ける。2026-11-05）
+      | ':' postTypes+=namespacePath (',' postTypes+=namespacePath)*
+      | postMult=multiplicitySpec
+      )*
       (('=' | ':=') value=expression)?
       ( '{' actionBodyElement* '}' | ';' )
     // `perform action performLunarMission : PerformLunarMission;`
@@ -2761,7 +2811,12 @@ performActionStmt
       // `perform action ucPlan ::> planDelivery;`（SYSMOD の use case、sysmod-sysmlv2）
       // のように、記号形の`::>`も同じ位置に書ける（'references'だけ受け付けて
       // いた。2026-10-15、Pilot との差分評価（eval/pilot_parity）で発見）。
-      (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
+      ( postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList
+      // `perform action :>> generateThrust[1];`・`perform action redefines g : T, U;`（3 つ目の held-out、ode4hera。
+      // KerML の FeatureSpecializationPart は特化・型付け・多重度をどの順にも書ける。2026-11-05）
+      | ':' postTypes+=namespacePath (',' postTypes+=namespacePath)*
+      | postMult=multiplicitySpec
+      )*
       // `perform action :>> doXorY = doX;`（7a1-Variant Configuration...-a.sysml）
       // のように、attributeUsageと同様、redefine節の後に`= value`で値代入
       // できる（従来performActionStmtには移植されていなかった。2026-08-29、
@@ -2805,7 +2860,7 @@ messageUsage
     // 型節が(1)`::`修飾型参照・カンマ区切り複数型を取り、(2)`of`ペイロード
     // 型節と併用できる（従来`':' ID`と`'of' ...`が排他的代替で、`':'`側は
     // 単一IDのみだった。2026-09、参照実装比較レポートで発見）。
-    : isThen='then'? isAbstract='abstract'? 'message' messageName=simpleName?
+    : isThen='then'? isAbstract='abstract'? prefixMetadataAnnotation* 'message' messageName=simpleName?
       (':' typeRef=namespacePath (',' extraTypeRefs+=namespacePath)*)?
       ('of' (payloadName=simpleName ':')? payloadType=namespacePath)?
       multiplicitySpec?
@@ -2897,7 +2952,7 @@ defaultTargetSuccessionStmt
 // `#Type`前置メタデータ注釈を持つこともある（2026-08-29、
 // add_actionusagestmt_flowcontrolnode_prefix_metadata対応中に発見）。
 actionUsageStmt
-    : prefixMetadataAnnotation* variability=('variation' | 'variant')? isThen='then'? visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? isRef='ref'? isLoop='loop'? 'action' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
+    : prefixMetadataAnnotation* variability=('variation' | 'variant')? isThen='then'? visibilityIndicator? isIndividual='individual'? isAbstract='abstract'? isRef='ref'? isLoop='loop'? prefixMetadataAnnotation* 'action' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       preMult=multiplicitySpec?
       // `action 'provide power': 'Provide Power'{ ... }`（3a-Function-based
@@ -2942,7 +2997,7 @@ actionUsageStmt
 // requirementUsageへは既にP1-1で追加済みだったが、requirementDefへの
 // 追加を見落としていた）。
 requirementDef
-    : prefixMetadataAnnotation* isAbstract='abstract'? 'requirement' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' requirementBodyElement* '}' | ';' )
+    : prefixMetadataAnnotation* isAbstract='abstract'? prefixMetadataAnnotation* 'requirement' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')? simpleName inheritanceClause? ( '{' requirementBodyElement* '}' | ';' )
     ;
 
 // 公式コーパスの`requirement def RequirementCheck { ... }`
@@ -2962,7 +3017,7 @@ requirementBodyElement
 // する。
 concernDef
     // `#extendedConcern concern def ReliableDelivery { ... }`（フォルダ単位のコーパスの sysmod・advent-of-sysml-v2。参照実装は構文エラーを出さない。2026-10-23）
-    : prefixMetadataAnnotation* isAbstract='abstract'? 'concern' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')?
+    : prefixMetadataAnnotation* isAbstract='abstract'? prefixMetadataAnnotation* 'concern' 'def' ('<' shortName=(ID | QUOTED_NAME) '>')?
       simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
@@ -2974,7 +3029,7 @@ concernDef
 // 直交(orthogonal)状態を表す`parallel`修飾子が本体の直前に付きうる
 // （2026-08-28、StateTest.sysmlの調査で発見。実コーパスで10件超）。
 stateDef
-    : isAbstract='abstract'? 'state' 'def' simpleName inheritanceClause? isParallel='parallel'? ( '{' stateBodyElement* '}' | ';' )
+    : isAbstract='abstract'? prefixMetadataAnnotation* 'state' 'def' simpleName inheritanceClause? isParallel='parallel'? ( '{' stateBodyElement* '}' | ';' )
     ;
 
 // nested `state def Sub;`と bare形の`state Sub;`（usage）はどちらも
@@ -3074,7 +3129,7 @@ stateBodyElement
 // うる（他の多くの規則（performActionStmt等）では既に`isThen`対応済み
 // で非対称だった。2026-08-29、235件パース失敗の要因分析で発見）。
 stateUsage
-    : isThen='then'? isAbstract='abstract'? isRef='ref'? 'state' simpleName?
+    : isThen='then'? isAbstract='abstract'? isRef='ref'? prefixMetadataAnnotation* 'state' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (':' typeRef=(ID | QUOTED_NAME))?
       multiplicitySpec?
@@ -3344,7 +3399,10 @@ transitionEffect
 // のため他規則との曖昧性は生じない。2026-08-29、235件パース失敗の
 // 要因分析で発見）。
 transitionStmt
-    : 'transition' simpleName? ( 'first' source=namespacePath )?
+    // 公式文法は `'transition' (UsageDeclaration 'first')? FeatureChainMember ...`。`first` が無いときの名前に
+    // 見えるものは始点（`transition Actions::Action::start then ABSOff;`・`transition racing.'a'.'b' accept E then s;`。
+    // 3 つ目の held-out、Bruce Douglass の書籍の例。以前は名前として読み、修飾名・連鎖で構文エラーになった。2026-11-05）
+    : 'transition' ( simpleName? 'first' source=namespacePath | bareSource=namespacePath )?
       ( 'accept' transitionTrigger )?
       ( 'if' guard=expression )?
       ( 'do' transitionEffect )?
@@ -3410,6 +3468,8 @@ expression
     // ANTLRの通常のprediction順で解決される）。`#()`と同様、メンバ
     // アクセスに準じる強い結合の後置演算子として扱う。
     | expression '.' member=simpleName                          # memberAccessExpr
+    // `owner.metadata`（KerML の MetadataAccessExpression）（3 つ目の held-out。参照実装は構文エラーを出さない。2026-11-05）
+    | expression '.' 'metadata'                                 # metadataAccessExpr
     // `subcomponents.totalMass.?{in p:>ISQ::mass; p >= minMass}`
     // （MassRollup.sysml、MassRollup2.sysml）のように、`.?{ ... }`という
     // OCL的selectフィルタ式が使われる（`.`直後の`?`が`memberAccessExpr`の
@@ -3442,7 +3502,8 @@ expression
     // ライブラリ関数のフルパス参照を取ることがある（従来simpleName単一
     // セグメントのみだった。2026-09、参照実装比較レポートで発見）。
     | expression '->' opName=namespacePath '(' (expression (',' expression)*)? ')'  # arrowCallExpr
-    | expression '->' opName=namespacePath '{' arrowLambdaBody '}'                   # arrowLambdaExpr
+    // `->ControlFunctions::forAll({in o; o istype Feature})`（本体を丸括弧で囲む形）（3 つ目の held-out。参照実装は構文エラーを出さない。2026-11-05）
+    | expression '->' opName=namespacePath ( '{' arrowLambdaBody '}' | '(' '{' arrowLambdaBody '}' ')' )  # arrowLambdaExpr
     // `Triangle::length^2 + Triangle::width^2`のように、`^`べき乗演算子が
     // 公式コーパス17ファイルで使われている（`s^-1`等の単位式が大半）。
     // 算術演算子より強く結合するため`mulDivExpr`より前に置く。
@@ -3493,6 +3554,8 @@ expression
     // allTrue(constraints())`）。`and`/`or`より結合が弱い（一般的な優先順位、
     // `or`の後に置く）。
     | expression op='implies' expression                        # impliesExpr
+    // `(x as FeatureValue).value ?? "missing"`（KerML の NullCoalescingExpression。implies より弱い）（3 つ目の held-out。参照実装は構文エラーを出さない。2026-11-05）
+    | expression op='??' expression                             # nullCoalesceExpr
     // KerMLの三項条件式（`cond ? a : b`記法ではなく`if cond ? then else
     // elseExpr`という`if`/`else`キーワードを伴う形。例: `if index == null
     // or index == size(domainValues)? null else if domainValues#(index) <
@@ -3566,6 +3629,9 @@ expression
     // 式コンテキストでも同じ`@Type`表記が使われる。2026-08-28、730件
     // パース失敗の要因分析で発見）。
     | '@' typeRef=namespacePath                                 # metadataRefExpr
+    // `filter istype SysML::PortDefinition;`・`expose a::*[istype SysML::PortUsage];`（左辺を省いた分類判定。
+    // 対象は暗黙の self）（3 つ目の held-out。参照実装は構文エラーを出さない。2026-11-05）
+    | op=('istype'|'hastype') typeRef=namespacePath             # implicitClassificationExpr
     | literal                                                   # literalExpr
     ;
 
@@ -3641,7 +3707,7 @@ newArgument
 // visibilityIndicatorが付くことがある（partDefと同型のギャップ。
 // 2026-08-29、235件パース失敗の要因分析で発見）。
 portDef
-    : visibilityIndicator? prefixMetadataAnnotation* isAbstract='abstract'? 'port' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : visibilityIndicator? prefixMetadataAnnotation* isAbstract='abstract'? prefixMetadataAnnotation* 'port' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // partUsageと同じredefinition機能一式（visibility・ref・名前省略・型節
@@ -3676,7 +3742,7 @@ portDef
 // attributeUsageには既にあり、portUsageだけ漏れていた（参照実装で0件を確認。
 // 2026-09-25、Viewerで報告）。
 portUsage
-    : variability=('variation' | 'variant')? prefixMetadataAnnotation* visibilityIndicator? isAbstract='abstract'? isConstant='constant'? isRef='ref'?
+    : variability=('variation' | 'variant')? prefixMetadataAnnotation* visibilityIndicator? isAbstract='abstract'? isConstant='constant'? isRef='ref'? prefixMetadataAnnotation*
       'port' simpleName?
       (preKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') preTarget+=namespacePathList)*
       (('=' | ':=') value=expression)?
@@ -3684,6 +3750,8 @@ portUsage
       (':' conjugated='~'? typeRefs+=namespacePath (',' typeRefs+=namespacePath)*)?
       postMult=multiplicitySpec?
       (postKind+=(':>' | ':>>' | 'subsets' | 'redefines' | '::>' | 'references') postTarget+=namespacePathList)*
+      // `port boundPort : SignalPort = sourcePort;`（型の後の値）（3 つ目の held-out。参照実装は構文エラーを出さない。2026-11-05）
+      (('=' | ':=') postValue=expression)?
       ( '{' partBodyElement* '}' | ';' )
     ;
 
@@ -3803,7 +3871,7 @@ filterStmt
 // 汎用 DefinitionBody とは異なる。ここでは `end` メンバーは未対応で、
 // part def と同じ body（partBodyElement）を暫定的に流用する簡略形のみ実装。
 interfaceDef
-    : isAbstract='abstract'? 'interface' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
+    : isAbstract='abstract'? prefixMetadataAnnotation* 'interface' 'def' simpleName inheritanceClause? ( '{' partBodyElement* '}' | ';' )
     ;
 
 // --- 単一引用符名 (Name: ID | UNRESTRICTED_NAME) --------------------------------
@@ -3817,10 +3885,15 @@ interfaceDef
 // （公式コーパス全体で本1件のみ）。`typeDef`は常に`'type' 'def'`という
 // 並びのみを取るため、宣言名の位置に`'type'`を許しても曖昧性は生じない
 // （`namespacePath`の`'participant'`と同じ考え方）。
+// KerML の Identification（`('<' shortName '>')? name?`）。短い名前は規則ごとに足していた
+// （part def・requirement など一部だけ）が、3 つ目の held-out（公開リポジトリ）では
+// `item <'DS-GCS-CRED'> credentials`・`enum <S> 'spoofing'`・`assert constraint <'C-1'> c`・
+// `flow <'DF-01'> f of T` などほぼすべての種類で使われていたので、宣言名そのものに持たせる
+// （短い名前だけの宣言 `part <p1>;` も KerML では正しい）。名前の文字列は
+// `_simple_name_text`、短い名前は visit() が `shortName` に入れる（2026-11-05）。
 simpleName
-    : ID
-    | QUOTED_NAME
-    | 'type'
+    : ('<' shortName=(ID | QUOTED_NAME) '>')? (ID | QUOTED_NAME | 'type')
+    | '<' shortName=(ID | QUOTED_NAME) '>'
     ;
 
 // --- レキサー ----------------------------------------------------------------
