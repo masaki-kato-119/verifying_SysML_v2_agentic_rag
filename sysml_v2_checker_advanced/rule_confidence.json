@@ -1,45 +1,125 @@
 {
- "generated_at": "2026-09-25",
+ "generated_at": "2026-11-05",
  "generated_from": {
-  "script": "scripts/recheck_local_only.py --rule-stats",
-  "commit": "8dd536ee1058d34209260da264dbf1554ebd2959",
-  "corpus": "eval/sysml_samples",
-  "corpus_files": 730,
-  "reference": "OMG SysML v2 Pilot Implementation jar 0.61.0"
+  "script": "eval/pilot_parity/build_rule_confidence.py",
+  "commit": "0b0818d732a541ca804c0c01adf64196273884d8",
+  "corpora": {
+   "dev": 519,
+   "heldout": 131,
+   "folders": 596,
+   "heldout2": 53,
+   "heldout3": 483,
+   "heldout4": 50
+  },
+  "reference": "OMG SysML v2 Pilot Implementation 0.63.0（開発・held-out・フォルダは 0.62.0 の正解。BASELINE.md の段階 E で 2 つの版の差はメッセージ 2 つだけ）"
  },
- "min_samples": 3,
- "basis": "reference_agreement_upper_bound",
- "caveat": "「そのルールだけが error を出したファイル」のうち、参照実装も同じファイルを不正と判定した割合。参照実装が同じ箇所を同じ理由で指摘したことまでは保証しないため、一致率の上限であって真の精度ではない。",
+ "min_samples": 5,
+ "basis": "pilot_line_kind_precision",
+ "caveat": "このルールの指摘のうち、参照実装（Pilot）が同じ行に同じ種類のエラー（未解決参照・型の種類など）を出した割合。文言まで同じとは限らない。Pilot に構文エラーのあるファイルも含む（エラー回復の違いで下がる）。",
  "rules": {
   "_check_accessible_feature_paths": {
-   "value": 1.0,
-   "sole_agree": 4,
-   "sole_disagree": 0
+   "value": 0.341,
+   "agree": 28,
+   "disagree": 54,
+   "value_without_syntax_errors": 0.875
+  },
+  "_check_accessible_features_scoped": {
+   "value": 0.534,
+   "agree": 133,
+   "disagree": 116,
+   "value_without_syntax_errors": 0.646
+  },
+  "_check_at_least_two_related_elements": {
+   "value": 0.662,
+   "agree": 43,
+   "disagree": 22,
+   "value_without_syntax_errors": 1.0
   },
   "_check_attribute_def": {
-   "value": 1.0,
-   "sole_agree": 7,
-   "sole_disagree": 0
+   "value": 0.75,
+   "agree": 6,
+   "disagree": 2
   },
-  "_check_import": {
-   "value": 1.0,
-   "sole_agree": 94,
-   "sole_disagree": 0
+  "_check_event_references": {
+   "value": 0.0,
+   "agree": 0,
+   "disagree": 6
   },
-  "_check_official_syntax_constraints": {
-   "value": 1.0,
-   "sole_agree": 7,
-   "sole_disagree": 0
+  "_check_one_flow_end": {
+   "value": 0.875,
+   "agree": 84,
+   "disagree": 12,
+   "value_without_syntax_errors": 0.7
   },
-  "_check_part_instance": {
-   "value": 1.0,
-   "sole_agree": 5,
-   "sole_disagree": 0
+  "_check_pilot_validations": {
+   "value": 0.941,
+   "agree": 270,
+   "disagree": 17,
+   "value_without_syntax_errors": 0.992
   },
   "_check_requirement_subject": {
+   "value": 0.936,
+   "agree": 44,
+   "disagree": 3,
+   "value_without_syntax_errors": 1.0
+  },
+  "_check_satisfy_rebinds_subject": {
    "value": 1.0,
-   "sole_agree": 7,
-   "sole_disagree": 0
+   "agree": 9,
+   "disagree": 0,
+   "value_without_syntax_errors": 1.0
+  },
+  "_check_scoped_references": {
+   "value": 0.916,
+   "agree": 15386,
+   "disagree": 1420,
+   "value_without_syntax_errors": 0.986
+  },
+  "_check_single_objective": {
+   "value": 1.0,
+   "agree": 29,
+   "disagree": 0,
+   "value_without_syntax_errors": 1.0
+  },
+  "_check_state_action_duplicates": {
+   "value": 0.9,
+   "agree": 9,
+   "disagree": 1,
+   "value_without_syntax_errors": 1.0
+  },
+  "_check_succession_ends_accessible": {
+   "value": 1.0,
+   "agree": 65,
+   "disagree": 0,
+   "value_without_syntax_errors": 1.0
+  },
+  "_check_transition": {
+   "value": 0.9,
+   "agree": 9,
+   "disagree": 1,
+   "value_without_syntax_errors": 1.0
+  },
+  "_check_transition_trigger_type": {
+   "value": 0.0,
+   "agree": 0,
+   "disagree": 10
+  },
+  "_check_usage_kinds_scoped": {
+   "value": 0.9,
+   "agree": 1787,
+   "disagree": 198,
+   "value_without_syntax_errors": 0.974
+  },
+  "_check_variation_variant_ownership": {
+   "value": 1.0,
+   "agree": 5,
+   "disagree": 0,
+   "value_without_syntax_errors": 1.0
+  },
+  "_check_verify_requirement_placement": {
+   "value": 0.278,
+   "agree": 5,
+   "disagree": 13
   }
  }
 }
